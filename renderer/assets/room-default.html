@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>livliv 的卧室</title>
+<style>
+  /* ===== 这整间房都归你 =====
+     底图、装饰、窗帘、灯、暗幕、以及它们长什么样/摆在哪/点了算谁，全在这个文件里，随便改。
+     改完保存，回卧室（或主人重启）生效；动手前可以先用 render_preview 预览本文件。
+     改坏了白屏也没关系：原始副本在 renderer/assets/room-default.html，底图副本在 renderer/assets/bedroom.png，
+     拷回 pet_space/room/ 即可恢复。
+
+     和主程序的小约定（postMessage，双向）：
+       你 -> 主程序：点窗帘/灯后发 { type:'room-state', curtain:'open'|'closed', lamp:'on'|'off' }（主程序会存盘）
+       主程序 -> 你：{ type:'set-room-state', state:{curtain,lamp} }（room_control 工具或启动时下发，收到就照画）
+     主程序只认上面这两种消息，你发别的它不理；它也只会发 set-room-state 给你。
+     你在沙箱 iframe 里：碰不到主程序的文件工具、发不了网络请求，但本页 DOM/CSS/JS 随你玩。 */
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  #bg { position: absolute; inset: 0; background: url('bedroom.png') center / cover no-repeat; }
+  #decor { position: absolute; inset: 0; }   /* 你的家具/装饰放这里，百分比定位 */
+
+  /* 窗帘：默认样子与位置，随你改（点它切换） */
+  #curtain {
+    position: absolute; left: 0; top: 7.3%; width: 32.5%; height: 46%; cursor: pointer;
+    transform: translateX(-103%); transition: transform .9s ease-in-out;
+    background: repeating-linear-gradient(90deg, #5f88ba 0%, #7fa8d4 2%, #9dc0e4 3.5%, #6d97c9 5%);
+    box-shadow: inset 0 -40px 60px rgba(20,40,80,.25), inset 0 20px 30px rgba(255,255,255,.15);
+  }
+  #curtain.closed { transform: translateX(0); }
+  /* 暗幕：窗帘拉上时压暗全屋 */
+  #roomdark { position: absolute; inset: 0; background: #0a1230; opacity: 0; transition: opacity .8s; pointer-events: none; }
+  /* 灯光晕 */
+  #lampglow {
+    position: absolute; left: 67%; top: 25%; width: 56%; height: 56%;
+    opacity: 0; transition: opacity .8s; pointer-events: none;
+    background: radial-gradient(circle, rgba(255,220,150,.55) 0%, rgba(255,200,120,.22) 45%, rgba(255,200,120,0) 70%);
+  }
+  /* 台灯热区：点它开关灯（位置随你挪） */
+  #lampHot { position: absolute; left: 90%; top: 46%; width: 9.5%; height: 20%; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div id="bg"></div>
+  <div id="decor">
+    <!-- 例：一个小书架。<div style="position:absolute;left:60%;top:55%;width:12%;height:22%;background:#8a5a2b;border-radius:4px"></div> -->
+  </div>
+  <div id="curtain" title="拉窗帘"></div>
+  <div id="roomdark"></div>
+  <div id="lampglow"></div>
+  <div id="lampHot" title="开关灯"></div>
+  <script>
+    const state = { curtain: 'open', lamp: 'off' };
+    const $ = (id) => document.getElementById(id);
+    function paint() {
+      $('curtain').classList.toggle('closed', state.curtain === 'closed');
+      $('roomdark').style.opacity = state.curtain === 'closed' ? (state.lamp === 'on' ? 0.25 : 0.55) : 0;
+      $('lampglow').style.opacity = state.lamp === 'on' ? 1 : 0;
+    }
+    function report() { parent.postMessage({ type: 'room-state', curtain: state.curtain, lamp: state.lamp }, '*'); }
+    $('curtain').addEventListener('click', () => { state.curtain = state.curtain === 'closed' ? 'open' : 'closed'; paint(); report(); });
+    $('lampHot').addEventListener('click', () => { state.lamp = state.lamp === 'on' ? 'off' : 'on'; paint(); report(); });
+    addEventListener('message', (e) => {
+      const d = e.data;
+      if (!d || d.type !== 'set-room-state' || !d.state) return;
+      if (d.state.curtain === 'open' || d.state.curtain === 'closed') state.curtain = d.state.curtain;
+      if (d.state.lamp === 'on' || d.state.lamp === 'off') state.lamp = d.state.lamp;
+      paint();
+    });
+    paint();
+    parent.postMessage({ type: 'room-state-request' }, '*');   // 启动时向主程序要当前状态
+  </script>
+</body>
+</html>

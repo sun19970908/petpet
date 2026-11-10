@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Historical data & Chat records
+history/
+*.orama
+
+# Pet personal space / Sandbox
+pet_space/
+notes/
+
+# Voice models and audio samples
+voice*/
+voices/
+voice-samples/
+
+# Reference player
+player-ref/
+
+# Sensitive local configuration
+config.json
+.env
+.env.*
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp

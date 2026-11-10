@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>DeepSeek 娘</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: "Microsoft YaHei", sans-serif;
+    user-select: none;
+  }
+  #petwrap {
+    position: absolute;
+    right: var(--pet-right, 24px);
+    bottom: var(--pet-y, 46px);
+    height: var(--pet-h, 88%);
+    aspect-ratio: 1024 / 1536; /* 与模型画布同比例，元素框≈人物框 */
+  }
+  #pet {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+  }
+  #bubble {
+    position: absolute; bottom: 88px; width: 420px; /* left 由 JS 锚定到人物 */
+    background: rgba(30, 48, 92, 0.88);
+    color: #eaf2ff;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 13px; line-height: 1.55;
+    display: none;
+    max-height: 34vh; overflow-y: auto;
+  }
+  #bubble.error { background: rgba(122, 34, 34, 0.9); }
+  #pendingimg {
+    position: absolute; display: none; align-items: center; gap: 6px;
+  }
+  #pendingimg img { height: 56px; border-radius: 8px; border: 1px solid rgba(120,160,255,.5); }
+  #pendingimg button {
+    width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer;
+    background: rgba(60,70,95,.8); color: #cdd8f5; font-size: 10px;
+  }
+  #shot, #continuebtn, #infwake {
+    width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer;
+    background: rgba(20,30,58,.82); color: #9fc0ff; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #shot:hover, #continuebtn:hover, #infwake:hover { background: rgba(35,50,90,.9); color: #cdd8f5; }
+  #infwake.on { background: rgba(70,110,200,.95); color: #fff; }
+  #wakecfg input, #wakecfg {
+    width: 56px; height: 36px; border-radius: 18px;
+    border: 1px solid rgba(120,160,255,.4);
+    background: rgba(20,30,58,.82); color: #eaf2ff;
+    text-align: center; font-size: 12px; outline: none;
+    -moz-appearance: textfield;
+  }
+  #wakecfg::-webkit-outer-spin-button, #wakecfg::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  #inputrow {
+    position: absolute; bottom: 46px; width: 420px; /* left/bottom 由 JS 锚定到人物脚下 */
+    display: flex; gap: 6px;
+  }
+  #input {
+    flex: 1;
+    border: 1px solid rgba(120,160,255,.45);
+    background: rgba(20, 30, 58, 0.82);
+    color: #eaf2ff;
+    border-radius: 14px;
+    padding: 8px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    outline: none;
+    resize: none;
+    overflow: hidden;           /* 未到上限时不出滚动条，靠自增高 */
+    font-family: "Microsoft YaHei", sans-serif;
+  }
+  #input::placeholder { color: rgba(200,215,255,.45); }
+  #send {
+    width: 40px; height: 36px; border-radius: 50%;
+    border: none; cursor: pointer;
+    background: #3f6fff; color: white; font-size: 16px;
+  }
+  #send:disabled { background: #566; cursor: wait; }
+  #close {
+    position: absolute; top: 4px; right: 4px; /* 锚定在鲸鱼娘画布右上角 */
+    width: 22px; height: 22px; border-radius: 50%;
+    border: none; cursor: pointer;
+    background: rgba(60, 70, 95, 0.55); color: #cdd8f5; font-size: 12px;
+  }
+  #dbgbadge {
+    position: absolute; top: 8px; left: 8px;
+    padding: 2px 8px; border-radius: 8px;
+    background: rgba(200, 60, 60, 0.85); color: white;
+    font-size: 11px; font-weight: bold; letter-spacing: 1px;
+    display: none;
+  }
+  #close:hover { background: rgba(200, 60, 60, 0.8); color: white; }
+  /* 卧室（副屏）：底图 + 代码交互层，位置尺寸由 JS 按副屏矩形设定 */
+  #room { position: absolute; inset: 0; display: none; overflow: hidden; }
+  /* 卧室装修层：沙箱 iframe 加载 pet_space/room/index.html（她可自由改，脚本被沙箱隔离） */
+  #roomframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  /* 窗帘/灯/暗幕及其热区已交给 pet_space/room/index.html 自己画、自己点 */
+</style>
+</head>
+<body>
+  <div id="room">
+    <iframe id="roomframe" sandbox="allow-scripts" src="/pet_space/room/index.html"></iframe>
+  </div>
+  <div id="petwrap">
+    <canvas id="pet"></canvas>
+    <button id="close" title="退出">✕</button>
+  </div>
+  <div id="dbgbadge">DEBUG</div>
+  <div id="bubble"></div>
+  <div id="pendingimg"><img alt=""><button id="imgdel" title="移除图片">✕</button></div>
+  <form id="chatform">
+    <div id="inputrow">
+      <textarea id="input" rows="1" placeholder="跟她说话，回车发送，Shift+回车换行，可粘贴图片…" autocomplete="off"></textarea>
+      <button id="continuebtn" type="button" title="继续：接上次未完成回复或调用工具">⏩</button>
+      <button id="shot" type="button" title="让她看你的屏幕">📷</button>
+      <button id="wake" type="button" title="手动唤醒：自动截屏，让她自由行动">🔔</button>
+      <button id="infwake" type="button" title="连续唤醒：她一停下来就再唤醒（无限模式）">∞</button>
+      <span id="wakecfgwrap" title="自动唤醒间隔（分钟），0 = 关闭">
+        <input id="wakecfg" type="number" min="0" max="1440" step="1" placeholder="⏰" autocomplete="off">
+      </span>
+    </div>
+  </form>
+  <script>
+    window.__err = [];
+    window.addEventListener('error', (e) => window.__err.push(e.message + ' @ ' + (e.filename || '') + ':' + e.lineno));
+    window.addEventListener('unhandledrejection', (e) => window.__err.push('rejection: ' + (e.reason && (e.reason.stack || e.reason.message || String(e.reason)))));
+  </script>
+  <script src="/renderer/app.bundle.js"></script>
+</body>
+</html>

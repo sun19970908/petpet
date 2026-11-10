@@ -1,0 +1,24 @@
+{
+  "name": "deepseek-pet",
+  "version": "0.1.0",
+  "description": "DeepSeek 娘桌宠：livliv player + 本地 Strata + GPT-SoVITS",
+  "main": "main.js",
+  "scripts": {
+    "build": "esbuild renderer/app.js --bundle --outfile=renderer/app.bundle.js",
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@livliv-dev/player": "^0.3.0",
+    "@orama/orama": "^3.1.18",
+    "@orama/tokenizers": "^3.1.18"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "esbuild": "^0.28.2"
+  },
+  "allowScripts": {
+    "electron@45.2.3": true,
+    "esbuild@0.28.2": true
+  }
+}

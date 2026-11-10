@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>卧室</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:transparent}#rf{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+</head>
+<body>
+  <iframe id="rf" sandbox="allow-scripts" src="/pet_space/room/index.html"></iframe>
+  <script>
+    // 独立卧室窗的宿主：只渲染房间 iframe，并用 /api/room-state 双向同步窗帘/灯（和桌宠窗里的 room_control 通过文件同步）
+    const rf = document.getElementById('rf');
+    let last = '';
+    function push(state) { try { rf.contentWindow.postMessage({ type: 'set-room-state', state }, '*'); } catch {} }
+    async function poll() {
+      try {
+        const r = await (await fetch('/api/room-state', { cache: 'no-store' })).json();
+        const s = { curtain: r && r.curtain === 'closed' ? 'closed' : 'open', lamp: r && r.lamp === 'on' ? 'on' : 'off' };
+        const key = s.curtain + '/' + s.lamp;
+        if (key !== last) { last = key; push(s); }
+      } catch {}
+    }
+    window.addEventListener('message', (e) => {
+      if (e.source !== rf.contentWindow) return;
+      const d = e.data; if (!d) return;
+      if (d.type === 'room-state-request') { poll(); return; }
+      if (d.type === 'room-state') {
+        const s = { curtain: d.curtain === 'closed' ? 'closed' : 'open', lamp: d.lamp === 'on' ? 'on' : 'off' };
+        last = s.curtain + '/' + s.lamp;
+        try { fetch('/api/room-state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) }); } catch {}
+      }
+    });
+    window.petWindow && window.petWindow.onRoomChanged && window.petWindow.onRoomChanged(() => { try { rf.src = '/pet_space/room/index.html?t=' + Date.now(); } catch {} });
+    rf.addEventListener('load', poll);
+    setInterval(poll, 1500);
+  </script>
+</body></html>
