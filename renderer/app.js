@@ -310,6 +310,21 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     if (m) t = t.slice(m.index + m[0].length); // 续写形态：掐到结尾标签
     return t.trim();
   };
+  // ===== 流式主循环：SSE 解析 + 思维链静默状态机 + 成句即说 =====
+  // 思考块（pet_think/think）内容全程静默丢弃，只有闭合后的正文按句边界实时送 TTS；
+  // 原生 tool_call delta 按片段累积，文本 <tool_call>/<invoke> 块拦截不 TTS；
+  // 每轮开始重置切句器与思考状态（cfm 时流从思考块内部开始）。
+  const TAG_RES = /<\/?(?:pet_think|think|tool_call|invoke)>/;
+  const CLOSE_THINK_RE = /<\/(?:pet_think|think)>/;
+  const OPEN_THINK_RE = /<(?:pet_think|think)>/;
+  const CLOSE_TOOL_RE = /<\/(?:tool_call|invoke)>/;
+  function partialTagLen(s) {
+    for (let len = Math.min(s.length, 12); len > 0; len--) {
+      const tail = s.slice(-len);
+      if (['<pet_think>', '</pet_think>', '<think>', '</think>', '<tool_call>', '</tool_call>', '<invoke>', '</invoke>'].some((tag) => tag.startsWith(tail))) return len;
+    }
+    return 0;
+  }
   let noTools = false;
   let lastSig = null;
   let repeatCount = 0;
@@ -322,16 +337,26 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
   const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
   let verificationNudged = false;
   const isContinuation = Boolean(continueBaseMsgs);
+  // TTS 逐句分派链：保序（合成顺序 = 播放顺序），打断时 signal 贯穿
+  let streamSpoken = false;
+  let ttsChain = Promise.resolve();
+  const dispatchTTS = (seg) => {
+    if (!seg || !seg.trim()) return;
+    streamSpoken = true;
+    ttsChain = ttsChain.then(() => speakSegment(seg, signal)).catch(() => {});
+  };
+  const slicer = makeSentenceSlicer();
+  let lastBubbleTs = 0;
   for (let round = 0; ; round++) {
     const model = 'strata-nothink'; // 固定 nothink：快；思考强度全靠 pet_think 指令动态控制
-    // 捕捉发生在拼接之后：首轮请求已包含思考要求，后续多轮或“继续”时末尾绝不再拼接新思考要求
     const sendMsgs = bodyMsgs.slice();
     const needCfm = sendMsgs[sendMsgs.length - 1]?.role === 'assistant';
     const reqPayload = {
       model, messages: sendMsgs,
       tools: noTools ? undefined : TOOLS,
       tool_choice: noTools ? undefined : 'auto',
-      temperature: 0.8, max_tokens: 65536, stream: false,
+      temperature: 0.8, max_tokens: 65536, stream: true,
+      stream_options: { include_usage: true },
       ...(needCfm ? { continue_final_message: true } : {}),
     };
     const res = await fetch(LLM_URL, {
@@ -341,30 +366,102 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       body: JSON.stringify(reqPayload),
     });
     if (!res.ok) throw new Error(`LLM HTTP ${res.status}: ${(await res.text()).slice(0, 120)}`);
-    const data = await res.json();
-    noteContext(data.usage && data.usage.prompt_tokens);   // 上下文多次≈64k → 停无限唤醒
-    const finish = data.choices?.[0]?.finish_reason;
-    const msg = data.choices?.[0]?.message;
-    if (!msg) throw new Error('LLM 返回空回复: ' + JSON.stringify(data).slice(0, 200));
-
-    // 记录最新一次底层请求体与响应体
-    lastExchange = {
-      round,
-      reqPayload,
-      resData: data,
-      resMsg: msg,
-      finish,
-      userContent,
-      hadSavedHistory: false,
+    // ===== SSE 解析 =====
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let sse = '';
+    let rawContent = '';
+    let inThink = needCfm;      // cfm 预填充：流从思考块内部开始
+    let inTool = false;         // 在 <tool_call>/<invoke> 文本块内
+    let processed = 0;          // rawContent 已处理光标
+    let finish = null, usage = null;
+    const nativeCalls = new Map();
+    let replyText = '';
+    let lastBubbleTs = 0;
+    const feedReplyDelta = (t) => {
+      if (!t) return;
+      replyText += t;
+      for (const seg of slicer.push(t)) dispatchTTS(seg);
+      const now = Date.now();
+      if (now - lastBubbleTs > 300) { lastBubbleTs = now; showBubble(slicer.preview() || replyText.slice(-140)); }
     };
-    // 兜底解析：模型偶尔不用原生 tool_calls。宽容支持 <tool_call>{json}…</tool_call>（块内可多个 JSON）+ <invoke name=..><parameter name=..>..</parameter></invoke>
-    let toolCalls = msg.tool_calls?.length ? msg.tool_calls : null;
-    if (!toolCalls && msg.content) {
-      const parsed = parseTextToolCalls(msg.content, round);
+    // 内容增量状态机：inThink 丢弃思考；inTool 留给 parseTextToolCalls；其余正文成句即说。
+    // 标签可能被 delta 切断（如 '</pet_' + 'think>'）——partialTagLen 扣住尾部半个标签等下一个 delta。
+    const processRaw = () => {
+      for (;;) {
+        const rest = rawContent.slice(processed);
+        if (!rest) return;
+        if (inThink) {
+          const m = rest.match(CLOSE_THINK_RE);
+          if (!m) { processed = rawContent.length; return; }
+          processed += m.index + m[0].length;
+          inThink = false;
+        } else if (inTool) {
+          const m = rest.match(CLOSE_TOOL_RE);
+          if (!m) { processed = rawContent.length; return; }
+          processed += m.index + m[0].length;
+          inTool = false;
+        } else {
+          const m = rest.match(TAG_RES);
+          const hold = partialTagLen(rest);
+          if (m && m.index < rest.length - hold) {
+            feedReplyDelta(rest.slice(0, m.index));
+            processed += m.index;
+            if (m[0] === '<pet_think>' || m[0] === '<think>') { inThink = true; processed += m[0].length; }
+            else { inTool = true; processed += m[0].length; }
+          } else {
+            feedReplyDelta(rest.slice(0, rest.length - hold));
+            processed += rest.length - hold;
+            return;   // 剩余是可能被切断的标签前缀，等下一个 delta
+          }
+        }
+      }
+    };
+    while (true) {
+      const rd = await reader.read();
+      if (rd.done) break;
+      sse += dec.decode(rd.value, { stream: true });
+      let nl;
+      while ((nl = sse.indexOf('\n')) >= 0) {
+        const line = sse.slice(0, nl).replace(/\r$/, '');
+        sse = sse.slice(nl + 1);
+        if (!line.startsWith('data:')) continue;
+        const pl = line.slice(5).trim();
+        if (pl === '[DONE]') continue;
+        let j; try { j = JSON.parse(pl); } catch { continue; }
+        if (j.usage) usage = j.usage;
+        const ch0 = j.choices?.[0];
+        if (!ch0) continue;
+        if (ch0.finish_reason) finish = ch0.finish_reason;
+        const d = ch0.delta || {};
+        if (Array.isArray(d.tool_calls)) {
+          inTool = true;
+          for (const tc of d.tool_calls) {
+            const idx = tc.index ?? 0;
+            const cur = nativeCalls.get(idx) || { id: '', type: 'function', function: { name: '', arguments: '' } };
+            if (tc.id) cur.id = tc.id;
+            if (tc.function?.name) cur.function.name = tc.function.name;
+            if (tc.function?.arguments) cur.function.arguments += tc.function.arguments;
+            nativeCalls.set(idx, cur);
+          }
+        }
+        if (typeof d.content === 'string' && d.content) { rawContent += d.content; processRaw(); }
+      }
+    }
+    noteContext(usage && usage.prompt_tokens);
+    // ===== 组装等价非流形状 → 完全复用现有护栏与工具执行 =====
+    const content = rawContent;
+    let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v) : null;
+    if (!toolCalls && content) {
+      const parsed = parseTextToolCalls(content, round);
       if (parsed.length) toolCalls = parsed;
     }
+    const data = { choices: [{ message: { role: 'assistant', content }, finish_reason: finish || (toolCalls ? 'tool_calls' : 'stop') }], usage: usage || {} };
+    const msg = data.choices[0].message;
+    lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent, hadSavedHistory: false };
+    // 兜底解析：模型偶尔不用原生 tool_calls（宽容解析已支持 <tool_call> 与 <invoke> 两种格式）
     if (toolCalls?.length) {
-      const msgContentBeforeTools = stripThink(msg.content ?? '').replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, '').replace(/<invoke[\s\S]*?<\/invoke>\s*/g, '').trim();
+      const msgContentBeforeTools = stripThink(content ?? '').replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, '').replace(/<invoke[\s\S]*?<\/invoke>\s*/g, '').trim();
       const truncated = finish === 'length';
       const sig = toolCalls.map((c) => (c.function?.name || '') + ':' + (c.function?.arguments || '')).join('|');
       repeatCount = sig === lastSig ? repeatCount + 1 : 0;
@@ -417,7 +514,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
             }
             if (result == null) {
               if (ROLE === 'pet') {
-                // 双窗：primary=主屏、room=卧室副屏；地标/比例按卧室画面映射
                 const pri = (displayInfo || []).find((d) => d.isPrimary);
                 const bed = (displayInfo || []).find((d) => !d.isPrimary);
                 if (where === 'primary' || where === '主屏' || where === 'main') {
@@ -475,7 +571,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
         }
       }
       if (isLive) {
-        // 记"她这轮说了什么 + 用了什么工具、动了哪个文件"；仍不记工具的参数细节和返回内容
         const note = '（本轮使用了工具：' + roundLabels.join('、') + '）';
         history.push({ role: 'assistant', content: (msgContentBeforeTools ? msgContentBeforeTools + '\n' : '') + note });
         saveHistory();
@@ -483,7 +578,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       turnUsedTools = true;
       toolCallTotal += toolCalls.length;
       if (toolCallTotal > 16) {
-        // 交替循环护栏：render→write→render 这类签名轮着变的打转，same-signature 护栏抓不到，用一轮总数兜底
         noTools = true;
         bodyMsgs.push({ role: 'user', content: '（系统：这一轮工具调用次数太多仍未收敛，像是在打转。请停止调用工具，直接用文字向主人说明现状和卡点。）' });
       }
@@ -492,7 +586,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       }
       continue;
     }
-    if (!msg.content && !toolCalls?.length) {
+    if (!content && !toolCalls?.length) {
       if (isContinuation) {
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
         if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content.includes('<tool_call>')) {
@@ -504,32 +598,26 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       }
       throw new Error('LLM 返回空回复: ' + JSON.stringify(data).slice(0, 200));
     }
-    // 思考剥离：lowthink 原生 <think> / 首轮预填充 <pet_think>——都别让气泡和 TTS 念出来
-    const text = stripThink(msg.content);
+    // 可见正文 = 思考剥离后的累积文本；流式期间已逐句 TTS（streamSpoken）
+    const text = stripThink(content);
     if (!text) {
-      // 自动接力：模型在思考完 <pet_think> 后就草草停住了，剥离思考后无正文也未显式调工具。
-      // 无需抛错中断让用户手动点“继续”，我们自动检测意向并接力续写！
       if (emptyTextRetries < 2) {
         emptyTextRetries++;
-        const fullContent = (msg.content || '').trim();
+        const fullContent = content.trim();
         const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
         const hasToolIntent = toolKeywords.test(fullContent);
-        
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
         if (lastMsg && lastMsg.role === 'assistant') {
           lastMsg.content = (lastMsg.content || '').trimEnd() + '\n' + fullContent + (hasToolIntent ? '\n<tool_call>' : '\n');
         } else {
-          bodyMsgs.push({
-            role: 'assistant',
-            content: fullContent + (hasToolIntent ? '\n<tool_call>' : '\n')
-          });
+          bodyMsgs.push({ role: 'assistant', content: fullContent + (hasToolIntent ? '\n<tool_call>' : '\n') });
         }
         showBubble(hasToolIntent ? '准备执行工具…' : '继续组织语言中…');
         continue;
       }
       throw new Error('LLM 返回空回复（思考后无正文）');
     }
-    // 查证兜底：质询类任务她零工具调用就作答 → 补一轮系统提醒逼她先查证（最多一次）
+    // 查证兜底
     if (wantsVerification && toolCallTotal === 0 && !verificationNudged && !noTools && isLive && !continueBaseMsgs) {
       verificationNudged = true;
       bodyMsgs.push({ role: 'user', content: '（系统提示：这条任务涉及需要核实的事实，但你本轮没有调用任何工具。请先调用工具查证——例如 read_file 读相关文件，或读 G:/AI/livliv-pet/logs/fstool.log 核对自己的操作记录——再给出最终回答。）' });
@@ -538,6 +626,40 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     }
     return text;
   }
+}
+
+// 增量切句器：splitForTTS 规则的流式版——强标点(≥6字)即切、弱标点(≥14字)即切、换行恒切、45 字硬切。
+// 流式下无前瞻：标点后多留一字符再定夺的合并细节省略（TTS 对拆分不敏感）
+function makeSentenceSlicer(minLen = 6, targetLen = 14) {
+  const strongEnd = '。！？!?';
+  const weakEnd = '，,、；;…—~～';
+  const hasWord = (t) => /[\p{L}\p{N}]/u.test(t);
+  let buf = '';
+  const tryCut = (out) => {
+    const last = buf.slice(-1);
+    let cut = false;
+    if (last === '\n') cut = true;
+    else if (strongEnd.includes(last)) { if (buf.length >= minLen) cut = true; }
+    else if (weakEnd.includes(last)) { if (buf.length >= targetLen) cut = true; }
+    else if (buf.length >= 45) cut = true;
+    if (cut && hasWord(buf)) { out.push(buf.trim()); buf = ''; }
+  };
+  return {
+    push(text) {
+      const out = [];
+      for (const ch of String(text || '')) {
+        buf += ch;
+        tryCut(out);
+      }
+      return out;
+    },
+    preview() { return buf.trim(); },
+    flush() {
+      const rest = buf.trim();
+      buf = '';
+      return rest && hasWord(rest) ? rest : '';
+    },
+  };
 }
 
 // 自适应切分：按字数阈值自适应结合逗号与句号，首句快速出声、后续边放边合，避免过短吞字与过长等待
@@ -586,51 +708,53 @@ function splitForTTS(text, minLen = 6, targetLen = 14) {
 }
 // GPT-SoVITS 离线静默期：连接失败/网关错误后 60s 内直接跳过合成（不报错不刷日志），到期自动重试
 let gsvDownUntil = 0;
+async function speakSegment(seg, signal) {
+  if (Date.now() < gsvDownUntil) return;
+  const res = await fetch(TTS_URL, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: seg,
+      text_lang: 'zh',
+      prompt_lang: 'zh',
+      text_split_method: 'cut5',
+      media_type: 'wav',
+      streaming_mode: false,
+      temperature: 0.4,
+      top_P: 0.7,
+      top_K: 3,
+      ...TTS_REF,
+    }),
+  });
+  if (!res.ok) throw new Error('TTS HTTP ' + res.status);
+  const blob = await res.blob();
+  speech.say(blob);
+}
 async function speak(text, signal) {
-  if (Date.now() < gsvDownUntil) { console.info('TTS 跳过（GPT-SoVITS 离线静默期）'); return; }
   const segs = splitForTTS(text);
   let fails = 0;
-  for (let i = 0; i < segs.length; i++) {
+  for (const seg of segs) {
     if (signal && signal.aborted) return;
+    if (Date.now() < gsvDownUntil) return;
     let blob = null;
     try {
       const res = await fetch(TTS_URL, {
-        method: 'POST',
-        signal,
+        method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: segs[i],
-          text_lang: 'zh',
-          prompt_lang: 'zh',
-          text_split_method: 'cut5',
-          media_type: 'wav', // 上游只出 wav；main.js 转发层用 ffmpeg 转 mp3（livliv 的 wav 流式路径不认 48k 采样率，会把 48k 当 24k 播而降八度变声；mp3 走 decodeAudioData 采样率正确）
-          streaming_mode: false,
-          temperature: 0.4, // 收紧采样：音色更稳更贴参考（默认 1.0 会漂）
-          top_P: 0.7,
-          top_K: 3,
-          ...TTS_REF,
+          text: seg, text_lang: 'zh', prompt_lang: 'zh', text_split_method: 'cut5',
+          media_type: 'wav', streaming_mode: false, temperature: 0.4, top_P: 0.7, top_K: 3, ...TTS_REF,
         }),
       });
       if (res.ok) blob = await res.blob();
-      else if (res.status === 502 || res.status === 503 || res.status === 504) {
-        // 网关错误 = GPT-SoVITS 没运行：静默跳过整段回复的合成，60s 后自动重试
-        gsvDownUntil = Date.now() + 60000;
-        console.info('TTS 静默 60s（GPT-SoVITS 未运行，HTTP ' + res.status + '）');
-        return;
-      }
-      else { fails += 1; console.warn('TTS 分段 HTTP ' + res.status + '：跳过本段 ' + String(segs[i]).slice(0, 24)); }
+      else { fails += 1; console.warn('TTS HTTP ' + res.status); }
     } catch (e) {
       if (signal && signal.aborted) return;
-      gsvDownUntil = Date.now() + 60000;   // 连接级失败（拒连/超时）= 服务离线，同样进静默期
-      console.info('TTS 静默 60s（GPT-SoVITS 连接失败：' + String(e && e.message || e).slice(0, 60) + '）');
-      return;
+      fails += 1; console.warn('TTS 失败：' + String(e && e.message || e));
     }
-    if (blob) {
-      if (signal && signal.aborted) return;
-      speech.say(blob);   // 逐句入队播放：第一句合成就先出声，后续边放边补
-      fails = 0;
-    }
-    if (fails >= 3) { console.warn('TTS 连续 3 次失败，停止剩余合成'); return; }  // 整体挂了才停，单段坏不连累其余
+    if (blob) { speech.say(blob); fails = 0; }
+    if (fails >= 3) return;
   }
 }
 

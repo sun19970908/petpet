@@ -2542,6 +2542,17 @@ void main(){ o=texture(uTex,vUv); }`;
       if (m3) t3 = t3.slice(m3.index + m3[0].length);
       return t3.trim();
     };
+    const TAG_RES = /<\/?(?:pet_think|think|tool_call|invoke)>/;
+    const CLOSE_THINK_RE = /<\/(?:pet_think|think)>/;
+    const OPEN_THINK_RE = /<(?:pet_think|think)>/;
+    const CLOSE_TOOL_RE = /<\/(?:tool_call|invoke)>/;
+    function partialTagLen(s3) {
+      for (let len = Math.min(s3.length, 12); len > 0; len--) {
+        const tail = s3.slice(-len);
+        if (["<pet_think>", "</pet_think>", "<think>", "</think>", "<tool_call>", "</tool_call>", "<invoke>", "</invoke>"].some((tag) => tag.startsWith(tail))) return len;
+      }
+      return 0;
+    }
     let noTools = false;
     let lastSig = null;
     let repeatCount = 0;
@@ -2555,6 +2566,16 @@ void main(){ o=texture(uTex,vUv); }`;
     const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent2));
     let verificationNudged = false;
     const isContinuation = Boolean(continueBaseMsgs);
+    let streamSpoken = false;
+    let ttsChain = Promise.resolve();
+    const dispatchTTS = (seg) => {
+      if (!seg || !seg.trim()) return;
+      streamSpoken = true;
+      ttsChain = ttsChain.then(() => speakSegment(seg, signal)).catch(() => {
+      });
+    };
+    const slicer = makeSentenceSlicer();
+    let lastBubbleTs = 0;
     for (let round = 0; ; round++) {
       const model = "strata-nothink";
       const sendMsgs = bodyMsgs.slice();
@@ -2566,7 +2587,8 @@ void main(){ o=texture(uTex,vUv); }`;
         tool_choice: noTools ? void 0 : "auto",
         temperature: 0.8,
         max_tokens: 65536,
-        stream: false,
+        stream: true,
+        stream_options: { include_usage: true },
         ...needCfm ? { continue_final_message: true } : {}
       };
       const res = await fetch(LLM_URL, {
@@ -2576,27 +2598,119 @@ void main(){ o=texture(uTex,vUv); }`;
         body: JSON.stringify(reqPayload)
       });
       if (!res.ok) throw new Error(`LLM HTTP ${res.status}: ${(await res.text()).slice(0, 120)}`);
-      const data = await res.json();
-      noteContext(data.usage && data.usage.prompt_tokens);
-      const finish = data.choices?.[0]?.finish_reason;
-      const msg = data.choices?.[0]?.message;
-      if (!msg) throw new Error("LLM \u8FD4\u56DE\u7A7A\u56DE\u590D: " + JSON.stringify(data).slice(0, 200));
-      lastExchange = {
-        round,
-        reqPayload,
-        resData: data,
-        resMsg: msg,
-        finish,
-        userContent: userContent2,
-        hadSavedHistory: false
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let sse = "";
+      let rawContent = "";
+      let inThink = needCfm;
+      let inTool = false;
+      let processed = 0;
+      let finish = null, usage = null;
+      const nativeCalls = /* @__PURE__ */ new Map();
+      let replyText = "";
+      let lastBubbleTs2 = 0;
+      const feedReplyDelta = (t3) => {
+        if (!t3) return;
+        replyText += t3;
+        for (const seg of slicer.push(t3)) dispatchTTS(seg);
+        const now = Date.now();
+        if (now - lastBubbleTs2 > 300) {
+          lastBubbleTs2 = now;
+          showBubble(slicer.preview() || replyText.slice(-140));
+        }
       };
-      let toolCalls = msg.tool_calls?.length ? msg.tool_calls : null;
-      if (!toolCalls && msg.content) {
-        const parsed = parseTextToolCalls(msg.content, round);
+      const processRaw = () => {
+        for (; ; ) {
+          const rest = rawContent.slice(processed);
+          if (!rest) return;
+          if (inThink) {
+            const m3 = rest.match(CLOSE_THINK_RE);
+            if (!m3) {
+              processed = rawContent.length;
+              return;
+            }
+            processed += m3.index + m3[0].length;
+            inThink = false;
+          } else if (inTool) {
+            const m3 = rest.match(CLOSE_TOOL_RE);
+            if (!m3) {
+              processed = rawContent.length;
+              return;
+            }
+            processed += m3.index + m3[0].length;
+            inTool = false;
+          } else {
+            const m3 = rest.match(TAG_RES);
+            const hold = partialTagLen(rest);
+            if (m3 && m3.index < rest.length - hold) {
+              feedReplyDelta(rest.slice(0, m3.index));
+              processed += m3.index;
+              if (m3[0] === "<pet_think>" || m3[0] === "<think>") {
+                inThink = true;
+                processed += m3[0].length;
+              } else {
+                inTool = true;
+                processed += m3[0].length;
+              }
+            } else {
+              feedReplyDelta(rest.slice(0, rest.length - hold));
+              processed += rest.length - hold;
+              return;
+            }
+          }
+        }
+      };
+      while (true) {
+        const rd = await reader.read();
+        if (rd.done) break;
+        sse += dec.decode(rd.value, { stream: true });
+        let nl;
+        while ((nl = sse.indexOf("\n")) >= 0) {
+          const line = sse.slice(0, nl).replace(/\r$/, "");
+          sse = sse.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const pl = line.slice(5).trim();
+          if (pl === "[DONE]") continue;
+          let j3;
+          try {
+            j3 = JSON.parse(pl);
+          } catch {
+            continue;
+          }
+          if (j3.usage) usage = j3.usage;
+          const ch0 = j3.choices?.[0];
+          if (!ch0) continue;
+          if (ch0.finish_reason) finish = ch0.finish_reason;
+          const d2 = ch0.delta || {};
+          if (Array.isArray(d2.tool_calls)) {
+            inTool = true;
+            for (const tc of d2.tool_calls) {
+              const idx = tc.index ?? 0;
+              const cur = nativeCalls.get(idx) || { id: "", type: "function", function: { name: "", arguments: "" } };
+              if (tc.id) cur.id = tc.id;
+              if (tc.function?.name) cur.function.name = tc.function.name;
+              if (tc.function?.arguments) cur.function.arguments += tc.function.arguments;
+              nativeCalls.set(idx, cur);
+            }
+          }
+          if (typeof d2.content === "string" && d2.content) {
+            rawContent += d2.content;
+            processRaw();
+          }
+        }
+      }
+      noteContext(usage && usage.prompt_tokens);
+      const content = rawContent;
+      let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a3, b4) => a3[0] - b4[0]).map(([, v4]) => v4) : null;
+      if (!toolCalls && content) {
+        const parsed = parseTextToolCalls(content, round);
         if (parsed.length) toolCalls = parsed;
       }
+      const data = { choices: [{ message: { role: "assistant", content }, finish_reason: finish || (toolCalls ? "tool_calls" : "stop") }], usage: usage || {} };
+      const msg = data.choices[0].message;
+      lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent: userContent2, hadSavedHistory: false };
       if (toolCalls?.length) {
-        const msgContentBeforeTools = stripThink(msg.content ?? "").replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, "").replace(/<invoke[\s\S]*?<\/invoke>\s*/g, "").trim();
+        const msgContentBeforeTools = stripThink(content ?? "").replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, "").replace(/<invoke[\s\S]*?<\/invoke>\s*/g, "").trim();
         const truncated = finish === "length";
         const sig = toolCalls.map((c3) => (c3.function?.name || "") + ":" + (c3.function?.arguments || "")).join("|");
         repeatCount = sig === lastSig ? repeatCount + 1 : 0;
@@ -2735,7 +2849,7 @@ void main(){ o=texture(uTex,vUv); }`;
         }
         continue;
       }
-      if (!msg.content && !toolCalls?.length) {
+      if (!content && !toolCalls?.length) {
         if (isContinuation) {
           const lastMsg = bodyMsgs[bodyMsgs.length - 1];
           if (lastMsg && lastMsg.role === "assistant" && !lastMsg.content.includes("<tool_call>")) {
@@ -2747,21 +2861,18 @@ void main(){ o=texture(uTex,vUv); }`;
         }
         throw new Error("LLM \u8FD4\u56DE\u7A7A\u56DE\u590D: " + JSON.stringify(data).slice(0, 200));
       }
-      const text = stripThink(msg.content);
+      const text = stripThink(content);
       if (!text) {
         if (emptyTextRetries < 2) {
           emptyTextRetries++;
-          const fullContent = (msg.content || "").trim();
+          const fullContent = content.trim();
           const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
           const hasToolIntent = toolKeywords.test(fullContent);
           const lastMsg = bodyMsgs[bodyMsgs.length - 1];
           if (lastMsg && lastMsg.role === "assistant") {
             lastMsg.content = (lastMsg.content || "").trimEnd() + "\n" + fullContent + (hasToolIntent ? "\n<tool_call>" : "\n");
           } else {
-            bodyMsgs.push({
-              role: "assistant",
-              content: fullContent + (hasToolIntent ? "\n<tool_call>" : "\n")
-            });
+            bodyMsgs.push({ role: "assistant", content: fullContent + (hasToolIntent ? "\n<tool_call>" : "\n") });
           }
           showBubble(hasToolIntent ? "\u51C6\u5907\u6267\u884C\u5DE5\u5177\u2026" : "\u7EE7\u7EED\u7EC4\u7EC7\u8BED\u8A00\u4E2D\u2026");
           continue;
@@ -2776,6 +2887,44 @@ void main(){ o=texture(uTex,vUv); }`;
       }
       return text;
     }
+  }
+  function makeSentenceSlicer(minLen = 6, targetLen = 14) {
+    const strongEnd = "\u3002\uFF01\uFF1F!?";
+    const weakEnd = "\uFF0C,\u3001\uFF1B;\u2026\u2014~\uFF5E";
+    const hasWord = (t3) => /[\p{L}\p{N}]/u.test(t3);
+    let buf = "";
+    const tryCut = (out) => {
+      const last = buf.slice(-1);
+      let cut = false;
+      if (last === "\n") cut = true;
+      else if (strongEnd.includes(last)) {
+        if (buf.length >= minLen) cut = true;
+      } else if (weakEnd.includes(last)) {
+        if (buf.length >= targetLen) cut = true;
+      } else if (buf.length >= 45) cut = true;
+      if (cut && hasWord(buf)) {
+        out.push(buf.trim());
+        buf = "";
+      }
+    };
+    return {
+      push(text) {
+        const out = [];
+        for (const ch of String(text || "")) {
+          buf += ch;
+          tryCut(out);
+        }
+        return out;
+      },
+      preview() {
+        return buf.trim();
+      },
+      flush() {
+        const rest = buf.trim();
+        buf = "";
+        return rest && hasWord(rest) ? rest : "";
+      }
+    };
   }
   function splitForTTS(text, minLen = 6, targetLen = 14) {
     const s3 = String(text || "").replace(/\r/g, "").trim();
@@ -2820,15 +2969,35 @@ void main(){ o=texture(uTex,vUv); }`;
     return segs.length ? segs : [s3];
   }
   var gsvDownUntil = 0;
+  async function speakSegment(seg, signal) {
+    if (Date.now() < gsvDownUntil) return;
+    const res = await fetch(TTS_URL, {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: seg,
+        text_lang: "zh",
+        prompt_lang: "zh",
+        text_split_method: "cut5",
+        media_type: "wav",
+        streaming_mode: false,
+        temperature: 0.4,
+        top_P: 0.7,
+        top_K: 3,
+        ...TTS_REF
+      })
+    });
+    if (!res.ok) throw new Error("TTS HTTP " + res.status);
+    const blob = await res.blob();
+    speech.say(blob);
+  }
   async function speak(text, signal) {
-    if (Date.now() < gsvDownUntil) {
-      console.info("TTS \u8DF3\u8FC7\uFF08GPT-SoVITS \u79BB\u7EBF\u9759\u9ED8\u671F\uFF09");
-      return;
-    }
     const segs = splitForTTS(text);
     let fails = 0;
-    for (let i3 = 0; i3 < segs.length; i3++) {
+    for (const seg of segs) {
       if (signal && signal.aborted) return;
+      if (Date.now() < gsvDownUntil) return;
       let blob = null;
       try {
         const res = await fetch(TTS_URL, {
@@ -2836,44 +3005,33 @@ void main(){ o=texture(uTex,vUv); }`;
           signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            text: segs[i3],
+            text: seg,
             text_lang: "zh",
             prompt_lang: "zh",
             text_split_method: "cut5",
             media_type: "wav",
-            // 上游只出 wav；main.js 转发层用 ffmpeg 转 mp3（livliv 的 wav 流式路径不认 48k 采样率，会把 48k 当 24k 播而降八度变声；mp3 走 decodeAudioData 采样率正确）
             streaming_mode: false,
             temperature: 0.4,
-            // 收紧采样：音色更稳更贴参考（默认 1.0 会漂）
             top_P: 0.7,
             top_K: 3,
             ...TTS_REF
           })
         });
         if (res.ok) blob = await res.blob();
-        else if (res.status === 502 || res.status === 503 || res.status === 504) {
-          gsvDownUntil = Date.now() + 6e4;
-          console.info("TTS \u9759\u9ED8 60s\uFF08GPT-SoVITS \u672A\u8FD0\u884C\uFF0CHTTP " + res.status + "\uFF09");
-          return;
-        } else {
+        else {
           fails += 1;
-          console.warn("TTS \u5206\u6BB5 HTTP " + res.status + "\uFF1A\u8DF3\u8FC7\u672C\u6BB5 " + String(segs[i3]).slice(0, 24));
+          console.warn("TTS HTTP " + res.status);
         }
       } catch (e3) {
         if (signal && signal.aborted) return;
-        gsvDownUntil = Date.now() + 6e4;
-        console.info("TTS \u9759\u9ED8 60s\uFF08GPT-SoVITS \u8FDE\u63A5\u5931\u8D25\uFF1A" + String(e3 && e3.message || e3).slice(0, 60) + "\uFF09");
-        return;
+        fails += 1;
+        console.warn("TTS \u5931\u8D25\uFF1A" + String(e3 && e3.message || e3));
       }
       if (blob) {
-        if (signal && signal.aborted) return;
         speech.say(blob);
         fails = 0;
       }
-      if (fails >= 3) {
-        console.warn("TTS \u8FDE\u7EED 3 \u6B21\u5931\u8D25\uFF0C\u505C\u6B62\u5269\u4F59\u5408\u6210");
-        return;
-      }
+      if (fails >= 3) return;
     }
   }
   var turnAbort = null;
