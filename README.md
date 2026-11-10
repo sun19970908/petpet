@@ -36,6 +36,12 @@ npm run build
 
 再重开桌宠（静态服务已发 no-cache，重开即生效）。
 
+## 防编造机制（2026-11-11）
+- pet_think 指令含硬规则：查证类任务第一动作必须是调用工具（app.js THINK_MODULES）
+- 工具台账自动注入每轮上下文（fstool-tail，最近 10 次真实操作）
+- 查证兜底：用户消息含 查证/核实/台账/读过/做了没 等且本轮零工具调用 → 自动补一轮系统提醒逼她先查证（每任务一次，app.js wantsVerification/verificationNudged）
+- 三层合力的效果：她会先对台账认账（引用真实时间戳）、再真读文件、再给出只有读过才说得出的细节
+
 ## 已知坑
 
 - **表情必须闪现**：`setExpression()` 不自动解除，常驻表情（尤其 p01 的 smile=闭眼大笑）会盖住全部原生视线/挑眉/浅笑互动，`faceFree` 也变 false。所有表情用 4 秒后 `setExpression(null)` 回中性的模式

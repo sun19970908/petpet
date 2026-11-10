@@ -2,6 +2,18 @@
 import { Player } from '@livliv-dev/player';
 import { createSpeech } from '@livliv-dev/player/voice';
 
+// 帧率封顶 30fps：桌宠动画（呼吸/眨眼/摇摆）足够流畅；60Hz 全速渲染会让 DWM 合成吃掉大量 GPU
+// 必须在 new Player() 之前装上——livliv 的渲染循环每帧经 window.requestAnimationFrame 排程
+(function capFPS(fps = 30) {
+  const orig = window.requestAnimationFrame.bind(window);
+  const min = 1000 / fps - 1;
+  let last = 0;
+  window.requestAnimationFrame = (cb) => orig((t) => {
+    if (t - last >= min) { last = t; cb(t); }
+    else orig(() => window.requestAnimationFrame(cb));   // 未到节拍：排到下一帧再查
+  });
+})();
+
 window.__bundleVersion = 'v3-enter';
 
 const LLM_URL = '/api/llm'; // 主进程转发到反代 11435
@@ -44,8 +56,8 @@ const history = []; // 会话内存缓存；事实源在硬盘文件（debug 模
 // 思考模块（自适应 v2）：强度判断交给模型自己——只规定格式（标签内先报难度再想），不替它判断
 const THINK_MODULES = {
   pet_think: {
-    instruction: '思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：简单问题只需进行一句话的简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后调用工具或回复。也可以选择不思考，直接输出</pet_think>然后回复。\n 思考时必须以"人设档案"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止反思自身身份或思考语气等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！',
-    prefill: '<pet_think>\n让本桌宠想想（先判断难度）：',
+    instruction: '思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以"人设档案"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止反思自身身份或思考语气等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n ',
+    prefill: '<think>跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度\n</think>\n',
   },
 };
 // 思考方案开关（启动脚本 PET_THINK 环境变量 → /api/config）：pet_think（模型自选强度）| off（不注入）
@@ -167,12 +179,11 @@ const TOOLS = [
   { type: 'function', function: { name: 'list_dir', description: '列出目录里的文件和子目录', parameters: { type: 'object', properties: { path: { type: 'string', description: '目录完整路径' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'file_tool', description: '对 pet_space 沙盒里的文件做写/追加/复制/删除操作（四合一）。所有写操作只允许在 G:/AI/livliv-pet/pet_space/ 目录内（可含子目录），其他路径一律拒绝。根据 action 选对应参数：\n- write：覆盖写入（或新建）文件 → 填 path + content\n- append：在文件末尾追加（不存在则新建）→ 填 path + content\n- copy：复制文件或目录到沙盒内 → 填 src_path（源可任意可读路径）+ dest_path（目标必须在沙盒内）\n- delete：删除沙盒内文件或目录 → 填 path\n 注意：改文件一小段用 edit_file 而不是 file_tool。', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['write', 'append', 'copy', 'delete'], description: '要做的操作：write 覆盖写入 / append 追加 / copy 复制 / delete 删除' }, path: { type: 'string', description: 'write/append/delete 用：目标文件或目录完整路径，必须在 G:/AI/livliv-pet/pet_space/ 内' }, content: { type: 'string', description: 'write/append 用：要写入或追加的文本内容' }, src_path: { type: 'string', description: 'copy 用：源文件或目录的完整路径（可读任意路径）' }, dest_path: { type: 'string', description: 'copy 用：目标完整路径，必须在 G:/AI/livliv-pet/pet_space/ 内' } }, required: ['action'] } } },
   { type: 'function', function: { name: 'edit_file', description: '只改文件中间的一小段：把 old_string 原样替换成 new_string，不用重发整个文件。只允许编辑 G:/AI/livliv-pet/pet_space/ 内的文件。old_string 必须与文件里完全一致（空格/换行一字不差）且默认要求唯一；出现多次会报错，此时多给些上下文或传 replace_all=true', parameters: { type: 'object', properties: { path: { type: 'string', description: '目标文件完整路径，必须在 G:/AI/livliv-pet/pet_space/ 内' }, old_string: { type: 'string', description: '要被替换的原文片段（精确匹配，默认需唯一）' }, new_string: { type: 'string', description: '替换成的新片段' }, replace_all: { type: 'boolean', description: '可选：true 替换所有匹配；默认只替换唯一匹配' } }, required: ['path', 'old_string', 'new_string'] } } },
-  { type: 'function', function: { name: 'take_screenshot', description: '截取用户屏幕的完整画面，你会直接"看到"这张图。当用户让你看屏幕、问你在做什么、帮忙看屏幕上的内容/报错或者你想看屏幕时调用它', parameters: { type: 'object', properties: {}, required: [] } } },
+  { type: 'function', function: { name: 'take_screenshot', description: '截取用户主屏幕的完整画面（用户的工作世界），你会直接"看到"这张图。当用户让你看屏幕、问你在做什么、帮忙看屏幕上的内容/报错或者你想看屏幕时调用它', parameters: { type: 'object', properties: {}, required: [] } } },
+  { type: 'function', function: { name: 'look_at_room', description: '看一眼你自己房间（卧室所在屏）的实际状态：照片墙、窗帘开关、灯、你在房间里的位置。想回房间看看、确认装饰效果、或睡觉前检查房间时调用；没有副屏或房间未开放时会报错', parameters: { type: 'object', properties: {}, required: [] } } },
   { type: 'function', function: { name: 'search_memory', description: '在你们过往的对话记忆里做语义搜索。当用户提到过去的事、问你记不记得什么、或你需要旧信息时调用', parameters: { type: 'object', properties: { query: { type: 'string', description: '要搜索的记忆关键词或描述' }, limit: { type: 'number', description: '可选，返回条数' } }, required: ['query'] } } },
-  { type: 'function', function: { name: 'room_control', description: '控制你的卧室（副屏上的房间）：拉窗帘、开关灯。只有你人在卧室里时才能操作；不传参数则查看当前状态', parameters: { type: 'object', properties: { curtain: { type: 'string', enum: ['open', 'closed'], description: '窗帘：open 拉开 / closed 拉上' }, lamp: { type: 'string', enum: ['on', 'off'], description: '灯：on 开 / off 关' } }, required: [] } } },
   { type: 'function', function: { name: 'walk_to', description: '让你自己走过去（平滑滑行，没有迈腿动画）。where="primary" 去主屏、where="room" 回卧室副屏（这两个可再带 x,y 指定屏内位置，0~1，x=0 最左、y=1 最下；不带就站底部中间）；也可以用房间地标名（如 window/desk/bed/door/center，由 pet_space/room/landmarks.json 决定），或只给 x,y（0~1，按卧室画面比例，脚下位置）。', parameters: { type: 'object', properties: { where: { type: 'string', description: 'primary=去主屏、room=回卧室，或地标名如 window/desk/bed/door/center' }, x: { type: 'number', description: '可选：横向比例 0~1。配合 primary/room 时是屏内位置；单独用时是卧室画面比例' }, y: { type: 'number', description: '可选：脚下纵向比例 0~1。配合 primary/room 时是屏内位置' } }, required: [] } } },
   { type: 'function', function: { name: 'resize_image', description: '把一张图片等比缩到指定最大边并压成小 jpg（默认最长边 512、质量 82），存回 pet_space 并把小图回传给你看。专门用来把 ComfyUI 生成的大图（1MB+）压成能塞进小相框的小图。图片必须已在 pet_space 内；输出默认同目录 <原名>_small.jpg，可用 out_path 指定。', parameters: { type: 'object', properties: { path: { type: 'string', description: 'pet_space 内的图片完整路径' }, max_width: { type: 'number', description: '可选：最大宽，默认 512' }, max_height: { type: 'number', description: '可选：最大高，默认 512' }, quality: { type: 'number', description: '可选：jpg 质量 1-100，默认 82' }, out_path: { type: 'string', description: '可选：输出路径（必须在 pet_space 内），默认同目录 <原名>_small.jpg' } }, required: ['path'] } } },
-  { type: 'function', function: { name: 'render_preview', description: '把你在 pet_space 里写的 HTML/CSS 文件离线渲染成一张图片回传给你，让你亲眼看到自己做的界面长什么样（小书架、热可可架这类装饰页）。只接受 G:/AI/livliv-pet/pet_space/ 内的文件；width 指定预览宽度（默认 1280），高度默认拍整页（超出首屏的下半部分也会拍全）', parameters: { type: 'object', properties: { path: { type: 'string', description: '要渲染的 HTML 文件完整路径，必须在 G:/AI/livliv-pet/pet_space/ 内' }, width: { type: 'number', description: '可选：预览宽度像素，默认 1280' }, height: { type: 'number', description: '可选：预览高度像素，默认 800' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'comfy_run', description: '跑一份 ComfyUI 工作流生成图片，并把图回传给你"看到"。workflow_file 指向 pet_space 里的工作流 JSON（先用 read_file 看 pet_space/comfy/ 下的实例，用 edit_file 改提示词/种子/尺寸再跑），或直接给 workflow 对象（ComfyUI API 格式）。工作流里要有 SaveImage 或 PreviewImage 节点；若含 LoadImage（如"抠图_透明背景.json"），必须传 input_image 指向要处理的图。图片会存到 pet_space/generated/。SDXL 一张约 10~40 秒，RMBG 抠图约 2~5 秒。', parameters: { type: 'object', properties: { workflow_file: { type: 'string', description: 'pet_space 内的工作流 .json 路径（推荐：复制/改 pet_space/comfy/ 里的实例）' }, workflow: { type: 'object', description: '或直接给 ComfyUI API 格式的工作流对象' }, input_image: { type: 'string', description: '可选：pet_space 内的图片路径。工作流有 LoadImage 节点时，会先把这张图拷进 ComfyUI input 并把 LoadImage 指向它（抠图/图生图用）' } }, required: [] } } },
 ];
 
@@ -307,6 +318,9 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
   const isLive = !continueBaseMsgs;
   if (isLive) { history.push({ role: 'user', content: userContent }); saveHistory(); }
   let emptyTextRetries = 0;
+  // 查证类任务（质询她做过什么/读过什么）且本轮零工具调用 → 自动补一轮提醒（防凭印象作答，每任务最多一次）
+  const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
+  let verificationNudged = false;
   const isContinuation = Boolean(continueBaseMsgs);
   for (let round = 0; ; round++) {
     const model = 'strata-nothink'; // 固定 nothink：快；思考强度全靠 pet_think 指令动态控制
@@ -385,17 +399,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
             role: 'tool', tool_call_id: call.id,
             content: r.length ? r.map((h) => `[${new Date(h.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}] ${h.text}`).join('\n---\n') : '（没有找到相关记忆）',
           });
-          continue;
-        }
-        if (call.function?.name === 'room_control') {
-          let result;
-          if (!inRoom && ROLE !== 'pet') {
-            result = '你现在不在卧室里（在桌面上），够不到窗帘和灯。让主人把你拖回副屏卧室再操作。';
-          } else {
-            await setRoomState(parsed);
-            result = `卧室现在：窗帘${roomState.curtain === 'closed' ? '拉上了' : '拉开了'}，灯${roomState.lamp === 'on' ? '开着' : '关着'}`;
-          }
-          bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: result });
           continue;
         }
         if (call.function?.name === 'walk_to') {
@@ -509,7 +512,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       if (emptyTextRetries < 2) {
         emptyTextRetries++;
         const fullContent = (msg.content || '').trim();
-        const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|room_control|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
+        const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
         const hasToolIntent = toolKeywords.test(fullContent);
         
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
@@ -525,6 +528,13 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
         continue;
       }
       throw new Error('LLM 返回空回复（思考后无正文）');
+    }
+    // 查证兜底：质询类任务她零工具调用就作答 → 补一轮系统提醒逼她先查证（最多一次）
+    if (wantsVerification && toolCallTotal === 0 && !verificationNudged && !noTools && isLive && !continueBaseMsgs) {
+      verificationNudged = true;
+      bodyMsgs.push({ role: 'user', content: '（系统提示：这条任务涉及需要核实的事实，但你本轮没有调用任何工具。请先调用工具查证——例如 read_file 读相关文件，或读 G:/AI/livliv-pet/logs/fstool.log 核对自己的操作记录——再给出最终回答。）' });
+      showBubble('提醒她先查证…');
+      continue;
     }
     return text;
   }
@@ -574,7 +584,10 @@ function splitForTTS(text, minLen = 6, targetLen = 14) {
   }
   return segs.length ? segs : [s];
 }
+// GPT-SoVITS 离线静默期：连接失败/网关错误后 60s 内直接跳过合成（不报错不刷日志），到期自动重试
+let gsvDownUntil = 0;
 async function speak(text, signal) {
+  if (Date.now() < gsvDownUntil) { console.info('TTS 跳过（GPT-SoVITS 离线静默期）'); return; }
   const segs = splitForTTS(text);
   let fails = 0;
   for (let i = 0; i < segs.length; i++) {
@@ -599,10 +612,18 @@ async function speak(text, signal) {
         }),
       });
       if (res.ok) blob = await res.blob();
+      else if (res.status === 502 || res.status === 503 || res.status === 504) {
+        // 网关错误 = GPT-SoVITS 没运行：静默跳过整段回复的合成，60s 后自动重试
+        gsvDownUntil = Date.now() + 60000;
+        console.info('TTS 静默 60s（GPT-SoVITS 未运行，HTTP ' + res.status + '）');
+        return;
+      }
       else { fails += 1; console.warn('TTS 分段 HTTP ' + res.status + '：跳过本段 ' + String(segs[i]).slice(0, 24)); }
     } catch (e) {
       if (signal && signal.aborted) return;
-      fails += 1; console.warn('TTS 分段请求失败：跳过本段 ' + String(e && e.message || e));
+      gsvDownUntil = Date.now() + 60000;   // 连接级失败（拒连/超时）= 服务离线，同样进静默期
+      console.info('TTS 静默 60s（GPT-SoVITS 连接失败：' + String(e && e.message || e).slice(0, 60) + '）');
+      return;
     }
     if (blob) {
       if (signal && signal.aborted) return;
@@ -817,7 +838,7 @@ async function continueRequest() {
     }
 
     // 检查是否属于“说了要调用工具/在思考里计划了工具，但实际未触发 tool_call”的情况
-    const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|room_control|调用.*工具)/i;
+    const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|调用.*工具)/i;
     const hadNoToolCalls = !prevRes.tool_calls?.length && !/<tool_call>/i.test(prevRes.content || '');
     const seemsToolIntent = toolKeywords.test(prevRes.content || '') && hadNoToolCalls;
 

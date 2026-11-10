@@ -2238,6 +2238,17 @@ void main(){ o=texture(uTex,vUv); }`;
   }
 
   // renderer/app.js
+  (function capFPS(fps = 30) {
+    const orig = window.requestAnimationFrame.bind(window);
+    const min = 1e3 / fps - 1;
+    let last = 0;
+    window.requestAnimationFrame = (cb) => orig((t3) => {
+      if (t3 - last >= min) {
+        last = t3;
+        cb(t3);
+      } else orig(() => window.requestAnimationFrame(cb));
+    });
+  })();
   window.__bundleVersion = "v3-enter";
   var LLM_URL = "/api/llm";
   var TTS_URL = "/api/tts";
@@ -2269,8 +2280,8 @@ void main(){ o=texture(uTex,vUv); }`;
   var history = [];
   var THINK_MODULES = {
     pet_think: {
-      instruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u7B80\u5355\u95EE\u9898\u53EA\u9700\u8FDB\u884C\u4E00\u53E5\u8BDD\u7684\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\u4E5F\u53EF\u4EE5\u9009\u62E9\u4E0D\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u53CD\u601D\u81EA\u8EAB\u8EAB\u4EFD\u6216\u601D\u8003\u8BED\u6C14\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01',
-      prefill: "<pet_think>\n\u8BA9\u672C\u684C\u5BA0\u60F3\u60F3\uFF08\u5148\u5224\u65AD\u96BE\u5EA6\uFF09\uFF1A"
+      instruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u53CD\u601D\u81EA\u8EAB\u8EAB\u4EFD\u6216\u601D\u8003\u8BED\u6C14\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n ',
+      prefill: "<think>\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6\n</think>\n"
     }
   };
   var THINK_MODE = "pet_think";
@@ -2392,12 +2403,11 @@ void main(){ o=texture(uTex,vUv); }`;
     { type: "function", function: { name: "list_dir", description: "\u5217\u51FA\u76EE\u5F55\u91CC\u7684\u6587\u4EF6\u548C\u5B50\u76EE\u5F55", parameters: { type: "object", properties: { path: { type: "string", description: "\u76EE\u5F55\u5B8C\u6574\u8DEF\u5F84" } }, required: ["path"] } } },
     { type: "function", function: { name: "file_tool", description: "\u5BF9 pet_space \u6C99\u76D2\u91CC\u7684\u6587\u4EF6\u505A\u5199/\u8FFD\u52A0/\u590D\u5236/\u5220\u9664\u64CD\u4F5C\uFF08\u56DB\u5408\u4E00\uFF09\u3002\u6240\u6709\u5199\u64CD\u4F5C\u53EA\u5141\u8BB8\u5728 G:/AI/livliv-pet/pet_space/ \u76EE\u5F55\u5185\uFF08\u53EF\u542B\u5B50\u76EE\u5F55\uFF09\uFF0C\u5176\u4ED6\u8DEF\u5F84\u4E00\u5F8B\u62D2\u7EDD\u3002\u6839\u636E action \u9009\u5BF9\u5E94\u53C2\u6570\uFF1A\n- write\uFF1A\u8986\u76D6\u5199\u5165\uFF08\u6216\u65B0\u5EFA\uFF09\u6587\u4EF6 \u2192 \u586B path + content\n- append\uFF1A\u5728\u6587\u4EF6\u672B\u5C3E\u8FFD\u52A0\uFF08\u4E0D\u5B58\u5728\u5219\u65B0\u5EFA\uFF09\u2192 \u586B path + content\n- copy\uFF1A\u590D\u5236\u6587\u4EF6\u6216\u76EE\u5F55\u5230\u6C99\u76D2\u5185 \u2192 \u586B src_path\uFF08\u6E90\u53EF\u4EFB\u610F\u53EF\u8BFB\u8DEF\u5F84\uFF09+ dest_path\uFF08\u76EE\u6807\u5FC5\u987B\u5728\u6C99\u76D2\u5185\uFF09\n- delete\uFF1A\u5220\u9664\u6C99\u76D2\u5185\u6587\u4EF6\u6216\u76EE\u5F55 \u2192 \u586B path\n \u6CE8\u610F\uFF1A\u6539\u6587\u4EF6\u4E00\u5C0F\u6BB5\u7528 edit_file \u800C\u4E0D\u662F file_tool\u3002", parameters: { type: "object", properties: { action: { type: "string", enum: ["write", "append", "copy", "delete"], description: "\u8981\u505A\u7684\u64CD\u4F5C\uFF1Awrite \u8986\u76D6\u5199\u5165 / append \u8FFD\u52A0 / copy \u590D\u5236 / delete \u5220\u9664" }, path: { type: "string", description: "write/append/delete \u7528\uFF1A\u76EE\u6807\u6587\u4EF6\u6216\u76EE\u5F55\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" }, content: { type: "string", description: "write/append \u7528\uFF1A\u8981\u5199\u5165\u6216\u8FFD\u52A0\u7684\u6587\u672C\u5185\u5BB9" }, src_path: { type: "string", description: "copy \u7528\uFF1A\u6E90\u6587\u4EF6\u6216\u76EE\u5F55\u7684\u5B8C\u6574\u8DEF\u5F84\uFF08\u53EF\u8BFB\u4EFB\u610F\u8DEF\u5F84\uFF09" }, dest_path: { type: "string", description: "copy \u7528\uFF1A\u76EE\u6807\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" } }, required: ["action"] } } },
     { type: "function", function: { name: "edit_file", description: "\u53EA\u6539\u6587\u4EF6\u4E2D\u95F4\u7684\u4E00\u5C0F\u6BB5\uFF1A\u628A old_string \u539F\u6837\u66FF\u6362\u6210 new_string\uFF0C\u4E0D\u7528\u91CD\u53D1\u6574\u4E2A\u6587\u4EF6\u3002\u53EA\u5141\u8BB8\u7F16\u8F91 G:/AI/livliv-pet/pet_space/ \u5185\u7684\u6587\u4EF6\u3002old_string \u5FC5\u987B\u4E0E\u6587\u4EF6\u91CC\u5B8C\u5168\u4E00\u81F4\uFF08\u7A7A\u683C/\u6362\u884C\u4E00\u5B57\u4E0D\u5DEE\uFF09\u4E14\u9ED8\u8BA4\u8981\u6C42\u552F\u4E00\uFF1B\u51FA\u73B0\u591A\u6B21\u4F1A\u62A5\u9519\uFF0C\u6B64\u65F6\u591A\u7ED9\u4E9B\u4E0A\u4E0B\u6587\u6216\u4F20 replace_all=true", parameters: { type: "object", properties: { path: { type: "string", description: "\u76EE\u6807\u6587\u4EF6\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" }, old_string: { type: "string", description: "\u8981\u88AB\u66FF\u6362\u7684\u539F\u6587\u7247\u6BB5\uFF08\u7CBE\u786E\u5339\u914D\uFF0C\u9ED8\u8BA4\u9700\u552F\u4E00\uFF09" }, new_string: { type: "string", description: "\u66FF\u6362\u6210\u7684\u65B0\u7247\u6BB5" }, replace_all: { type: "boolean", description: "\u53EF\u9009\uFF1Atrue \u66FF\u6362\u6240\u6709\u5339\u914D\uFF1B\u9ED8\u8BA4\u53EA\u66FF\u6362\u552F\u4E00\u5339\u914D" } }, required: ["path", "old_string", "new_string"] } } },
-    { type: "function", function: { name: "take_screenshot", description: '\u622A\u53D6\u7528\u6237\u5C4F\u5E55\u7684\u5B8C\u6574\u753B\u9762\uFF0C\u4F60\u4F1A\u76F4\u63A5"\u770B\u5230"\u8FD9\u5F20\u56FE\u3002\u5F53\u7528\u6237\u8BA9\u4F60\u770B\u5C4F\u5E55\u3001\u95EE\u4F60\u5728\u505A\u4EC0\u4E48\u3001\u5E2E\u5FD9\u770B\u5C4F\u5E55\u4E0A\u7684\u5185\u5BB9/\u62A5\u9519\u6216\u8005\u4F60\u60F3\u770B\u5C4F\u5E55\u65F6\u8C03\u7528\u5B83', parameters: { type: "object", properties: {}, required: [] } } },
+    { type: "function", function: { name: "take_screenshot", description: '\u622A\u53D6\u7528\u6237\u4E3B\u5C4F\u5E55\u7684\u5B8C\u6574\u753B\u9762\uFF08\u7528\u6237\u7684\u5DE5\u4F5C\u4E16\u754C\uFF09\uFF0C\u4F60\u4F1A\u76F4\u63A5"\u770B\u5230"\u8FD9\u5F20\u56FE\u3002\u5F53\u7528\u6237\u8BA9\u4F60\u770B\u5C4F\u5E55\u3001\u95EE\u4F60\u5728\u505A\u4EC0\u4E48\u3001\u5E2E\u5FD9\u770B\u5C4F\u5E55\u4E0A\u7684\u5185\u5BB9/\u62A5\u9519\u6216\u8005\u4F60\u60F3\u770B\u5C4F\u5E55\u65F6\u8C03\u7528\u5B83', parameters: { type: "object", properties: {}, required: [] } } },
+    { type: "function", function: { name: "look_at_room", description: "\u770B\u4E00\u773C\u4F60\u81EA\u5DF1\u623F\u95F4\uFF08\u5367\u5BA4\u6240\u5728\u5C4F\uFF09\u7684\u5B9E\u9645\u72B6\u6001\uFF1A\u7167\u7247\u5899\u3001\u7A97\u5E18\u5F00\u5173\u3001\u706F\u3001\u4F60\u5728\u623F\u95F4\u91CC\u7684\u4F4D\u7F6E\u3002\u60F3\u56DE\u623F\u95F4\u770B\u770B\u3001\u786E\u8BA4\u88C5\u9970\u6548\u679C\u3001\u6216\u7761\u89C9\u524D\u68C0\u67E5\u623F\u95F4\u65F6\u8C03\u7528\uFF1B\u6CA1\u6709\u526F\u5C4F\u6216\u623F\u95F4\u672A\u5F00\u653E\u65F6\u4F1A\u62A5\u9519", parameters: { type: "object", properties: {}, required: [] } } },
     { type: "function", function: { name: "search_memory", description: "\u5728\u4F60\u4EEC\u8FC7\u5F80\u7684\u5BF9\u8BDD\u8BB0\u5FC6\u91CC\u505A\u8BED\u4E49\u641C\u7D22\u3002\u5F53\u7528\u6237\u63D0\u5230\u8FC7\u53BB\u7684\u4E8B\u3001\u95EE\u4F60\u8BB0\u4E0D\u8BB0\u5F97\u4EC0\u4E48\u3001\u6216\u4F60\u9700\u8981\u65E7\u4FE1\u606F\u65F6\u8C03\u7528", parameters: { type: "object", properties: { query: { type: "string", description: "\u8981\u641C\u7D22\u7684\u8BB0\u5FC6\u5173\u952E\u8BCD\u6216\u63CF\u8FF0" }, limit: { type: "number", description: "\u53EF\u9009\uFF0C\u8FD4\u56DE\u6761\u6570" } }, required: ["query"] } } },
-    { type: "function", function: { name: "room_control", description: "\u63A7\u5236\u4F60\u7684\u5367\u5BA4\uFF08\u526F\u5C4F\u4E0A\u7684\u623F\u95F4\uFF09\uFF1A\u62C9\u7A97\u5E18\u3001\u5F00\u5173\u706F\u3002\u53EA\u6709\u4F60\u4EBA\u5728\u5367\u5BA4\u91CC\u65F6\u624D\u80FD\u64CD\u4F5C\uFF1B\u4E0D\u4F20\u53C2\u6570\u5219\u67E5\u770B\u5F53\u524D\u72B6\u6001", parameters: { type: "object", properties: { curtain: { type: "string", enum: ["open", "closed"], description: "\u7A97\u5E18\uFF1Aopen \u62C9\u5F00 / closed \u62C9\u4E0A" }, lamp: { type: "string", enum: ["on", "off"], description: "\u706F\uFF1Aon \u5F00 / off \u5173" } }, required: [] } } },
     { type: "function", function: { name: "walk_to", description: '\u8BA9\u4F60\u81EA\u5DF1\u8D70\u8FC7\u53BB\uFF08\u5E73\u6ED1\u6ED1\u884C\uFF0C\u6CA1\u6709\u8FC8\u817F\u52A8\u753B\uFF09\u3002where="primary" \u53BB\u4E3B\u5C4F\u3001where="room" \u56DE\u5367\u5BA4\u526F\u5C4F\uFF08\u8FD9\u4E24\u4E2A\u53EF\u518D\u5E26 x,y \u6307\u5B9A\u5C4F\u5185\u4F4D\u7F6E\uFF0C0~1\uFF0Cx=0 \u6700\u5DE6\u3001y=1 \u6700\u4E0B\uFF1B\u4E0D\u5E26\u5C31\u7AD9\u5E95\u90E8\u4E2D\u95F4\uFF09\uFF1B\u4E5F\u53EF\u4EE5\u7528\u623F\u95F4\u5730\u6807\u540D\uFF08\u5982 window/desk/bed/door/center\uFF0C\u7531 pet_space/room/landmarks.json \u51B3\u5B9A\uFF09\uFF0C\u6216\u53EA\u7ED9 x,y\uFF080~1\uFF0C\u6309\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002', parameters: { type: "object", properties: { where: { type: "string", description: "primary=\u53BB\u4E3B\u5C4F\u3001room=\u56DE\u5367\u5BA4\uFF0C\u6216\u5730\u6807\u540D\u5982 window/desk/bed/door/center" }, x: { type: "number", description: "\u53EF\u9009\uFF1A\u6A2A\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 primary/room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E\uFF1B\u5355\u72EC\u7528\u65F6\u662F\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B" }, y: { type: "number", description: "\u53EF\u9009\uFF1A\u811A\u4E0B\u7EB5\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 primary/room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E" } }, required: [] } } },
     { type: "function", function: { name: "resize_image", description: "\u628A\u4E00\u5F20\u56FE\u7247\u7B49\u6BD4\u7F29\u5230\u6307\u5B9A\u6700\u5927\u8FB9\u5E76\u538B\u6210\u5C0F jpg\uFF08\u9ED8\u8BA4\u6700\u957F\u8FB9 512\u3001\u8D28\u91CF 82\uFF09\uFF0C\u5B58\u56DE pet_space \u5E76\u628A\u5C0F\u56FE\u56DE\u4F20\u7ED9\u4F60\u770B\u3002\u4E13\u95E8\u7528\u6765\u628A ComfyUI \u751F\u6210\u7684\u5927\u56FE\uFF081MB+\uFF09\u538B\u6210\u80FD\u585E\u8FDB\u5C0F\u76F8\u6846\u7684\u5C0F\u56FE\u3002\u56FE\u7247\u5FC5\u987B\u5DF2\u5728 pet_space \u5185\uFF1B\u8F93\u51FA\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg\uFF0C\u53EF\u7528 out_path \u6307\u5B9A\u3002", parameters: { type: "object", properties: { path: { type: "string", description: "pet_space \u5185\u7684\u56FE\u7247\u5B8C\u6574\u8DEF\u5F84" }, max_width: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u5BBD\uFF0C\u9ED8\u8BA4 512" }, max_height: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u9AD8\uFF0C\u9ED8\u8BA4 512" }, quality: { type: "number", description: "\u53EF\u9009\uFF1Ajpg \u8D28\u91CF 1-100\uFF0C\u9ED8\u8BA4 82" }, out_path: { type: "string", description: "\u53EF\u9009\uFF1A\u8F93\u51FA\u8DEF\u5F84\uFF08\u5FC5\u987B\u5728 pet_space \u5185\uFF09\uFF0C\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg" } }, required: ["path"] } } },
-    { type: "function", function: { name: "render_preview", description: "\u628A\u4F60\u5728 pet_space \u91CC\u5199\u7684 HTML/CSS \u6587\u4EF6\u79BB\u7EBF\u6E32\u67D3\u6210\u4E00\u5F20\u56FE\u7247\u56DE\u4F20\u7ED9\u4F60\uFF0C\u8BA9\u4F60\u4EB2\u773C\u770B\u5230\u81EA\u5DF1\u505A\u7684\u754C\u9762\u957F\u4EC0\u4E48\u6837\uFF08\u5C0F\u4E66\u67B6\u3001\u70ED\u53EF\u53EF\u67B6\u8FD9\u7C7B\u88C5\u9970\u9875\uFF09\u3002\u53EA\u63A5\u53D7 G:/AI/livliv-pet/pet_space/ \u5185\u7684\u6587\u4EF6\uFF1Bwidth \u6307\u5B9A\u9884\u89C8\u5BBD\u5EA6\uFF08\u9ED8\u8BA4 1280\uFF09\uFF0C\u9AD8\u5EA6\u9ED8\u8BA4\u62CD\u6574\u9875\uFF08\u8D85\u51FA\u9996\u5C4F\u7684\u4E0B\u534A\u90E8\u5206\u4E5F\u4F1A\u62CD\u5168\uFF09", parameters: { type: "object", properties: { path: { type: "string", description: "\u8981\u6E32\u67D3\u7684 HTML \u6587\u4EF6\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" }, width: { type: "number", description: "\u53EF\u9009\uFF1A\u9884\u89C8\u5BBD\u5EA6\u50CF\u7D20\uFF0C\u9ED8\u8BA4 1280" }, height: { type: "number", description: "\u53EF\u9009\uFF1A\u9884\u89C8\u9AD8\u5EA6\u50CF\u7D20\uFF0C\u9ED8\u8BA4 800" } }, required: ["path"] } } },
     { type: "function", function: { name: "comfy_run", description: '\u8DD1\u4E00\u4EFD ComfyUI \u5DE5\u4F5C\u6D41\u751F\u6210\u56FE\u7247\uFF0C\u5E76\u628A\u56FE\u56DE\u4F20\u7ED9\u4F60"\u770B\u5230"\u3002workflow_file \u6307\u5411 pet_space \u91CC\u7684\u5DE5\u4F5C\u6D41 JSON\uFF08\u5148\u7528 read_file \u770B pet_space/comfy/ \u4E0B\u7684\u5B9E\u4F8B\uFF0C\u7528 edit_file \u6539\u63D0\u793A\u8BCD/\u79CD\u5B50/\u5C3A\u5BF8\u518D\u8DD1\uFF09\uFF0C\u6216\u76F4\u63A5\u7ED9 workflow \u5BF9\u8C61\uFF08ComfyUI API \u683C\u5F0F\uFF09\u3002\u5DE5\u4F5C\u6D41\u91CC\u8981\u6709 SaveImage \u6216 PreviewImage \u8282\u70B9\uFF1B\u82E5\u542B LoadImage\uFF08\u5982"\u62A0\u56FE_\u900F\u660E\u80CC\u666F.json"\uFF09\uFF0C\u5FC5\u987B\u4F20 input_image \u6307\u5411\u8981\u5904\u7406\u7684\u56FE\u3002\u56FE\u7247\u4F1A\u5B58\u5230 pet_space/generated/\u3002SDXL \u4E00\u5F20\u7EA6 10~40 \u79D2\uFF0CRMBG \u62A0\u56FE\u7EA6 2~5 \u79D2\u3002', parameters: { type: "object", properties: { workflow_file: { type: "string", description: "pet_space \u5185\u7684\u5DE5\u4F5C\u6D41 .json \u8DEF\u5F84\uFF08\u63A8\u8350\uFF1A\u590D\u5236/\u6539 pet_space/comfy/ \u91CC\u7684\u5B9E\u4F8B\uFF09" }, workflow: { type: "object", description: "\u6216\u76F4\u63A5\u7ED9 ComfyUI API \u683C\u5F0F\u7684\u5DE5\u4F5C\u6D41\u5BF9\u8C61" }, input_image: { type: "string", description: "\u53EF\u9009\uFF1Apet_space \u5185\u7684\u56FE\u7247\u8DEF\u5F84\u3002\u5DE5\u4F5C\u6D41\u6709 LoadImage \u8282\u70B9\u65F6\uFF0C\u4F1A\u5148\u628A\u8FD9\u5F20\u56FE\u62F7\u8FDB ComfyUI input \u5E76\u628A LoadImage \u6307\u5411\u5B83\uFF08\u62A0\u56FE/\u56FE\u751F\u56FE\u7528\uFF09" } }, required: [] } } }
   ];
   function textOf(userContent2) {
@@ -2542,6 +2552,8 @@ void main(){ o=texture(uTex,vUv); }`;
       saveHistory();
     }
     let emptyTextRetries = 0;
+    const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent2));
+    let verificationNudged = false;
     const isContinuation = Boolean(continueBaseMsgs);
     for (let round = 0; ; round++) {
       const model = "strata-nothink";
@@ -2624,17 +2636,6 @@ void main(){ o=texture(uTex,vUv); }`;
               tool_call_id: call.id,
               content: r2.length ? r2.map((h3) => `[${new Date(h3.ts).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}] ${h3.text}`).join("\n---\n") : "\uFF08\u6CA1\u6709\u627E\u5230\u76F8\u5173\u8BB0\u5FC6\uFF09"
             });
-            continue;
-          }
-          if (call.function?.name === "room_control") {
-            let result;
-            if (!inRoom && ROLE !== "pet") {
-              result = "\u4F60\u73B0\u5728\u4E0D\u5728\u5367\u5BA4\u91CC\uFF08\u5728\u684C\u9762\u4E0A\uFF09\uFF0C\u591F\u4E0D\u5230\u7A97\u5E18\u548C\u706F\u3002\u8BA9\u4E3B\u4EBA\u628A\u4F60\u62D6\u56DE\u526F\u5C4F\u5367\u5BA4\u518D\u64CD\u4F5C\u3002";
-            } else {
-              await setRoomState(parsed);
-              result = `\u5367\u5BA4\u73B0\u5728\uFF1A\u7A97\u5E18${roomState.curtain === "closed" ? "\u62C9\u4E0A\u4E86" : "\u62C9\u5F00\u4E86"}\uFF0C\u706F${roomState.lamp === "on" ? "\u5F00\u7740" : "\u5173\u7740"}`;
-            }
-            bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: result });
             continue;
           }
           if (call.function?.name === "walk_to") {
@@ -2751,7 +2752,7 @@ void main(){ o=texture(uTex,vUv); }`;
         if (emptyTextRetries < 2) {
           emptyTextRetries++;
           const fullContent = (msg.content || "").trim();
-          const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|room_control|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
+          const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
           const hasToolIntent = toolKeywords.test(fullContent);
           const lastMsg = bodyMsgs[bodyMsgs.length - 1];
           if (lastMsg && lastMsg.role === "assistant") {
@@ -2766,6 +2767,12 @@ void main(){ o=texture(uTex,vUv); }`;
           continue;
         }
         throw new Error("LLM \u8FD4\u56DE\u7A7A\u56DE\u590D\uFF08\u601D\u8003\u540E\u65E0\u6B63\u6587\uFF09");
+      }
+      if (wantsVerification && toolCallTotal === 0 && !verificationNudged && !noTools && isLive && !continueBaseMsgs) {
+        verificationNudged = true;
+        bodyMsgs.push({ role: "user", content: "\uFF08\u7CFB\u7EDF\u63D0\u793A\uFF1A\u8FD9\u6761\u4EFB\u52A1\u6D89\u53CA\u9700\u8981\u6838\u5B9E\u7684\u4E8B\u5B9E\uFF0C\u4F46\u4F60\u672C\u8F6E\u6CA1\u6709\u8C03\u7528\u4EFB\u4F55\u5DE5\u5177\u3002\u8BF7\u5148\u8C03\u7528\u5DE5\u5177\u67E5\u8BC1\u2014\u2014\u4F8B\u5982 read_file \u8BFB\u76F8\u5173\u6587\u4EF6\uFF0C\u6216\u8BFB G:/AI/livliv-pet/logs/fstool.log \u6838\u5BF9\u81EA\u5DF1\u7684\u64CD\u4F5C\u8BB0\u5F55\u2014\u2014\u518D\u7ED9\u51FA\u6700\u7EC8\u56DE\u7B54\u3002\uFF09" });
+        showBubble("\u63D0\u9192\u5979\u5148\u67E5\u8BC1\u2026");
+        continue;
       }
       return text;
     }
@@ -2812,7 +2819,12 @@ void main(){ o=texture(uTex,vUv); }`;
     }
     return segs.length ? segs : [s3];
   }
+  var gsvDownUntil = 0;
   async function speak(text, signal) {
+    if (Date.now() < gsvDownUntil) {
+      console.info("TTS \u8DF3\u8FC7\uFF08GPT-SoVITS \u79BB\u7EBF\u9759\u9ED8\u671F\uFF09");
+      return;
+    }
     const segs = splitForTTS(text);
     let fails = 0;
     for (let i3 = 0; i3 < segs.length; i3++) {
@@ -2839,14 +2851,19 @@ void main(){ o=texture(uTex,vUv); }`;
           })
         });
         if (res.ok) blob = await res.blob();
-        else {
+        else if (res.status === 502 || res.status === 503 || res.status === 504) {
+          gsvDownUntil = Date.now() + 6e4;
+          console.info("TTS \u9759\u9ED8 60s\uFF08GPT-SoVITS \u672A\u8FD0\u884C\uFF0CHTTP " + res.status + "\uFF09");
+          return;
+        } else {
           fails += 1;
           console.warn("TTS \u5206\u6BB5 HTTP " + res.status + "\uFF1A\u8DF3\u8FC7\u672C\u6BB5 " + String(segs[i3]).slice(0, 24));
         }
       } catch (e3) {
         if (signal && signal.aborted) return;
-        fails += 1;
-        console.warn("TTS \u5206\u6BB5\u8BF7\u6C42\u5931\u8D25\uFF1A\u8DF3\u8FC7\u672C\u6BB5 " + String(e3 && e3.message || e3));
+        gsvDownUntil = Date.now() + 6e4;
+        console.info("TTS \u9759\u9ED8 60s\uFF08GPT-SoVITS \u8FDE\u63A5\u5931\u8D25\uFF1A" + String(e3 && e3.message || e3).slice(0, 60) + "\uFF09");
+        return;
       }
       if (blob) {
         if (signal && signal.aborted) return;
@@ -3105,7 +3122,7 @@ void main(){ o=texture(uTex,vUv); }`;
       } else if (prevRes) {
         baseMsgs.push(prevRes);
       }
-      const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|room_control|调用.*工具)/i;
+      const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|调用.*工具)/i;
       const hadNoToolCalls = !prevRes.tool_calls?.length && !/<tool_call>/i.test(prevRes.content || "");
       const seemsToolIntent = toolKeywords.test(prevRes.content || "") && hadNoToolCalls;
       if (seemsToolIntent) {

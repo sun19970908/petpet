@@ -101,31 +101,26 @@ function spawnFF() {
   }
 }
 
-// 全屏截图（所有显示器按左右顺序拼接成一张 JPEG base64），IPC 与 HTTP 兜底共用
-async function captureNow() {
-  const displays = screen.getAllDisplays().sort((a, b) => a.bounds.x - b.bounds.x);
-  const shots = [];
-  for (const d of displays) {
-    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: d.size.width, height: d.size.height } });
-    const src = sources.find((s) => s.display_id === String(d.id));
-    if (src) shots.push(src.thumbnail);
+// 截屏目标：'main' = 主屏（用户的世界，默认——你在主屏工作，她看到的应该是你的上下文）；
+//           'room' = 卧室窗所在屏（她自己的房间，通常副屏——看照片墙/窗帘的实际状态）
+// 不再做双屏拼接：她的两个视角语义分离
+async function captureScreenBy(which) {
+  const primary = screen.getPrimaryDisplay();
+  let target = primary;
+  if (which === 'room') {
+    if (!bedroomWin || bedroomWin.isDestroyed()) return null; // 卧室未开放
+    const b = bedroomWin.getBounds();
+    const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    target = screen.getAllDisplays().find((d) => {
+      const wa = d.workArea;
+      return cx >= wa.x && cx < wa.x + wa.width && cy >= wa.y && cy < wa.y + wa.height;
+    }) || screen.getAllDisplays().find((d) => d.id !== primary.id) || primary;
   }
-  if (!shots.length) return null;
-  if (shots.length === 1) return shots[0].toJPEG(85).toString('base64');
-  // 混合 DPI 下各屏坐标不可靠，只按 x 排序横向顶对齐拼接，不做纵向几何换算
-  const sizes = shots.map((i) => i.getSize());
-  const width = sizes.reduce((s, z) => s + z.width, 0);
-  const height = Math.max(...sizes.map((z) => z.height));
-  const out = Buffer.alloc(width * height * 4);
-  let ox = 0;
-  shots.forEach((img, i) => {
-    const { width: w, height: h } = sizes[i];
-    const bmp = img.toBitmap();
-    for (let y = 0; y < h; y++) bmp.copy(out, (y * width + ox) * 4, y * w * 4, (y + 1) * w * 4);
-    ox += w;
-  });
-  return nativeImage.createFromBuffer(out, { width, height }).toJPEG(85).toString('base64');
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: target.size.width, height: target.size.height } });
+  const src = sources.find((s) => s.display_id === String(target.id)) || sources[0];
+  return src ? src.thumbnail.toJPEG(85).toString('base64') : null;
 }
+async function captureNow() { return captureScreenBy('main'); }
 
 // 主卡（GPU 0）占用率查询；nvidia-smi 不可用时返回 null（放行）
 async function gpuUtil() {
@@ -547,56 +542,20 @@ function runFsToolCore(call) {
         };
       })();
     }
-    if (name === 'render_preview') {
+    if (name === 'look_at_room') {
+      // 看一眼自己房间（卧室窗所在屏，通常副屏）的实际状态——照片墙/窗帘/灯都看真实的
       return (async () => {
-        if (!args.path) return { ok: false, error: '参数错误：缺少 path 参数' };
-        const resolved = path.resolve(args.path);
-        if (!isPathInPetSpace(resolved)) {
-          return { ok: false, error: '拒绝：只能渲染 ' + PET_SPACE_DIR + ' 内的文件' };
-        }
-        if (!fs.existsSync(resolved)) return { ok: false, error: '文件不存在: ' + resolved };
-        const w = Math.max(160, Math.min(3840, Number(args.width) || 1280));
-        const h = Math.max(160, Math.min(3840, Number(args.height) || 800));
-        // 关键安全：这个预览窗口绝不带 preload，也不开 nodeIntegration——否则她渲染的 HTML 里一句
-        // window.petWindow.fsTool(...) 就能绕过 pet_space 沙盒、拿到读写删整台机器的能力。
-        const win = new BrowserWindow({
-          show: false, width: w, height: h,
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-        });
-        try {
-          const rel = path.relative(PET_SPACE_DIR, resolved).split(path.sep).map(encodeURIComponent).join('/');
-          await win.loadURL('http://127.0.0.1:' + PORT + '/pet_space/' + rel);
-          await new Promise((r) => setTimeout(r, 300));   // 等首帧绘制稳定再抓
-          // 整页截图：量出内容真实尺寸，把隐藏窗撑到整页高再抓——否则超出视口的下半页会被裁掉
-          let fw = w, fh = h;
-          try {
-            const dims = await win.webContents.executeJavaScript(
-              '({w:Math.max(document.documentElement.scrollWidth,document.body.scrollWidth),' +
-              'h:Math.max(document.documentElement.scrollHeight,document.body.scrollHeight)})'
-            );
-            if (dims && dims.h > 0) {
-              fw = Math.max(160, Math.min(3840, Math.max(w, Math.round(dims.w || w))));
-              fh = Math.max(160, Math.min(3840, Math.round(dims.h)));
-              win.setContentSize(fw, fh);
-              await new Promise((r) => setTimeout(r, 250));   // 撑高后等重排重绘
-            }
-          } catch {}
-          const img = await win.webContents.capturePage();
-          if (!img || img.isEmpty()) return { ok: false, error: '渲染结果为空（页面可能没能绘制出来）' };
-          const b64 = img.toJPEG(85).toString('base64');
-          fs.mkdirSync(path.join(APP_ROOT, 'history', 'img'), { recursive: true });
-          const fname = `render_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}.jpg`;
-          fs.writeFileSync(path.join(APP_ROOT, 'history', 'img', fname), Buffer.from(b64, 'base64'));
-          return {
-            ok: true,
-            result: '已渲染 ' + path.basename(resolved) + '（整页 ' + fw + 'x' + fh + '）→ /history/img/' + fname + '（画面已附在接下来的消息里）',
-            image: 'data:image/jpeg;base64,' + b64,
-          };
-        } catch (e) {
-          return { ok: false, error: '渲染失败: ' + String((e && e.message) || e) };
-        } finally {
-          try { win.close(); } catch {}
-        }
+        const b64 = await captureScreenBy('room');
+        if (!b64) return { ok: false, error: '房间未开放（当前没有副屏或卧室窗未创建）' };
+        const jpeg = Buffer.from(b64, 'base64');
+        fs.mkdirSync(path.join(APP_ROOT, 'history', 'img'), { recursive: true });
+        const fname = `room_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}.jpg`;
+        fs.writeFileSync(path.join(APP_ROOT, 'history', 'img', fname), jpeg);
+        return {
+          ok: true,
+          result: '房间截图已保存: /history/img/' + fname + '（画面已附在接下来的消息里）',
+          image: 'data:image/jpeg;base64,' + b64,
+        };
       })();
     }
     if (name === 'resize_image') {
