@@ -2945,10 +2945,22 @@ void main(){ o=texture(uTex,vUv); }`;
   var gsvDownUntil = 0;
   async function speakSegment(seg, signal) {
     if (Date.now() < gsvDownUntil) return;
+    const ctrl = new AbortController();
+    const onAbort = () => {
+      try {
+        ctrl.abort();
+      } catch {
+      }
+    };
+    if (signal) {
+      if (signal.aborted) return;
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    const timer = setTimeout(onAbort, 12e4);
     try {
       const res = await fetch(TTS_URL, {
         method: "POST",
-        signal,
+        signal: ctrl.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: seg,
@@ -2972,7 +2984,14 @@ void main(){ o=texture(uTex,vUv); }`;
       speech.say(blob);
     } catch (e3) {
       if (signal && signal.aborted) return;
+      if (ctrl.signal.aborted) {
+        gsvDownUntil = Date.now() + 6e4;
+        return;
+      }
       console.warn("TTS \u5206\u6BB5\u5931\u8D25: " + String(e3 && e3.message || e3));
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener("abort", onAbort);
     }
   }
   var turnAbort = null;

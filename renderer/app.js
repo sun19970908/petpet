@@ -734,10 +734,18 @@ function splitForTTS(text, minLen = 6, targetLen = 14) {
 let gsvDownUntil = 0;
 async function speakSegment(seg, signal) {
   if (Date.now() < gsvDownUntil) return;
+  // 单段合成上限 2 分钟：某一段卡住时不能把整条 TTS 队列（以及后续每一轮的语音）永久堵死
+  const ctrl = new AbortController();
+  const onAbort = () => { try { ctrl.abort(); } catch {} };
+  if (signal) {
+    if (signal.aborted) return;
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = setTimeout(onAbort, 120000);
   try {
     const res = await fetch(TTS_URL, {
       method: 'POST',
-      signal,
+      signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text: seg,
@@ -761,7 +769,11 @@ async function speakSegment(seg, signal) {
     speech.say(blob);
   } catch (e) {
     if (signal && signal.aborted) return;
+    if (ctrl.signal.aborted) { gsvDownUntil = Date.now() + 60000; return; }   // 超时：静默 60s 再试
     console.warn('TTS 分段失败: ' + String(e && e.message || e));
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
 }
 async function speak(text, signal) {

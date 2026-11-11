@@ -38,7 +38,7 @@ const MIME = {
 // ===== GPT-SoVITS 生命周期管理器 =====
 // 参数优先级：CLI 参数 > 环境变量 > 默认值
 // 模式：PET_GSV_MODE=auto (默认，发 LLM 请求时提前预热拉起，无请求超时休眠) | always (常驻) | never (不启动)
-// 空闲超时：PET_GSV_IDLE=120 (默认 120 秒无请求退出释放显存)
+// 空闲超时：PET_GSV_IDLE=600 (默认 600 秒无请求退出释放显存；太短会导致每轮对话都冷启动，TTS 整段静默)
 let cliGsvMode = null;
 let cliGsvIdle = null;
 for (const arg of process.argv.slice(1)) {
@@ -53,13 +53,21 @@ const rawGsvMode = (cliGsvMode || process.env.PET_GSV_MODE || 'auto').toLowerCas
 const GSV_MODE = ['always', 'on'].includes(rawGsvMode) ? 'always'
   : ['never', 'off', 'none'].includes(rawGsvMode) ? 'never'
   : 'auto';
-const GSV_IDLE_TIMEOUT = (parseInt(cliGsvIdle || process.env.PET_GSV_IDLE, 10) || 120) * 1000;
+const GSV_IDLE_TIMEOUT = (parseInt(cliGsvIdle || process.env.PET_GSV_IDLE, 10) || 600) * 1000;
 
 const GSV_DIR = process.env.PET_GSV_DIR || 'G:\\GPT-SoVITS-v2pro-20250604';
 const GSV_PYTHON = path.join(GSV_DIR, 'runtime', 'python.exe');
 const GSV_CONFIG = process.env.PET_GSV_CONFIG || 'GPT_SoVITS/configs/tts_infer_yousa.yaml';
 const GSV_GPU = process.env.PET_GSV_GPU || '1';
 const GSV_PORT = 9880;
+const GSV_LOG = path.join(APP_ROOT, 'logs', 'gsv.log');
+const TTS_LOG = path.join(APP_ROOT, 'logs', 'tts.log');
+function logTo(file, msg) {
+  try {
+    fs.mkdirSync(path.join(APP_ROOT, 'logs'), { recursive: true });
+    fs.appendFileSync(file, new Date().toISOString() + ' ' + msg + '\n');
+  } catch {}
+}
 
 let gsvProc = null;
 let gsvStartingPromise = null;
@@ -93,6 +101,7 @@ async function ensureGSV() {
   gsvStartingPromise = (async () => {
     try {
       console.log(`[gsv] 正在拉起 GPT-SoVITS (GPU ${GSV_GPU}, port ${GSV_PORT})...`);
+      logTo(GSV_LOG, `=== 拉起 GPT-SoVITS (CUDA_VISIBLE_DEVICES=${GSV_GPU}) ===`);
       const gsvArgs = ['api_v2.py', '-a', '127.0.0.1', '-p', String(GSV_PORT), '-c', GSV_CONFIG];
       const gsvEnv = { ...process.env, CUDA_VISIBLE_DEVICES: GSV_GPU };
       gsvProc = spawn(GSV_PYTHON, gsvArgs, {
@@ -102,20 +111,33 @@ async function ensureGSV() {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
+      // 必须消费子进程输出：GPT-SoVITS 的 tqdm 进度条输出很多，管道写满后子进程会卡死（TTS 偶发卡住的元凶）。
+      // 顺便落到 logs/gsv.log，方便看"控制台"。
+      try {
+        const gsvLogStream = fs.createWriteStream(GSV_LOG, { flags: 'a' });
+        gsvProc.stdout.pipe(gsvLogStream);
+        gsvProc.stderr.pipe(gsvLogStream);
+      } catch {}
+
       gsvProc.on('exit', (code, sig) => {
         console.log(`[gsv] 进程已退出 (code=${code}, sig=${sig})`);
+        logTo(GSV_LOG, `=== 进程退出 code=${code} sig=${sig} ===`);
         gsvProc = null;
       });
 
       const startTs = Date.now();
-      while (Date.now() - startTs < 25000) {
+      // 冷启动（加载模型）可能远超 25s；等太短会导致 TTS 请求在上游未就绪时失败，
+      // 随后 60s 静默期把整段回复都跳过（"整段没声音"就是这么来的）
+      while (Date.now() - startTs < 90000) {
         if (await isGsvPortOpen()) {
           console.log(`[gsv] GPT-SoVITS 已就绪（就绪耗时 ${Date.now() - startTs}ms）`);
+          logTo(GSV_LOG, `=== 就绪，耗时 ${Date.now() - startTs}ms ===`);
           return true;
         }
         await new Promise((r) => setTimeout(r, 400));
       }
-      console.warn('[gsv] 启动等待超时（25s 内 9880 端口未响应）');
+      console.warn('[gsv] 启动等待超时（90s 内 9880 端口未响应）');
+      logTo(GSV_LOG, '=== 启动超时（90s） ===');
       return false;
     } catch (e) {
       console.error('[gsv] 启动异常:', e.message);
@@ -279,6 +301,12 @@ function handleApi(req, res) {
   req.on('data', (c) => bodyChunks.push(c));
   req.on('end', async () => {
     const fullBody = Buffer.concat(bodyChunks);
+    const ttsT0 = Date.now();
+    let ttsText = '';
+    if (isTts) {
+      try { ttsText = String(JSON.parse(fullBody.toString('utf8')).text || ''); } catch {}
+      logTo(TTS_LOG, '请求: ' + ttsText.slice(0, 60).replace(/\s+/g, ' ') + (ttsText.length > 60 ? '…' : '') + ' (' + ttsText.length + ' 字)');
+    }
 
     // 若是 TTS 请求且开启了 GSV，等待服务端口就绪再转发，防止冷启动瞬间 502
     if (isTts && GSV_MODE !== 'never') {
@@ -302,6 +330,7 @@ function handleApi(req, res) {
       headers: forwardHeaders,
     }, (up) => {
       if (isTts) {
+        logTo(TTS_LOG, '上游 ' + up.statusCode + ' in ' + (Date.now() - ttsT0) + 'ms');
         const ff = spawnFF();
         if (!ff) { res.writeHead(502); res.end('ffmpeg missing'); return; }
         res.writeHead(up.statusCode, { 'Content-Type': 'audio/mpeg' });
@@ -328,6 +357,7 @@ function handleApi(req, res) {
     });
 
     upstream.on('error', (e) => {
+      if (isTts) logTo(TTS_LOG, '上游错误: ' + e.message + ' in ' + (Date.now() - ttsT0) + 'ms');
       res.writeHead(502);
       res.end('upstream error: ' + e.message);
     });
