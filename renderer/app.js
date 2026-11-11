@@ -1114,7 +1114,8 @@ function refreshClickThrough(x, y) {
     window.petWindow?.setClickThrough?.(!over);
   }
 }
-window.addEventListener('pointermove', (e) => refreshClickThrough(e.clientX, e.clientY), { passive: true });
+let lastPX = -1, lastPY = -1;
+window.addEventListener('pointermove', (e) => { lastPX = e.clientX; lastPY = e.clientY; refreshClickThrough(e.clientX, e.clientY); }, { passive: true });
 
 // 拖拽 = 移动人物在屏幕上的位置（按右缘定位，不会贴出屏幕），位置存 localStorage
 let drag = null;
@@ -1163,7 +1164,7 @@ function savePetPos() {
   }));
 }
 loadPetPos();
-petCanvas.addEventListener('mousedown', (e) => {
+function beginPetDrag(e) {
   // 起点必须取布局值（--pet-right/--pet-y），不能取 getBoundingClientRect：
   // 副屏 DPI 补偿 scale(0.5) 会把视觉矩形缩窄，跟 CSS 定位值对不上，第一次移动就跳半个宽度
   drag = {
@@ -1172,6 +1173,12 @@ petCanvas.addEventListener('mousedown', (e) => {
     oBottom: parseInt(petWrap.style.getPropertyValue('--pet-y')) || 46,
   };
   e.preventDefault();
+}
+petCanvas.addEventListener('mousedown', beginPetDrag);
+// 气泡紧贴脚边、长回复时整个盖在她身上，且排在画布上层会吞掉按下事件 → 落点在她身上时把拖动接过来；
+// 气泡其余区域仍可正常滚动/选中
+bubble.addEventListener('mousedown', (e) => {
+  if (rectHit(petCanvas, e.clientX, e.clientY, petCanvas.getBoundingClientRect().width * 0.14, 8)) beginPetDrag(e);
 });
 // 拖动按 rAF 合并：mousemove 可能 100+Hz，每帧只写一次样式 + 布局，否则混合DPI大窗下会明显拖慢
 let dragRaf = 0, dragTarget = null;
@@ -1229,7 +1236,12 @@ function walkToFraction(fx, fy) {
       petWrap.style.setProperty('--pet-y', (curB + (tgtB - curB) * e) + 'px');
       layoutChat();
       if (t < 1) requestAnimationFrame(step);
-      else { savePetPos(); ensurePetVisible(); updateInRoom(true); resolve(); }
+      else {
+        savePetPos(); ensurePetVisible(); updateInRoom(true);
+        // 她走到静止的光标底下时不会有新的 pointermove，主动按最后位置重算一次穿透，否则点不到/拖不动她
+        if (lastPX >= 0) refreshClickThrough(lastPX, lastPY);
+        resolve();
+      }
     }
     requestAnimationFrame(step);
   });

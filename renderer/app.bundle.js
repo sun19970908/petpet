@@ -3416,7 +3416,13 @@ void main(){ o=texture(uTex,vUv); }`;
       window.petWindow?.setClickThrough?.(!over);
     }
   }
-  window.addEventListener("pointermove", (e3) => refreshClickThrough(e3.clientX, e3.clientY), { passive: true });
+  var lastPX = -1;
+  var lastPY = -1;
+  window.addEventListener("pointermove", (e3) => {
+    lastPX = e3.clientX;
+    lastPY = e3.clientY;
+    refreshClickThrough(e3.clientX, e3.clientY);
+  }, { passive: true });
   var drag = null;
   var inputRow = $3("inputrow");
   var pendingBox = $3("pendingimg");
@@ -3460,7 +3466,7 @@ void main(){ o=texture(uTex,vUv); }`;
     }));
   }
   loadPetPos();
-  petCanvas.addEventListener("mousedown", (e3) => {
+  function beginPetDrag(e3) {
     drag = {
       sx: e3.clientX,
       sy: e3.clientY,
@@ -3468,6 +3474,10 @@ void main(){ o=texture(uTex,vUv); }`;
       oBottom: parseInt(petWrap.style.getPropertyValue("--pet-y")) || 46
     };
     e3.preventDefault();
+  }
+  petCanvas.addEventListener("mousedown", beginPetDrag);
+  bubble.addEventListener("mousedown", (e3) => {
+    if (rectHit(petCanvas, e3.clientX, e3.clientY, petCanvas.getBoundingClientRect().width * 0.14, 8)) beginPetDrag(e3);
   });
   var dragRaf = 0;
   var dragTarget = null;
@@ -3539,6 +3549,7 @@ void main(){ o=texture(uTex,vUv); }`;
           savePetPos();
           ensurePetVisible();
           updateInRoom(true);
+          if (lastPX >= 0) refreshClickThrough(lastPX, lastPY);
           resolve();
         }
       }
