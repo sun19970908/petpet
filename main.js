@@ -11,10 +11,14 @@ const net = require('net');
 const APP_ROOT = __dirname;
 const PORT = 12400;
 const SPLIT_WINDOWS = true;   // 双窗：卧室独立窗(锁副屏，不动) + 桌宠窗(主屏)。设 false 回退单窗旧行为
-// GPU 策略：跨屏透明窗的 Chromium GPU 合成会落到独显（3060 Ti）上（实测 ~137MB + 8~17% 3D），
-// 关掉 GPU 合成后独显占用归零（WebGL 精灵仍走核显硬件），代价约 0.4 核 CPU。
-// 想回硬件合成：启动时设 PET_HW_COMPOSITING=1
-if (process.env.PET_HW_COMPOSITING !== '1') app.commandLine.appendSwitch('disable-gpu-compositing');
+// GPU 策略：在多 GPU（如 AMD 核显 + NVIDIA 独显）跨卡多显环境下，必须启用独显上下文并首选高性能 GPU，
+// 否则 Chromium 软件合成器或核显模式无法通过 DXGI / WGC 抓取接在独显上的主屏。
+if (process.env.PET_HW_COMPOSITING === '0') {
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+} else {
+  app.commandLine.appendSwitch('gpu-preference', '2');
+  app.commandLine.appendSwitch('force_high_performance_gpu');
+}
 // Windows Graphics Capture (WGC)：启用现代 WGC 捕获多屏/跨 GPU 显示器（双独显 3060Ti+4060Ti 跨屏必备）
 app.commandLine.appendSwitch('enable-features', 'WebRtcAllowWgcScreenCapturer');
 // 思考方案开关（启动脚本 set PET_THINK=...）：pet_think | off
@@ -56,8 +60,8 @@ for (const arg of process.argv.slice(1)) {
   else if (/^\d+$/.test(arg)) cliGsvIdle = arg;
 }
 
-const CAP_MAIN_CFG = cliCapMain ?? process.env.PET_CAP_MAIN ?? '1';
-const CAP_ROOM_CFG = cliCapRoom ?? process.env.PET_CAP_ROOM ?? '0';
+const CAP_MAIN_CFG = cliCapMain ?? process.env.PET_CAP_MAIN ?? 'main';
+const CAP_ROOM_CFG = cliCapRoom ?? process.env.PET_CAP_ROOM ?? 'room';
 
 const rawGsvMode = (cliGsvMode || process.env.PET_GSV_MODE || 'auto').toLowerCase();
 const GSV_MODE = ['always', 'on'].includes(rawGsvMode) ? 'always'
@@ -429,17 +433,63 @@ function resolveCapSource(sources, cfg, defaultIdx, targetDisplayId) {
   return sources[defaultIdx] || sources[0];
 }
 
+const SCREENCAP_EXE = path.join(APP_ROOT, 'tools', 'ScreenCap.exe');
+
+async function captureWithScreenCap(targetArg, which) {
+  if (!fs.existsSync(SCREENCAP_EXE)) return null;
+  const outPath = path.join(APP_ROOT, 'logs', `last_cap_${which}.jpg`);
+  return new Promise((resolve) => {
+    const p = spawn(SCREENCAP_EXE, ['cap', outPath, String(targetArg), '85'], { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    p.stdout.on('data', (d) => { stdout += d; });
+    p.stderr.on('data', (d) => { stderr += d; });
+    p.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outPath)) {
+        try {
+          const buf = fs.readFileSync(outPath);
+          resolve({ ok: true, buffer: buf, stdout: stdout.trim() });
+          return;
+        } catch (e) {
+          stderr += ' ' + e.message;
+        }
+      }
+      resolve({ ok: false, code, stderr: stderr.trim() });
+    });
+    p.on('error', (err) => {
+      resolve({ ok: false, error: err.message });
+    });
+  });
+}
+
 // 截屏目标：'main' = 主屏（用户的世界，默认——你在主屏工作，她看到的应该是你的上下文）；
 //           'room' = 卧室窗所在屏（她自己的房间，通常副屏——看照片墙/窗帘的实际状态）
 // 不再做双屏拼接：她的两个视角语义分离
 async function captureScreenBy(which) {
+  const isRoom = which === 'room';
+  if (isRoom && (!bedroomWin || bedroomWin.isDestroyed())) return null; // 卧室未开放
+
+  const cfg = isRoom ? CAP_ROOM_CFG : CAP_MAIN_CFG;
+  const targetArg = cfg || (isRoom ? 'room' : 'main');
+
+  // 1. 优先使用跨多 GPU 高可靠原生工具 ScreenCap（Win32 GDI/DWM 跨卡原生捕获，100% 避免 DXGI 跨卡失效）
+  try {
+    const scRes = await captureWithScreenCap(targetArg, which);
+    if (scRes && scRes.ok && scRes.buffer && scRes.buffer.length > 0) {
+      winLog(`[cap] which=${which} engine=ScreenCap cfg="${cfg}" targetArg="${targetArg}" info="${scRes.stdout}" bytes=${scRes.buffer.length}`);
+      return scRes.buffer.toString('base64');
+    } else if (scRes) {
+      winLog(`[cap:warn] ScreenCap failed code=${scRes.code} err="${scRes.stderr || scRes.error}", falling back to desktopCapturer`);
+    }
+  } catch (err) {
+    winLog(`[cap:err] ScreenCap exception: ${err.message}, falling back to desktopCapturer`);
+  }
+
+  // 2. 回退机制：Electron desktopCapturer
   const primary = screen.getPrimaryDisplay();
   const all = screen.getAllDisplays();
-  const isRoom = which === 'room';
-
   let target = primary;
   if (isRoom) {
-    if (!bedroomWin || bedroomWin.isDestroyed()) return null; // 卧室未开放
     const b = bedroomWin.getBounds();
     const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
     target = all.find((d) => {
@@ -452,8 +502,6 @@ async function captureScreenBy(which) {
   const th = (target && target.size && target.size.height) || 1080;
 
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: tw, height: th } });
-
-  const cfg = isRoom ? CAP_ROOM_CFG : CAP_MAIN_CFG;
   const defaultIdx = isRoom ? 0 : 1;
   const src = resolveCapSource(sources, cfg, defaultIdx, target.id);
 
@@ -466,7 +514,7 @@ async function captureScreenBy(which) {
   const srcSummary = sources.map((s, i) => `[${i}]"${s.name}"(id=${s.id},disp=${s.display_id || 'none'},empty=${s.thumbnail.isEmpty()})`).join('; ');
   const dispSummary = all.map((d) => `(id=${d.id},bounds=${d.bounds.x},${d.bounds.y},${d.bounds.width}x${d.bounds.height},pri=${d.id === primary.id})`).join('; ');
 
-  winLog(`[cap] which=${which} cfg="${cfg}" targetId=${target.id} picked=${src ? (src.name + ' ' + src.id) : 'null'} bytes=${jpegBuffer ? jpegBuffer.length : 0} | sources=${srcSummary} | displays=${dispSummary}`);
+  winLog(`[cap] which=${which} engine=desktopCapturer cfg="${cfg}" targetId=${target.id} picked=${src ? (src.name + ' ' + src.id) : 'null'} bytes=${jpegBuffer ? jpegBuffer.length : 0} | sources=${srcSummary} | displays=${dispSummary}`);
 
   if (jpegBuffer) {
     try {
@@ -1056,8 +1104,26 @@ function serveStatic(req, res) {
         return;
       }
       if (req.url.split('?')[0] === '/api/screens') {
-        desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 100, height: 100 } }).then((sources) => {
+        const getPhys = new Promise((resolve) => {
+          if (!fs.existsSync(SCREENCAP_EXE)) return resolve([]);
+          const p = spawn(SCREENCAP_EXE, ['list'], { windowsHide: true });
+          let out = '';
+          p.stdout.on('data', (d) => { out += d; });
+          p.on('close', (code) => {
+            if (code === 0) {
+              try { resolve(JSON.parse(out.trim())); return; } catch {}
+            }
+            resolve([]);
+          });
+          p.on('error', () => resolve([]));
+        });
+
+        Promise.all([
+          desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 100, height: 100 } }).catch(() => []),
+          getPhys
+        ]).then(([sources, phys]) => {
           const info = {
+            physicalScreens: phys,
             displays: screen.getAllDisplays().map((d) => ({
               id: d.id,
               bounds: d.bounds,
