@@ -53,8 +53,8 @@ for (const arg of process.argv.slice(1)) {
   else if (/^\d+$/.test(arg)) cliGsvIdle = arg;
 }
 
-const CAP_MAIN_CFG = cliCapMain ?? process.env.PET_CAP_MAIN ?? '0';
-const CAP_ROOM_CFG = cliCapRoom ?? process.env.PET_CAP_ROOM ?? '1';
+const CAP_MAIN_CFG = cliCapMain ?? process.env.PET_CAP_MAIN ?? '1';
+const CAP_ROOM_CFG = cliCapRoom ?? process.env.PET_CAP_ROOM ?? '0';
 
 const rawGsvMode = (cliGsvMode || process.env.PET_GSV_MODE || 'auto').toLowerCase();
 const GSV_MODE = ['always', 'on'].includes(rawGsvMode) ? 'always'
@@ -441,7 +441,7 @@ async function captureScreenBy(which) {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: target.size.width, height: target.size.height } });
 
   const cfg = isRoom ? CAP_ROOM_CFG : CAP_MAIN_CFG;
-  const defaultIdx = isRoom ? 1 : 0;
+  const defaultIdx = isRoom ? 0 : 1;
   const src = resolveCapSource(sources, cfg, defaultIdx);
 
   winLog(`[cap] which=${which} cfg="${cfg}" picked=${src ? (src.name + ' ' + src.id) : 'null'} available=${sources.map((s, i) => `[${i}]${s.name}`).join(', ')}`);
@@ -1027,9 +1027,34 @@ function serveStatic(req, res) {
         res.end(JSON.stringify(fstoolTail(Number.isFinite(n) ? n : 10)));
         return;
       }
+      if (req.url.split('?')[0] === '/api/screens') {
+        desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 100, height: 100 } }).then((sources) => {
+          const info = {
+            displays: screen.getAllDisplays().map((d) => ({
+              id: d.id,
+              bounds: d.bounds,
+              primary: d.id === screen.getPrimaryDisplay().id
+            })),
+            sources: sources.map((s, i) => ({
+              index: i,
+              id: s.id,
+              name: s.name,
+              display_id: s.display_id
+            }))
+          };
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(info, null, 2));
+        }).catch((e) => {
+          res.writeHead(500);
+          res.end(String(e));
+        });
+        return;
+      }
       if (req.url.split('?')[0] === '/api/capture') {
         // 截图 HTTP 兜底（Electron 渲染层走 IPC）
-        captureNow().then((b64) => {
+        const urlParams = new URL(req.url, 'http://127.0.0.1').searchParams;
+        const which = urlParams.get('which') || 'main';
+        captureScreenBy(which).then((b64) => {
           res.writeHead(200, { 'Content-Type': 'text/plain' });
           res.end(b64 === null ? 'null' : b64);
         }).catch((e) => { res.writeHead(500); res.end(String(e)); });
@@ -1246,11 +1271,6 @@ app.whenReady().then(() => {
     if (permission === 'media') return true;
     return false;
   });
-
-  desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).then((sources) => {
-    console.log(`[cap] 截屏目标配置: 主屏源=${CAP_MAIN_CFG}, 卧室源=${CAP_ROOM_CFG}`);
-    sources.forEach((s, i) => console.log(`[cap] 屏幕 [${i}]: ${s.name} (${s.id})`));
-  }).catch(() => {});
 
   console.error('[main] 启动 v3（debug 分历史 + 截屏工具）');
   // 只准 UI 层（含她的沙箱房间 iframe）访问本机：任何 http(s) 外发请求一律取消。
