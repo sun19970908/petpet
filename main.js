@@ -809,7 +809,7 @@ function winLog(msg) {
 function baseWin(area, opts = {}) {
   const win = new BrowserWindow({
     x: area.x, y: area.y, width: area.width, height: area.height,
-    transparent: true, frame: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: false,
+    transparent: true, frame: false, hasShadow: false, alwaysOnTop: opts.topmost !== false, skipTaskbar: true, resizable: false,
     focusable: opts.focusable !== false,
     webPreferences: {
       // 渲染层只访问本机静态服务与本地 API，无远程内容
@@ -835,8 +835,9 @@ function createPetOverlay(port, area) {  // 双窗：桌宠窗（主屏全屏透
   return win;
 }
 function createBedroomWindow(port, area) { // 双窗：卧室窗（副屏整屋、锁死不动、不穿透以便点帘灯）
-  // focusable:false：点房间不会激活/抢到前台，也就不会盖到桌宠窗上面（帘灯热区照常可点）
-  const win = baseWin(area, { focusable: false });
+  // 可激活 + 不置顶：桌宠窗是置顶的，永远压在卧室窗上面，所以卧室窗被点也不会挡到她；
+  // 之前用 focusable:false 防抢层，但实测这个组合下真实鼠标事件进不了页面（PostMessage 能点、真鼠标点不动）。
+  const win = baseWin(area, { focusable: true, topmost: false });
   win.setIgnoreMouseEvents(false);
   win.loadURL(`http://127.0.0.1:${port}/renderer/room.html`);
   return win;
