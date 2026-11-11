@@ -343,6 +343,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
   const dispatchTTS = (seg) => {
     if (!seg || !seg.trim()) return;
     streamSpoken = true;
+    rlog('tts-dispatch', seg.slice(0, 40));
     ttsChain = ttsChain.then(() => speakSegment(seg, signal)).catch(() => {});
   };
   let lastBubbleTs = 0;
@@ -732,8 +733,13 @@ function splitForTTS(text, minLen = 6, targetLen = 14) {
 }
 // GPT-SoVITS 离线静默期：连接失败/网关错误后 60s 内直接跳过合成（不报错不刷日志），到期自动重试
 let gsvDownUntil = 0;
+// 渲染层诊断日志：写 logs/renderer.log（TTS 分派/跳过/失败），排查"只显示不发声"
+function rlog(tag, msg) {
+  try { fetch('/api/log', { method: 'POST', body: tag + ' ' + String(msg == null ? '' : msg) }).catch(() => {}); } catch {}
+}
 async function speakSegment(seg, signal) {
-  if (Date.now() < gsvDownUntil) return;
+  if (Date.now() < gsvDownUntil) { rlog('tts-skip-down', Math.round((gsvDownUntil - Date.now()) / 1000) + 's left'); return; }
+  rlog('tts-start', seg.slice(0, 30));
   // 单段合成上限 2 分钟：某一段卡住时不能把整条 TTS 队列（以及后续每一轮的语音）永久堵死
   const ctrl = new AbortController();
   const onAbort = () => { try { ctrl.abort(); } catch {} };
@@ -762,14 +768,17 @@ async function speakSegment(seg, signal) {
     });
     if (res.status === 502 || res.status === 503 || res.status === 504) {
       gsvDownUntil = Date.now() + 60000;
+      rlog('tts-upstream-' + res.status, 'silent 60s');
       return;
     }
     if (!res.ok) throw new Error('TTS HTTP ' + res.status);
     const blob = await res.blob();
+    rlog('tts-ok', blob.size + 'B');
     speech.say(blob);
   } catch (e) {
-    if (signal && signal.aborted) return;
-    if (ctrl.signal.aborted) { gsvDownUntil = Date.now() + 60000; return; }   // 超时：静默 60s 再试
+    if (signal && signal.aborted) { rlog('tts-abort', 'turn aborted'); return; }
+    if (ctrl.signal.aborted) { gsvDownUntil = Date.now() + 60000; rlog('tts-timeout', 'silent 60s'); return; }   // 超时：静默 60s 再试
+    rlog('tts-error', String(e && e.message || e));
     console.warn('TTS 分段失败: ' + String(e && e.message || e));
   } finally {
     clearTimeout(timer);
@@ -1680,6 +1689,11 @@ speech.onIdle = () => {
     layoutChat();
     showBubble('你好呀，我上线啦！');
     setTimeout(() => { if (!busy && bubble.textContent === '你好呀，我上线啦！') hideBubble(); }, 15000);
+    // 临时/调试：?autowake=1 启动 6 秒后自动发起一轮唤醒（用于端到端验证 TTS 链路）
+    if (new URLSearchParams(location.search).has('autowake')) {
+      setTimeout(() => { if (!busy) wakeNow('（自动测试）主人想你了，随便说一句'); }, 6000);
+      rlog('autowake', 'scheduled');
+    }
   } catch (e) {
     showBubble('角色加载失败: ' + (e.message || e), true);
   }

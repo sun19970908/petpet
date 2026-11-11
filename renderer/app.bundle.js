@@ -2571,6 +2571,7 @@ void main(){ o=texture(uTex,vUv); }`;
     const dispatchTTS = (seg) => {
       if (!seg || !seg.trim()) return;
       streamSpoken = true;
+      rlog("tts-dispatch", seg.slice(0, 40));
       ttsChain = ttsChain.then(() => speakSegment(seg, signal)).catch(() => {
       });
     };
@@ -2943,8 +2944,19 @@ void main(){ o=texture(uTex,vUv); }`;
     };
   }
   var gsvDownUntil = 0;
+  function rlog(tag, msg) {
+    try {
+      fetch("/api/log", { method: "POST", body: tag + " " + String(msg == null ? "" : msg) }).catch(() => {
+      });
+    } catch {
+    }
+  }
   async function speakSegment(seg, signal) {
-    if (Date.now() < gsvDownUntil) return;
+    if (Date.now() < gsvDownUntil) {
+      rlog("tts-skip-down", Math.round((gsvDownUntil - Date.now()) / 1e3) + "s left");
+      return;
+    }
+    rlog("tts-start", seg.slice(0, 30));
     const ctrl = new AbortController();
     const onAbort = () => {
       try {
@@ -2977,17 +2989,24 @@ void main(){ o=texture(uTex,vUv); }`;
       });
       if (res.status === 502 || res.status === 503 || res.status === 504) {
         gsvDownUntil = Date.now() + 6e4;
+        rlog("tts-upstream-" + res.status, "silent 60s");
         return;
       }
       if (!res.ok) throw new Error("TTS HTTP " + res.status);
       const blob = await res.blob();
+      rlog("tts-ok", blob.size + "B");
       speech.say(blob);
     } catch (e3) {
-      if (signal && signal.aborted) return;
-      if (ctrl.signal.aborted) {
-        gsvDownUntil = Date.now() + 6e4;
+      if (signal && signal.aborted) {
+        rlog("tts-abort", "turn aborted");
         return;
       }
+      if (ctrl.signal.aborted) {
+        gsvDownUntil = Date.now() + 6e4;
+        rlog("tts-timeout", "silent 60s");
+        return;
+      }
+      rlog("tts-error", String(e3 && e3.message || e3));
       console.warn("TTS \u5206\u6BB5\u5931\u8D25: " + String(e3 && e3.message || e3));
     } finally {
       clearTimeout(timer);
@@ -3933,6 +3952,12 @@ void main(){ o=texture(uTex,vUv); }`;
       setTimeout(() => {
         if (!busy && bubble.textContent === "\u4F60\u597D\u5440\uFF0C\u6211\u4E0A\u7EBF\u5566\uFF01") hideBubble();
       }, 15e3);
+      if (new URLSearchParams(location.search).has("autowake")) {
+        setTimeout(() => {
+          if (!busy) wakeNow("\uFF08\u81EA\u52A8\u6D4B\u8BD5\uFF09\u4E3B\u4EBA\u60F3\u4F60\u4E86\uFF0C\u968F\u4FBF\u8BF4\u4E00\u53E5");
+        }, 6e3);
+        rlog("autowake", "scheduled");
+      }
     } catch (e3) {
       showBubble("\u89D2\u8272\u52A0\u8F7D\u5931\u8D25: " + (e3.message || e3), true);
     }

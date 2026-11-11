@@ -282,6 +282,19 @@ function handleApi(req, res) {
       });
       return;
     }
+    if (req.url === '/api/log' && req.method === 'POST') {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        try {
+          const line = Buffer.concat(chunks).toString('utf8');
+          fs.mkdirSync(path.join(APP_ROOT, 'logs'), { recursive: true });
+          fs.appendFileSync(path.join(APP_ROOT, 'logs', 'renderer.log'), new Date().toISOString() + ' ' + line + '\n');
+        } catch {}
+        res.writeHead(204); res.end();
+      });
+      return;
+    }
     res.writeHead(404); res.end('unknown api'); return;
   }
 
@@ -1111,7 +1124,7 @@ function createWindow(port) {            // 单窗旧行为：副屏整屋 / 主
 function createPetOverlay(port, area) {  // 双窗：桌宠窗（主屏全屏透明、穿透、只画她+聊天）
   const win = baseWin(area);
   win.setIgnoreMouseEvents(true, { forward: true });
-  win.loadURL(`http://127.0.0.1:${port}/?role=pet` + (process.env.PET_DEBUG ? '&debug=1' : ''));
+  win.loadURL(`http://127.0.0.1:${port}/?role=pet` + (process.env.PET_DEBUG ? '&debug=1' : '') + (process.env.PET_AUTOWAKE ? '&autowake=1' : ''));
   return win;
 }
 function createBedroomWindow(port, area) { // 双窗：卧室窗（副屏整屋、锁死不动、不穿透以便点帘灯）
