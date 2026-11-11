@@ -2705,6 +2705,10 @@ void main(){ o=texture(uTex,vUv); }`;
         }
       }
       noteContext(usage && usage.prompt_tokens);
+      {
+        const tail = slicer.flush();
+        if (tail) dispatchTTS(tail);
+      }
       const content = rawContent;
       let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a3, b4) => a3[0] - b4[0]).map(([, v4]) => v4) : null;
       if (!toolCalls && content) {

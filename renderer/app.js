@@ -456,6 +456,12 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       }
     }
     noteContext(usage && usage.prompt_tokens);
+    // 本轮流结束就把切句器尾巴冲刷进 TTS：工具轮会在下面 continue，不冲刷的话
+    // "说完半句就去调工具"的尾句只显示不发声（强标点结尾的句子已在流式时切走）
+    {
+      const tail = slicer.flush();
+      if (tail) dispatchTTS(tail);
+    }
     // ===== 组装等价非流形状 → 完全复用现有护栏与工具执行 =====
     const content = rawContent;
     let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v) : null;
