@@ -814,6 +814,8 @@ function baseWin(area, opts = {}) {
     webPreferences: {
       // 渲染层只访问本机静态服务与本地 API，无远程内容
       contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js'),
+      // 窗口被系统判为遮挡/后台时不要节流 rAF 和定时器：否则拖动会“按得下但不跟手”
+      backgroundThrottling: false,
     },
   });
   // 跨显示器并集的窗口在创建时会被 Chromium 夹到某块屏的工作区（实测 3520×1122 → 1920×1032），显式再设一次才按并集铺满

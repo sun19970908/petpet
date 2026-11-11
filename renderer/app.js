@@ -1184,29 +1184,24 @@ bubble.addEventListener('mousedown', (e) => {
 let dragRaf = 0, dragTarget = null;
 window.addEventListener('mousemove', (e) => {
   if (!drag) return;
-  dragTarget = {
-    nR: Math.max(0, Math.min(window.innerWidth - 100, drag.oRight - (e.clientX - drag.sx))),
-    nB: Math.max(46, Math.min(window.innerHeight - 80, drag.oBottom - (e.clientY - drag.sy))), // 脚下留出对话框高度
-  };
+  const nR = Math.max(0, Math.min(window.innerWidth - 100, drag.oRight - (e.clientX - drag.sx)));
+  const nB = Math.max(46, Math.min(window.innerHeight - 80, drag.oBottom - (e.clientY - drag.sy))); // 脚下留出对话框高度
+  // 位移立即写：不能等 rAF——窗口被系统判为遮挡/后台时 rAF 会被节流，拖动就会“按得下但不跟手”，松手才瞬移
+  petWrap.style.setProperty('--pet-right', nR + 'px');
+  petWrap.style.setProperty('--pet-y', nB + 'px');
+  dragTarget = { nR, nB };
   if (dragRaf) return;
   dragRaf = requestAnimationFrame(() => {
     dragRaf = 0;
     if (!dragTarget) return;
-    petWrap.style.setProperty('--pet-right', dragTarget.nR + 'px');
-    petWrap.style.setProperty('--pet-y', dragTarget.nB + 'px');
-    layoutChat();
+    layoutChat();   // 只有聊天框/气泡的位置合并到帧级
   });
 });
 window.addEventListener('mouseup', () => {
   if (!drag) return;
   if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
-  if (dragTarget) {
-    petWrap.style.setProperty('--pet-right', dragTarget.nR + 'px');
-    petWrap.style.setProperty('--pet-y', dragTarget.nB + 'px');
-    dragTarget = null;
-    layoutChat();
-  }
-  drag = null; savePetPos(); ensurePetVisible(); updateInRoom(true);
+  dragTarget = null;
+  drag = null; layoutChat(); savePetPos(); ensurePetVisible(); updateInRoom(true);
 });
 window.addEventListener('resize', () => { layoutChat(); syncRoomRect(); });
 
@@ -1339,6 +1334,10 @@ petCanvas.addEventListener('wheel', (e) => {
 // app 只负责：把 iframe 摆到卧室矩形、存 room-state.json、判断她在不在房间里、room_control 转发状态 =====
 const roomEl = $('room');
 const roomFrame = $('roomframe');
+// 桌宠窗永远不渲染房间（房间在独立卧室窗）：把隐藏 iframe 也置空。
+// 否则她的房间脚本会在桌宠窗里再跑一份——改动出 bug 会拖死桌宠窗的输入/拖动，
+// 而且页面加载时 self report 的状态会覆盖窗帘/灯存盘。
+if (ROLE === 'pet' && roomFrame) { try { roomFrame.src = 'about:blank'; } catch {} }
 let bedroomMode = false; // 整窗在副屏 = 卧室铺满视口
 let roomRect = null; // 卧室矩形（CSS px）；卧室模式下 = 整个视口
 let roomState = { curtain: 'open', lamp: 'off' };

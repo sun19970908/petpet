@@ -3483,17 +3483,15 @@ void main(){ o=texture(uTex,vUv); }`;
   var dragTarget = null;
   window.addEventListener("mousemove", (e3) => {
     if (!drag) return;
-    dragTarget = {
-      nR: Math.max(0, Math.min(window.innerWidth - 100, drag.oRight - (e3.clientX - drag.sx))),
-      nB: Math.max(46, Math.min(window.innerHeight - 80, drag.oBottom - (e3.clientY - drag.sy)))
-      // 脚下留出对话框高度
-    };
+    const nR = Math.max(0, Math.min(window.innerWidth - 100, drag.oRight - (e3.clientX - drag.sx)));
+    const nB = Math.max(46, Math.min(window.innerHeight - 80, drag.oBottom - (e3.clientY - drag.sy)));
+    petWrap.style.setProperty("--pet-right", nR + "px");
+    petWrap.style.setProperty("--pet-y", nB + "px");
+    dragTarget = { nR, nB };
     if (dragRaf) return;
     dragRaf = requestAnimationFrame(() => {
       dragRaf = 0;
       if (!dragTarget) return;
-      petWrap.style.setProperty("--pet-right", dragTarget.nR + "px");
-      petWrap.style.setProperty("--pet-y", dragTarget.nB + "px");
       layoutChat();
     });
   });
@@ -3503,13 +3501,9 @@ void main(){ o=texture(uTex,vUv); }`;
       cancelAnimationFrame(dragRaf);
       dragRaf = 0;
     }
-    if (dragTarget) {
-      petWrap.style.setProperty("--pet-right", dragTarget.nR + "px");
-      petWrap.style.setProperty("--pet-y", dragTarget.nB + "px");
-      dragTarget = null;
-      layoutChat();
-    }
+    dragTarget = null;
     drag = null;
+    layoutChat();
     savePetPos();
     ensurePetVisible();
     updateInRoom(true);
@@ -3645,6 +3639,12 @@ void main(){ o=texture(uTex,vUv); }`;
   }, { passive: false });
   var roomEl = $3("room");
   var roomFrame = $3("roomframe");
+  if (ROLE === "pet" && roomFrame) {
+    try {
+      roomFrame.src = "about:blank";
+    } catch {
+    }
+  }
   var bedroomMode = false;
   var roomRect = null;
   var roomState = { curtain: "open", lamp: "off" };
