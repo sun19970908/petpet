@@ -56,7 +56,7 @@ const history = []; // 会话内存缓存；事实源在硬盘文件（debug 模
 // 思考模块（自适应 v2）：强度判断交给模型自己——只规定格式（标签内先报难度再想），不替它判断
 const THINK_MODULES = {
   pet_think: {
-    instruction: '思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以"人设档案"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止思考自身身份（如deepseek娘）或思考语气（如傲娇嘴硬）等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n ',
+    instruction: '思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以"人设档案"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止思考自身身份（如deepseek娘）或思考语气（如傲娇嘴硬）等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n 下边这种说法是工具记录，无法真正调用工具：（本轮使用了工具：edit_file → pet_space/room/index.html）\n ',
     prefill: '<think>跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度\n</think>\n',
   },
 };
@@ -1714,10 +1714,13 @@ speech.onIdle = () => {
     layoutChat();
     showBubble('你好呀，我上线啦！');
     setTimeout(() => { if (!busy && bubble.textContent === '你好呀，我上线啦！') hideBubble(); }, 15000);
-    // 临时/调试：?autowake=1 启动 6 秒后自动发起一轮唤醒（用于端到端验证 TTS 链路）
-    if (new URLSearchParams(location.search).has('autowake')) {
-      setTimeout(() => { if (!busy) wakeNow('（自动测试）主人想你了，随便说一句'); }, 6000);
-      rlog('autowake', 'scheduled');
+    // 临时/调试：?autowake=1 或 ?autowake=<文本> 启动 6 秒后自动发起一轮唤醒（用于端到端验证）
+    const awParam = new URLSearchParams(location.search).get('autowake');
+    if (awParam) {
+      let awText = awParam === '1' ? '（自动测试）主人想你了，随便说一句' : awParam;
+      if (awParam === 'editprobe') awText = '（测试）请在你的房间页面 pet_space/room/index.html 里加一行 HTML 注释 <!-- probe -->，改完调用 look_at_room 看一眼房间确认效果。';
+      setTimeout(() => { if (!busy) wakeNow(awText); }, 6000);
+      rlog('autowake', awText.slice(0, 40));
     }
   } catch (e) {
     showBubble('角色加载失败: ' + (e.message || e), true);

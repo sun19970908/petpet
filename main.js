@@ -1175,13 +1175,14 @@ function serveStatic(req, res) {
         }
       }
       if (req.url.split('?')[0] === '/api/fstool' && req.method === 'POST') {
-        // 浏览器测试页走 HTTP 兜底（Electron 渲染层走 IPC），执行器同一份
+        // 浏览器测试页走 HTTP 兜底（Electron 渲染层走 IPC），执行器同一份；房间文件改动同样通知重载
         const chunks = [];
         req.on('data', (c) => chunks.push(c));
         req.on('end', async () => {
           let call = {};
           try { call = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch {}
           const out = await runFsTool(call);
+          Promise.resolve(out).then(() => maybeRoomChanged(call)).catch(() => {});
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(out));
         });
@@ -1278,7 +1279,7 @@ function createWindow(port) {            // 单窗旧行为：副屏整屋 / 主
 function createPetOverlay(port, area) {  // 双窗：桌宠窗（主屏全屏透明、穿透、只画她+聊天）
   const win = baseWin(area);
   win.setIgnoreMouseEvents(true, { forward: true });
-  win.loadURL(`http://127.0.0.1:${port}/?role=pet` + (process.env.PET_DEBUG ? '&debug=1' : '') + (process.env.PET_AUTOWAKE ? '&autowake=1' : ''));
+  win.loadURL(`http://127.0.0.1:${port}/?role=pet` + (process.env.PET_DEBUG ? '&debug=1' : '') + (process.env.PET_AUTOWAKE ? '&autowake=' + encodeURIComponent(process.env.PET_AUTOWAKE_TEXT || '1') : ''));
   return win;
 }
 function createBedroomWindow(port, area) { // 双窗：卧室窗（副屏整屋、锁死不动、不穿透以便点帘灯）
@@ -1336,6 +1337,11 @@ function spawnBedroom(port) {
     spawnBedroom(port);
     // 重建的卧室窗晚于桌宠窗创建、会压在她上面 → 把卧室降回普通层（只动卧室，不碰桌宠窗的置顶）
     try { bedroomWin.setAlwaysOnTop(false); } catch {}
+  });
+  // 偶发：编辑房间后卧室窗会被系统最小化（原因未查明）→ 立即恢复并记日志，便于追踪发生时间
+  bedroomWin.on('minimize', () => {
+    winLog('bedroom minimized -> restore');
+    try { bedroomWin.restore(); } catch {}
   });
 }
 
