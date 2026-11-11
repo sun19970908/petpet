@@ -9,10 +9,17 @@ rem 支持填数字下标（0 或 1），也支持填名称（如 "屏幕 2"、"
 if not defined PET_CAP_MAIN set "PET_CAP_MAIN=1"
 if not defined PET_CAP_ROOM set "PET_CAP_ROOM=0"
 
-rem Usage: start-pet.bat [auto|on|off] [idle_seconds] [--cap-main=1] [--cap-room=0]
+rem 支持传 debug / --debug 参数进入独立调试历史
+for %%a in (%*) do (
+  if /i "%%a"=="debug" set "PET_DEBUG=1"
+  if /i "%%a"=="--debug" set "PET_DEBUG=1"
+)
+
+rem Usage: start-pet.bat [debug] [auto|on|off] [idle_seconds] [--cap-main=1] [--cap-room=0]
 rem Examples:
 rem   start-pet.bat
+rem   start-pet.bat debug
 rem   start-pet.bat --cap-main=1 --cap-room=0
-rem   start-pet.bat auto 180 --cap-main=1
+rem   start-pet.bat debug auto 180 --cap-main=1
 
 start "" "%~dp0node_modules\electron\dist\electron.exe" . %*

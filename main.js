@@ -15,6 +15,8 @@ const SPLIT_WINDOWS = true;   // 双窗：卧室独立窗(锁副屏，不动) + 
 // 关掉 GPU 合成后独显占用归零（WebGL 精灵仍走核显硬件），代价约 0.4 核 CPU。
 // 想回硬件合成：启动时设 PET_HW_COMPOSITING=1
 if (process.env.PET_HW_COMPOSITING !== '1') app.commandLine.appendSwitch('disable-gpu-compositing');
+// Windows Graphics Capture (WGC)：启用现代 WGC 捕获多屏/跨 GPU 显示器（双独显 3060Ti+4060Ti 跨屏必备）
+app.commandLine.appendSwitch('enable-features', 'WebRtcAllowWgcScreenCapturer');
 // 思考方案开关（启动脚本 set PET_THINK=...）：pet_think | off
 //   pet_think = pet_think 标签 + 动态思考强度（轻/标准/深，按问题特征），模型固定 nothink
 //   off       = 不注入思考模块
@@ -49,6 +51,7 @@ for (const arg of process.argv.slice(1)) {
   else if (arg.startsWith('--gsv-idle=')) cliGsvIdle = arg.slice(11);
   else if (arg.startsWith('--cap-main=')) cliCapMain = arg.slice(11);
   else if (arg.startsWith('--cap-room=')) cliCapRoom = arg.slice(11);
+  else if (arg === 'debug' || arg === '--debug') process.env.PET_DEBUG = '1';
   else if (['auto', 'always', 'on', 'never', 'off'].includes(arg.toLowerCase())) cliGsvMode = arg;
   else if (/^\d+$/.test(arg)) cliGsvIdle = arg;
 }
@@ -403,7 +406,7 @@ function spawnFF() {
 }
 
 // 截屏目标解析器：支持数字下标（0, 1, 2）或屏幕名称模糊匹配（如 "屏幕 1", "屏幕 2", "LG", "TFC"）
-function resolveCapSource(sources, cfg, defaultIdx) {
+function resolveCapSource(sources, cfg, defaultIdx, targetDisplayId) {
   if (!sources || !sources.length) return null;
   const sVal = (cfg !== null && cfg !== undefined) ? String(cfg).trim() : '';
   if (sVal) {
@@ -413,9 +416,15 @@ function resolveCapSource(sources, cfg, defaultIdx) {
     }
     const found = sources.find((s) =>
       s.name.toLowerCase().includes(sVal.toLowerCase()) ||
-      s.id.toLowerCase().includes(sVal.toLowerCase())
+      s.id.toLowerCase().includes(sVal.toLowerCase()) ||
+      (s.display_id && s.display_id === sVal)
     );
     if (found) return found;
+  }
+  // 未指定 cfg 或未匹配到时，若能匹配到 target.id 优先按真实显示器 ID 绑定
+  if (targetDisplayId) {
+    const byId = sources.find((s) => s.display_id && s.display_id === String(targetDisplayId));
+    if (byId) return byId;
   }
   return sources[defaultIdx] || sources[0];
 }
@@ -438,15 +447,34 @@ async function captureScreenBy(which) {
       return cx >= wa.x && cx < wa.x + wa.width && cy >= wa.y && cy < wa.y + wa.height;
     }) || all.find((d) => d.id !== primary.id) || primary;
   }
-  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: target.size.width, height: target.size.height } });
+
+  const tw = (target && target.size && target.size.width) || 1920;
+  const th = (target && target.size && target.size.height) || 1080;
+
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: tw, height: th } });
 
   const cfg = isRoom ? CAP_ROOM_CFG : CAP_MAIN_CFG;
   const defaultIdx = isRoom ? 0 : 1;
-  const src = resolveCapSource(sources, cfg, defaultIdx);
+  const src = resolveCapSource(sources, cfg, defaultIdx, target.id);
 
-  winLog(`[cap] which=${which} cfg="${cfg}" picked=${src ? (src.name + ' ' + src.id) : 'null'} available=${sources.map((s, i) => `[${i}]${s.name}`).join(', ')}`);
+  let jpegBuffer = null;
+  if (src && src.thumbnail && !src.thumbnail.isEmpty()) {
+    jpegBuffer = src.thumbnail.toJPEG(85);
+  }
 
-  return src ? src.thumbnail.toJPEG(85).toString('base64') : null;
+  // 详细诊断日志：落盘 logs/windows.log 供 debug 模式完整追踪
+  const srcSummary = sources.map((s, i) => `[${i}]"${s.name}"(id=${s.id},disp=${s.display_id || 'none'},empty=${s.thumbnail.isEmpty()})`).join('; ');
+  const dispSummary = all.map((d) => `(id=${d.id},bounds=${d.bounds.x},${d.bounds.y},${d.bounds.width}x${d.bounds.height},pri=${d.id === primary.id})`).join('; ');
+
+  winLog(`[cap] which=${which} cfg="${cfg}" targetId=${target.id} picked=${src ? (src.name + ' ' + src.id) : 'null'} bytes=${jpegBuffer ? jpegBuffer.length : 0} | sources=${srcSummary} | displays=${dispSummary}`);
+
+  if (jpegBuffer) {
+    try {
+      fs.writeFileSync(path.join(APP_ROOT, 'logs', `last_cap_${which}.jpg`), jpegBuffer);
+    } catch {}
+  }
+
+  return jpegBuffer ? jpegBuffer.toString('base64') : null;
 }
 async function captureNow() { return captureScreenBy('main'); }
 
