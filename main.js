@@ -41,7 +41,8 @@ const MIME = {
 // 空闲超时：PET_GSV_IDLE=120 (默认 120 秒无请求退出释放显存)
 let cliGsvMode = null;
 let cliGsvIdle = null;
-for (const arg of process.argv.slice(2)) {
+for (const arg of process.argv.slice(1)) {
+  if (!arg || arg === '.' || arg.endsWith('electron.exe') || arg.endsWith('main.js')) continue;
   if (arg.startsWith('--gsv-mode=')) cliGsvMode = arg.slice(11);
   else if (arg.startsWith('--gsv-idle=')) cliGsvIdle = arg.slice(11);
   else if (['auto', 'always', 'on', 'never', 'off'].includes(arg.toLowerCase())) cliGsvMode = arg;
