@@ -229,12 +229,13 @@ async function ensureASR() {
       console.log(`[asr] 正在拉起 SenseVoice ASR (port ${ASR_PORT})...`);
       asrProc = spawn(ASR_PYTHON, [ASR_SCRIPT], {
         cwd: APP_ROOT,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      asrProc.stdout.on('data', (d) => console.log(d.toString().trim()));
-      asrProc.stderr.on('data', (d) => console.error(d.toString().trim()));
+      asrProc.stdout.on('data', (d) => console.log(d.toString('utf8').trim()));
+      asrProc.stderr.on('data', (d) => console.error(d.toString('utf8').trim()));
 
       asrProc.on('exit', (code, sig) => {
         console.log(`[asr] 进程已退出 (code=${code}, sig=${sig})`);
@@ -242,14 +243,14 @@ async function ensureASR() {
       });
 
       const startTs = Date.now();
-      while (Date.now() - startTs < 15000) {
+      while (Date.now() - startTs < 35000) {
         if (await isAsrPortOpen()) {
           console.log(`[asr] SenseVoice ASR 已就绪（就绪耗时 ${Date.now() - startTs}ms）`);
           return true;
         }
         await new Promise((r) => setTimeout(r, 300));
       }
-      console.warn('[asr] 启动等待超时（15s 内 9882 端口未响应）');
+      console.warn('[asr] 启动等待超时（35s 内 9882 端口未响应）');
       return false;
     } catch (e) {
       console.error('[asr] 启动异常:', e.message);
