@@ -2574,9 +2574,9 @@ void main(){ o=texture(uTex,vUv); }`;
       ttsChain = ttsChain.then(() => speakSegment(seg, signal)).catch(() => {
       });
     };
-    const slicer = makeSentenceSlicer();
     let lastBubbleTs = 0;
     for (let round = 0; ; round++) {
+      const slicer = makeSentenceSlicer();
       const model = "strata-nothink";
       const sendMsgs = bodyMsgs.slice();
       const needCfm = sendMsgs[sendMsgs.length - 1]?.role === "assistant";
@@ -2624,10 +2624,10 @@ void main(){ o=texture(uTex,vUv); }`;
       };
       const processRaw = () => {
         for (; ; ) {
-          const rest = rawContent.slice(processed);
-          if (!rest) return;
+          const rest2 = rawContent.slice(processed);
+          if (!rest2) return;
           if (inThink) {
-            const m3 = rest.match(CLOSE_THINK_RE);
+            const m3 = rest2.match(CLOSE_THINK_RE);
             if (!m3) {
               processed = rawContent.length;
               return;
@@ -2635,7 +2635,7 @@ void main(){ o=texture(uTex,vUv); }`;
             processed += m3.index + m3[0].length;
             inThink = false;
           } else if (inTool) {
-            const m3 = rest.match(CLOSE_TOOL_RE);
+            const m3 = rest2.match(CLOSE_TOOL_RE);
             if (!m3) {
               processed = rawContent.length;
               return;
@@ -2643,10 +2643,10 @@ void main(){ o=texture(uTex,vUv); }`;
             processed += m3.index + m3[0].length;
             inTool = false;
           } else {
-            const m3 = rest.match(TAG_RES);
-            const hold = partialTagLen(rest);
-            if (m3 && m3.index < rest.length - hold) {
-              feedReplyDelta(rest.slice(0, m3.index));
+            const m3 = rest2.match(TAG_RES);
+            const hold = partialTagLen(rest2);
+            if (m3 && m3.index < rest2.length - hold) {
+              feedReplyDelta(rest2.slice(0, m3.index));
               processed += m3.index;
               if (m3[0] === "<pet_think>" || m3[0] === "<think>") {
                 inThink = true;
@@ -2658,8 +2658,8 @@ void main(){ o=texture(uTex,vUv); }`;
                 processed += m3[0].length;
               }
             } else {
-              feedReplyDelta(rest.slice(0, rest.length - hold));
-              processed += rest.length - hold;
+              feedReplyDelta(rest2.slice(0, rest2.length - hold));
+              processed += rest2.length - hold;
               return;
             }
           }
@@ -2894,6 +2894,9 @@ void main(){ o=texture(uTex,vUv); }`;
         showBubble("\u63D0\u9192\u5979\u5148\u67E5\u8BC1\u2026");
         continue;
       }
+      const rest = slicer.flush();
+      if (rest) dispatchTTS(rest);
+      await ttsChain;
       return text;
     }
   }
@@ -2935,112 +2938,37 @@ void main(){ o=texture(uTex,vUv); }`;
       }
     };
   }
-  function splitForTTS(text, minLen = 6, targetLen = 14) {
-    const s3 = String(text || "").replace(/\r/g, "").trim();
-    if (!s3) return [];
-    const strongEnd = "\u3002\uFF01\uFF1F!?\n";
-    const weakEnd = "\uFF0C,\u3001\uFF1B;\u2026\u2014~\uFF5E";
-    const hasWord = (t3) => /[\p{L}\p{N}]/u.test(t3);
-    const segs = [];
-    let buf = "";
-    for (let i3 = 0; i3 < s3.length; i3++) {
-      const ch = s3[i3];
-      buf += ch;
-      if (strongEnd.includes(ch) || weakEnd.includes(ch)) {
-        while (i3 + 1 < s3.length && (strongEnd.includes(s3[i3 + 1]) || weakEnd.includes(s3[i3 + 1]))) {
-          buf += s3[++i3];
-        }
-      }
-      const curLen = buf.length;
-      let cut = false;
-      if (ch === "\n") {
-        cut = true;
-      } else if (strongEnd.includes(ch)) {
-        if (curLen >= minLen) cut = true;
-      } else if (weakEnd.includes(ch)) {
-        if (curLen >= targetLen) cut = true;
-      } else if (curLen >= 45) {
-        cut = true;
-      }
-      if (cut && hasWord(buf)) {
-        segs.push(buf.trim());
-        buf = "";
-      }
-    }
-    if (hasWord(buf)) {
-      const b4 = buf.trim();
-      if (segs.length && b4.length < minLen) {
-        segs[segs.length - 1] += b4;
-      } else {
-        segs.push(b4);
-      }
-    }
-    return segs.length ? segs : [s3];
-  }
   var gsvDownUntil = 0;
   async function speakSegment(seg, signal) {
     if (Date.now() < gsvDownUntil) return;
-    const res = await fetch(TTS_URL, {
-      method: "POST",
-      signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: seg,
-        text_lang: "zh",
-        prompt_lang: "zh",
-        text_split_method: "cut5",
-        media_type: "wav",
-        streaming_mode: false,
-        temperature: 0.4,
-        top_P: 0.7,
-        top_K: 3,
-        ...TTS_REF
-      })
-    });
-    if (!res.ok) throw new Error("TTS HTTP " + res.status);
-    const blob = await res.blob();
-    speech.say(blob);
-  }
-  async function speak(text, signal) {
-    const segs = splitForTTS(text);
-    let fails = 0;
-    for (const seg of segs) {
+    try {
+      const res = await fetch(TTS_URL, {
+        method: "POST",
+        signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: seg,
+          text_lang: "zh",
+          prompt_lang: "zh",
+          text_split_method: "cut5",
+          media_type: "wav",
+          streaming_mode: false,
+          temperature: 0.4,
+          top_P: 0.7,
+          top_K: 3,
+          ...TTS_REF
+        })
+      });
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        gsvDownUntil = Date.now() + 6e4;
+        return;
+      }
+      if (!res.ok) throw new Error("TTS HTTP " + res.status);
+      const blob = await res.blob();
+      speech.say(blob);
+    } catch (e3) {
       if (signal && signal.aborted) return;
-      if (Date.now() < gsvDownUntil) return;
-      let blob = null;
-      try {
-        const res = await fetch(TTS_URL, {
-          method: "POST",
-          signal,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: seg,
-            text_lang: "zh",
-            prompt_lang: "zh",
-            text_split_method: "cut5",
-            media_type: "wav",
-            streaming_mode: false,
-            temperature: 0.4,
-            top_P: 0.7,
-            top_K: 3,
-            ...TTS_REF
-          })
-        });
-        if (res.ok) blob = await res.blob();
-        else {
-          fails += 1;
-          console.warn("TTS HTTP " + res.status);
-        }
-      } catch (e3) {
-        if (signal && signal.aborted) return;
-        fails += 1;
-        console.warn("TTS \u5931\u8D25\uFF1A" + String(e3 && e3.message || e3));
-      }
-      if (blob) {
-        speech.say(blob);
-        fails = 0;
-      }
-      if (fails >= 3) return;
+      console.warn("TTS \u5206\u6BB5\u5931\u8D25: " + String(e3 && e3.message || e3));
     }
   }
   var turnAbort = null;
@@ -3070,7 +2998,6 @@ void main(){ o=texture(uTex,vUv); }`;
       showBubble(reply);
       replied = true;
       react(reply);
-      await speak(reply, turnAbort.signal);
       memoryAddFire(userContent2, reply);
       queueInfiniteWake();
       return true;
@@ -3341,7 +3268,6 @@ void main(){ o=texture(uTex,vUv); }`;
       showBubble(fullReply);
       replied = true;
       react(newReply);
-      await speak(newReply, turnAbort.signal);
       memoryAddFire(userContent2, fullReply);
       queueInfiniteWake();
       return true;

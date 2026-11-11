@@ -345,9 +345,9 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     streamSpoken = true;
     ttsChain = ttsChain.then(() => speakSegment(seg, signal)).catch(() => {});
   };
-  const slicer = makeSentenceSlicer();
   let lastBubbleTs = 0;
   for (let round = 0; ; round++) {
+    const slicer = makeSentenceSlicer();
     const model = 'strata-nothink'; // 固定 nothink：快；思考强度全靠 pet_think 指令动态控制
     const sendMsgs = bodyMsgs.slice();
     const needCfm = sendMsgs[sendMsgs.length - 1]?.role === 'assistant';
@@ -638,6 +638,10 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       showBubble('提醒她先查证…');
       continue;
     }
+    // 冲刷切句器中剩余的尾句并送入 TTS，等待所有分派完成
+    const rest = slicer.flush();
+    if (rest) dispatchTTS(rest);
+    await ttsChain;
     return text;
   }
 }
@@ -724,26 +728,35 @@ function splitForTTS(text, minLen = 6, targetLen = 14) {
 let gsvDownUntil = 0;
 async function speakSegment(seg, signal) {
   if (Date.now() < gsvDownUntil) return;
-  const res = await fetch(TTS_URL, {
-    method: 'POST',
-    signal,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text: seg,
-      text_lang: 'zh',
-      prompt_lang: 'zh',
-      text_split_method: 'cut5',
-      media_type: 'wav',
-      streaming_mode: false,
-      temperature: 0.4,
-      top_P: 0.7,
-      top_K: 3,
-      ...TTS_REF,
-    }),
-  });
-  if (!res.ok) throw new Error('TTS HTTP ' + res.status);
-  const blob = await res.blob();
-  speech.say(blob);
+  try {
+    const res = await fetch(TTS_URL, {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: seg,
+        text_lang: 'zh',
+        prompt_lang: 'zh',
+        text_split_method: 'cut5',
+        media_type: 'wav',
+        streaming_mode: false,
+        temperature: 0.4,
+        top_P: 0.7,
+        top_K: 3,
+        ...TTS_REF,
+      }),
+    });
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      gsvDownUntil = Date.now() + 60000;
+      return;
+    }
+    if (!res.ok) throw new Error('TTS HTTP ' + res.status);
+    const blob = await res.blob();
+    speech.say(blob);
+  } catch (e) {
+    if (signal && signal.aborted) return;
+    console.warn('TTS 分段失败: ' + String(e && e.message || e));
+  }
 }
 async function speak(text, signal) {
   const segs = splitForTTS(text);
@@ -797,7 +810,7 @@ async function submitRequest(text, image) {
     showBubble(reply);
     replied = true;
     react(reply);
-    await speak(reply, turnAbort.signal);
+    // 流式阶段已成句即说（dispatchTTS），不再重复整段 speak
     memoryAddFire(userContent, reply); // 异步入语义索引，不阻塞回复
     queueInfiniteWake();
     return true;
@@ -1022,7 +1035,7 @@ async function continueRequest() {
     showBubble(fullReply);
     replied = true;
     react(newReply);
-    await speak(newReply, turnAbort.signal);
+    // 流式阶段已成句即说（dispatchTTS），不再重复整段 speak
     memoryAddFire(userContent, fullReply);
     queueInfiniteWake();
     return true;
