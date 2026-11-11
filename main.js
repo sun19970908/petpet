@@ -41,13 +41,20 @@ const MIME = {
 // 空闲超时：PET_GSV_IDLE=600 (默认 600 秒无请求退出释放显存；太短会导致每轮对话都冷启动，TTS 整段静默)
 let cliGsvMode = null;
 let cliGsvIdle = null;
+let cliCapMain = null;
+let cliCapRoom = null;
 for (const arg of process.argv.slice(1)) {
   if (!arg || arg === '.' || arg.endsWith('electron.exe') || arg.endsWith('main.js')) continue;
   if (arg.startsWith('--gsv-mode=')) cliGsvMode = arg.slice(11);
   else if (arg.startsWith('--gsv-idle=')) cliGsvIdle = arg.slice(11);
+  else if (arg.startsWith('--cap-main=')) cliCapMain = arg.slice(11);
+  else if (arg.startsWith('--cap-room=')) cliCapRoom = arg.slice(11);
   else if (['auto', 'always', 'on', 'never', 'off'].includes(arg.toLowerCase())) cliGsvMode = arg;
   else if (/^\d+$/.test(arg)) cliGsvIdle = arg;
 }
+
+const CAP_MAIN_CFG = cliCapMain ?? process.env.PET_CAP_MAIN ?? '0';
+const CAP_ROOM_CFG = cliCapRoom ?? process.env.PET_CAP_ROOM ?? '1';
 
 const rawGsvMode = (cliGsvMode || process.env.PET_GSV_MODE || 'auto').toLowerCase();
 const GSV_MODE = ['always', 'on'].includes(rawGsvMode) ? 'always'
@@ -395,6 +402,24 @@ function spawnFF() {
   }
 }
 
+// 截屏目标解析器：支持数字下标（0, 1, 2）或屏幕名称模糊匹配（如 "屏幕 1", "屏幕 2", "LG", "TFC"）
+function resolveCapSource(sources, cfg, defaultIdx) {
+  if (!sources || !sources.length) return null;
+  const sVal = (cfg !== null && cfg !== undefined) ? String(cfg).trim() : '';
+  if (sVal) {
+    const num = parseInt(sVal, 10);
+    if (String(num) === sVal && num >= 0 && num < sources.length) {
+      return sources[num];
+    }
+    const found = sources.find((s) =>
+      s.name.toLowerCase().includes(sVal.toLowerCase()) ||
+      s.id.toLowerCase().includes(sVal.toLowerCase())
+    );
+    if (found) return found;
+  }
+  return sources[defaultIdx] || sources[0];
+}
+
 // 截屏目标：'main' = 主屏（用户的世界，默认——你在主屏工作，她看到的应该是你的上下文）；
 //           'room' = 卧室窗所在屏（她自己的房间，通常副屏——看照片墙/窗帘的实际状态）
 // 不再做双屏拼接：她的两个视角语义分离
@@ -415,19 +440,11 @@ async function captureScreenBy(which) {
   }
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: target.size.width, height: target.size.height } });
 
-  // Windows 下 Chromium 的 desktopCapturer 顺序：
-  // sources[0] 为 "屏幕 1"（Windows 主显示器，即用户工作的主屏）
-  // sources[1] 为 "屏幕 2"（扩展屏，即桌宠卧室）
-  let src = null;
-  if (isRoom) {
-    // 截取卧室副屏：取 sources[1]（屏幕 2），无副屏则回退 sources[0]
-    src = sources[1] || sources[0];
-  } else {
-    // 截取主屏：固定取 sources[0]（屏幕 1，主显示器）
-    src = sources[0];
-  }
+  const cfg = isRoom ? CAP_ROOM_CFG : CAP_MAIN_CFG;
+  const defaultIdx = isRoom ? 1 : 0;
+  const src = resolveCapSource(sources, cfg, defaultIdx);
 
-  winLog(`[cap] which=${which} picked=${src ? (src.name + ' ' + src.id) : 'null'} total_sources=${sources.length}`);
+  winLog(`[cap] which=${which} cfg="${cfg}" picked=${src ? (src.name + ' ' + src.id) : 'null'} available=${sources.map((s, i) => `[${i}]${s.name}`).join(', ')}`);
 
   return src ? src.thumbnail.toJPEG(85).toString('base64') : null;
 }
@@ -1229,6 +1246,11 @@ app.whenReady().then(() => {
     if (permission === 'media') return true;
     return false;
   });
+
+  desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).then((sources) => {
+    console.log(`[cap] 截屏目标配置: 主屏源=${CAP_MAIN_CFG}, 卧室源=${CAP_ROOM_CFG}`);
+    sources.forEach((s, i) => console.log(`[cap] 屏幕 [${i}]: ${s.name} (${s.id})`));
+  }).catch(() => {});
 
   console.error('[main] 启动 v3（debug 分历史 + 截屏工具）');
   // 只准 UI 层（含她的沙箱房间 iframe）访问本机：任何 http(s) 外发请求一律取消。
