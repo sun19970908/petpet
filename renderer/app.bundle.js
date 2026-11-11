@@ -2553,6 +2553,13 @@ void main(){ o=texture(uTex,vUv); }`;
       }
       return 0;
     }
+    function partialCloseLen(s3, tags) {
+      for (let len = Math.min(s3.length, 12); len > 0; len--) {
+        const tail = s3.slice(-len);
+        if (tags.some((tag) => tag.startsWith(tail))) return len;
+      }
+      return 0;
+    }
     let noTools = false;
     let lastSig = null;
     let repeatCount = 0;
@@ -2630,7 +2637,7 @@ void main(){ o=texture(uTex,vUv); }`;
           if (inThink) {
             const m3 = rest2.match(CLOSE_THINK_RE);
             if (!m3) {
-              processed = rawContent.length;
+              processed = rawContent.length - partialCloseLen(rest2, ["</pet_think>", "</think>"]);
               return;
             }
             processed += m3.index + m3[0].length;
@@ -2638,7 +2645,7 @@ void main(){ o=texture(uTex,vUv); }`;
           } else if (inTool) {
             const m3 = rest2.match(CLOSE_TOOL_RE);
             if (!m3) {
-              processed = rawContent.length;
+              processed = rawContent.length - partialCloseLen(rest2, ["</tool_call>", "</invoke>"]);
               return;
             }
             processed += m3.index + m3[0].length;

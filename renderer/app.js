@@ -325,6 +325,15 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     }
     return 0;
   }
+  // 思考/工具态里找闭合标签时，同样要扣住"半个标签"：闭合标签被 delta 切断时（'</pet_' + 'think>'），
+  // 若直接吞掉前半截，闭合标签就永远匹配不上，后面的正文会整段被当成思考丢掉（"只显示不发声"的根因）
+  function partialCloseLen(s, tags) {
+    for (let len = Math.min(s.length, 12); len > 0; len--) {
+      const tail = s.slice(-len);
+      if (tags.some((tag) => tag.startsWith(tail))) return len;
+    }
+    return 0;
+  }
   let noTools = false;
   let lastSig = null;
   let repeatCount = 0;
@@ -400,12 +409,18 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
         if (!rest) return;
         if (inThink) {
           const m = rest.match(CLOSE_THINK_RE);
-          if (!m) { processed = rawContent.length; return; }
+          if (!m) {
+            processed = rawContent.length - partialCloseLen(rest, ['</pet_think>', '</think>']);
+            return;
+          }
           processed += m.index + m[0].length;
           inThink = false;
         } else if (inTool) {
           const m = rest.match(CLOSE_TOOL_RE);
-          if (!m) { processed = rawContent.length; return; }
+          if (!m) {
+            processed = rawContent.length - partialCloseLen(rest, ['</tool_call>', '</invoke>']);
+            return;
+          }
           processed += m.index + m[0].length;
           inTool = false;
         } else {
