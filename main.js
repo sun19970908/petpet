@@ -5,7 +5,8 @@ const { app, BrowserWindow, screen, ipcMain, desktopCapturer, nativeImage, sessi
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
+const net = require('net');
 
 const APP_ROOT = __dirname;
 const PORT = 12400;
@@ -34,6 +35,134 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
 };
 
+// ===== GPT-SoVITS 生命周期管理器 =====
+// 参数优先级：CLI 参数 > 环境变量 > 默认值
+// 模式：PET_GSV_MODE=auto (默认，发 LLM 请求时提前预热拉起，无请求超时休眠) | always (常驻) | never (不启动)
+// 空闲超时：PET_GSV_IDLE=120 (默认 120 秒无请求退出释放显存)
+let cliGsvMode = null;
+let cliGsvIdle = null;
+for (const arg of process.argv.slice(2)) {
+  if (arg.startsWith('--gsv-mode=')) cliGsvMode = arg.slice(11);
+  else if (arg.startsWith('--gsv-idle=')) cliGsvIdle = arg.slice(11);
+  else if (['auto', 'always', 'on', 'never', 'off'].includes(arg.toLowerCase())) cliGsvMode = arg;
+  else if (/^\d+$/.test(arg)) cliGsvIdle = arg;
+}
+
+const rawGsvMode = (cliGsvMode || process.env.PET_GSV_MODE || 'auto').toLowerCase();
+const GSV_MODE = ['always', 'on'].includes(rawGsvMode) ? 'always'
+  : ['never', 'off', 'none'].includes(rawGsvMode) ? 'never'
+  : 'auto';
+const GSV_IDLE_TIMEOUT = (parseInt(cliGsvIdle || process.env.PET_GSV_IDLE, 10) || 120) * 1000;
+
+const GSV_DIR = process.env.PET_GSV_DIR || 'G:\\GPT-SoVITS-v2pro-20250604';
+const GSV_PYTHON = path.join(GSV_DIR, 'runtime', 'python.exe');
+const GSV_CONFIG = process.env.PET_GSV_CONFIG || 'GPT_SoVITS/configs/tts_infer_yousa.yaml';
+const GSV_GPU = process.env.PET_GSV_GPU || '1';
+const GSV_PORT = 9880;
+
+let gsvProc = null;
+let gsvStartingPromise = null;
+let lastGsvActivity = Date.now();
+
+console.log(`[gsv] 配置: mode=${GSV_MODE}, idleTimeout=${GSV_IDLE_TIMEOUT / 1000}s, gpu=${GSV_GPU}`);
+
+function touchGsvActivity() {
+  lastGsvActivity = Date.now();
+}
+
+function isGsvPortOpen() {
+  return new Promise((resolve) => {
+    const s = net.createConnection({ host: '127.0.0.1', port: GSV_PORT }, () => {
+      s.destroy();
+      resolve(true);
+    });
+    s.setTimeout(350);
+    s.on('timeout', () => { s.destroy(); resolve(false); });
+    s.on('error', () => { s.destroy(); resolve(false); });
+  });
+}
+
+async function ensureGSV() {
+  if (GSV_MODE === 'never') return false;
+  touchGsvActivity();
+
+  if (await isGsvPortOpen()) return true;
+  if (gsvStartingPromise) return gsvStartingPromise;
+
+  gsvStartingPromise = (async () => {
+    try {
+      console.log(`[gsv] 正在拉起 GPT-SoVITS (GPU ${GSV_GPU}, port ${GSV_PORT})...`);
+      const gsvArgs = ['api_v2.py', '-a', '127.0.0.1', '-p', String(GSV_PORT), '-c', GSV_CONFIG];
+      const gsvEnv = { ...process.env, CUDA_VISIBLE_DEVICES: GSV_GPU };
+      gsvProc = spawn(GSV_PYTHON, gsvArgs, {
+        cwd: GSV_DIR,
+        env: gsvEnv,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      gsvProc.on('exit', (code, sig) => {
+        console.log(`[gsv] 进程已退出 (code=${code}, sig=${sig})`);
+        gsvProc = null;
+      });
+
+      const startTs = Date.now();
+      while (Date.now() - startTs < 25000) {
+        if (await isGsvPortOpen()) {
+          console.log(`[gsv] GPT-SoVITS 已就绪（就绪耗时 ${Date.now() - startTs}ms）`);
+          return true;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      console.warn('[gsv] 启动等待超时（25s 内 9880 端口未响应）');
+      return false;
+    } catch (e) {
+      console.error('[gsv] 启动异常:', e.message);
+      gsvProc = null;
+      return false;
+    } finally {
+      gsvStartingPromise = null;
+    }
+  })();
+
+  return gsvStartingPromise;
+}
+
+async function stopGSV() {
+  const isOpen = await isGsvPortOpen();
+  if (!isOpen && !gsvProc) return;
+
+  console.log('[gsv] 空闲超时或退出，正在关闭 GPT-SoVITS 释放显存...');
+  try {
+    await new Promise((resolve) => {
+      const r = http.get(`http://127.0.0.1:${GSV_PORT}/control?command=exit`, { timeout: 1500 }, () => resolve());
+      r.on('error', () => resolve());
+      r.on('timeout', () => { r.destroy(); resolve(); });
+    });
+  } catch {}
+
+  await new Promise((r) => setTimeout(r, 800));
+  if (gsvProc && !gsvProc.killed) {
+    try {
+      if (gsvProc.pid) exec(`taskkill /F /T /PID ${gsvProc.pid}`, () => {});
+    } catch {}
+  }
+  gsvProc = null;
+  console.log('[gsv] GPT-SoVITS 已关闭');
+}
+
+// 自动空闲巡检（auto 模式下超时无请求则杀死）
+if (GSV_MODE === 'auto') {
+  setInterval(async () => {
+    const idleMs = Date.now() - lastGsvActivity;
+    if (idleMs >= GSV_IDLE_TIMEOUT) {
+      if (await isGsvPortOpen()) {
+        await stopGSV();
+      }
+    }
+  }, 10000);
+}
+
 // 同源转发：渲染层只打本服务的 /api/*，由主进程转发到本地 LLM/TTS，绕开浏览器跨域
 const DUMP_DIR = path.join(APP_ROOT, 'logs', 'tts-dump');
 let dumpSeq = 0;
@@ -58,46 +187,84 @@ function handleApi(req, res) {
     }
     res.writeHead(404); res.end('unknown api'); return;
   }
+
+  const isLlm = target.port === 11435;
   const isTts = target.port === 9880;
+
+  // 只要有请求，刷新 GSV 活跃时间戳
+  touchGsvActivity();
+
+  // 若收到 LLM 请求且处于 auto 模式，立即异步触发预热拉起（时间重叠）
+  if (isLlm && GSV_MODE === 'auto') {
+    ensureGSV().catch((e) => console.error('[gsv] 预热启动异常:', e.message));
+  }
+
   const bodyChunks = [];
   req.on('data', (c) => bodyChunks.push(c));
-  const upstream = http.request({ ...target, method: 'POST', headers: { 'Content-Type': 'application/json' } }, (up) => {
-    if (isTts) {
-      // livliv 的 wav 流式路径不认 24k 以外的采样率（48k 会被当 24k 播，降八度变声）。
-      // 这个 api_v2 build 不支持 mp3，所以在这里用系统 ffmpeg 把 wav 转成 mp3，
-      // 让渲染层走 decodeAudioData 路径（真实采样率）。
-      const ff = spawnFF();
-      if (!ff) { res.writeHead(502); res.end('ffmpeg missing'); return; }
-      res.writeHead(up.statusCode, { 'Content-Type': 'audio/mpeg' });
-      const resChunks = [];
-      ff.stdout.on('data', (c) => { resChunks.push(c); res.write(c); });
-      ff.stdout.on('end', () => {
-        try {
-          fs.mkdirSync(DUMP_DIR, { recursive: true });
-          const seq = String(++dumpSeq).padStart(3, '0');
-          fs.writeFileSync(path.join(DUMP_DIR, `${seq}-req.json`), Buffer.concat(bodyChunks));
-          fs.writeFileSync(path.join(DUMP_DIR, `${seq}-res.mp3`), Buffer.concat(resChunks));
-          const files = fs.readdirSync(DUMP_DIR).map((f) => ({ name: f, time: fs.statSync(path.join(DUMP_DIR, f)).mtimeMs })).sort((a, b) => a.time - b.time);
-          while (files.length > 30) fs.unlinkSync(path.join(DUMP_DIR, files.shift().name));
-        } catch {}
-        res.end();
-      });
-      ff.stderr.on('data', (c) => console.error('[ffmpeg]', String(c).trim()));
-      up.pipe(ff.stdin);
-      up.on('error', () => { try { ff.kill(); } catch {} });
-    } else {
-      res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/octet-stream' });
-      up.pipe(res);
+  req.on('end', async () => {
+    const fullBody = Buffer.concat(bodyChunks);
+
+    // 若是 TTS 请求且开启了 GSV，等待服务端口就绪再转发，防止冷启动瞬间 502
+    if (isTts && GSV_MODE !== 'never') {
+      await ensureGSV();
     }
+
+    const forwardHeaders = {
+      ...req.headers,
+      'content-length': String(fullBody.length),
+      'content-type': 'application/json',
+      host: `${target.host}:${target.port}`,
+    };
+
+    const upstream = http.request({
+      host: target.host,
+      port: target.port,
+      path: target.path,
+      method: 'POST',
+      headers: forwardHeaders,
+    }, (up) => {
+      if (isTts) {
+        const ff = spawnFF();
+        if (!ff) { res.writeHead(502); res.end('ffmpeg missing'); return; }
+        res.writeHead(up.statusCode, { 'Content-Type': 'audio/mpeg' });
+        const resChunks = [];
+        ff.stdout.on('data', (c) => { resChunks.push(c); res.write(c); });
+        ff.stdout.on('end', () => {
+          try {
+            fs.mkdirSync(DUMP_DIR, { recursive: true });
+            const seq = String(++dumpSeq).padStart(3, '0');
+            fs.writeFileSync(path.join(DUMP_DIR, `${seq}-req.json`), fullBody);
+            fs.writeFileSync(path.join(DUMP_DIR, `${seq}-res.mp3`), Buffer.concat(resChunks));
+            const files = fs.readdirSync(DUMP_DIR).map((f) => ({ name: f, time: fs.statSync(path.join(DUMP_DIR, f)).mtimeMs })).sort((a, b) => a.time - b.time);
+            while (files.length > 30) fs.unlinkSync(path.join(DUMP_DIR, files.shift().name));
+          } catch {}
+          res.end();
+        });
+        ff.stderr.on('data', (c) => console.error('[ffmpeg]', String(c).trim()));
+        up.pipe(ff.stdin);
+        up.on('error', () => { try { ff.kill(); } catch {} });
+      } else {
+        res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/octet-stream' });
+        up.pipe(res);
+      }
+    });
+
+    upstream.on('error', (e) => {
+      res.writeHead(502);
+      res.end('upstream error: ' + e.message);
+    });
+
+    req.on('close', () => {
+      if (!upstream.destroyed) upstream.destroy();
+    });
+
+    upstream.end(fullBody);
   });
-  upstream.on('error', (e) => { res.writeHead(502); res.end('upstream error: ' + e.message); });
-  req.pipe(upstream);
 }
 
 let ffmpegWarned = false;
 function spawnFF() {
   try {
-    const { spawn } = require('child_process');
     return spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-codec:a', 'libmp3lame', '-qscale:a', '4', '-f', 'mp3', 'pipe:1'], { windowsHide: true });
   } catch (e) {
     if (!ffmpegWarned) { console.error('[ffmpeg] 启动失败:', e.message); ffmpegWarned = true; }
@@ -129,7 +296,6 @@ async function captureNow() { return captureScreenBy('main'); }
 // 主卡（GPU 0）占用率查询；nvidia-smi 不可用时返回 null（放行）
 async function gpuUtil() {
   try {
-    const { spawn } = require('child_process');
     const out = await new Promise((resolve, reject) => {
       const p = spawn('nvidia-smi', ['--query-gpu=utilization.gpu', '--format=csv,noheader,nounits', '-i', '0'], { windowsHide: true });
       let s = '';
@@ -798,7 +964,10 @@ function petArea() {
 let petWin = null;
 let bedroomWin = null;
 let quitting = false;
-app.on('before-quit', () => { quitting = true; });
+app.on('before-quit', () => {
+  quitting = true;
+  stopGSV().catch(() => {});
+});
 // 窗口生命周期落盘：万一再"找不到她"，能查是关了、崩了还是被顶到后面
 function winLog(msg) {
   try {
@@ -904,6 +1073,9 @@ function maybeRoomChanged(call) {
 }
 
 app.whenReady().then(() => {
+  if (GSV_MODE === 'always') {
+    ensureGSV().catch((e) => console.error('[gsv] 常驻启动失败:', e.message));
+  }
   console.error('[main] 启动 v3（debug 分历史 + 截屏工具）');
   // 只准 UI 层（含她的沙箱房间 iframe）访问本机：任何 http(s) 外发请求一律取消。
   // 她本来就能读任何文件（read_file 如此），但这一层发不出去——"别发出去"的硬闸。
