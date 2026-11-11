@@ -1121,9 +1121,10 @@ async function handleMicToggle() {
       const data = await res.json();
       if (data && data.ok && data.text && data.text.trim()) {
         const text = data.text.trim();
-        input.value = text;
+        input.value = input.value ? (input.value + ' ' + text) : text;
         autoGrowInput();
-        await send();
+        input.focus();
+        hideBubble();
       } else {
         showBubble('没听清主人说了什么呢，再试一次吧~');
         setTimeout(() => { if (!busy) hideBubble(); }, 3000);

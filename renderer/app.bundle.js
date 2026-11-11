@@ -3362,9 +3362,10 @@ void main(){ o=texture(uTex,vUv); }`;
         const data = await res.json();
         if (data && data.ok && data.text && data.text.trim()) {
           const text = data.text.trim();
-          input.value = text;
+          input.value = input.value ? input.value + " " + text : text;
           autoGrowInput();
-          await send();
+          input.focus();
+          hideBubble();
         } else {
           showBubble("\u6CA1\u542C\u6E05\u4E3B\u4EBA\u8BF4\u4E86\u4EC0\u4E48\u5462\uFF0C\u518D\u8BD5\u4E00\u6B21\u5427~");
           setTimeout(() => {
