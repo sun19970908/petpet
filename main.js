@@ -164,6 +164,79 @@ if (GSV_MODE === 'auto') {
   }, 10000);
 }
 
+// ===== Sherpa-ONNX / SenseVoice ASR 生命周期管理器 =====
+const ASR_PYTHON = 'G:\\AI\\Open-LLM-VTuber\\.venv\\Scripts\\python.exe';
+const ASR_SCRIPT = path.join(APP_ROOT, 'asr_server.py');
+const ASR_PORT = 9882;
+
+let asrProc = null;
+let asrStartingPromise = null;
+
+function isAsrPortOpen() {
+  return new Promise((resolve) => {
+    const s = net.createConnection({ host: '127.0.0.1', port: ASR_PORT }, () => {
+      s.destroy();
+      resolve(true);
+    });
+    s.setTimeout(350);
+    s.on('timeout', () => { s.destroy(); resolve(false); });
+    s.on('error', () => { s.destroy(); resolve(false); });
+  });
+}
+
+async function ensureASR() {
+  if (await isAsrPortOpen()) return true;
+  if (asrStartingPromise) return asrStartingPromise;
+
+  asrStartingPromise = (async () => {
+    try {
+      console.log(`[asr] 正在拉起 SenseVoice ASR (port ${ASR_PORT})...`);
+      asrProc = spawn(ASR_PYTHON, [ASR_SCRIPT], {
+        cwd: APP_ROOT,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      asrProc.stdout.on('data', (d) => console.log(d.toString().trim()));
+      asrProc.stderr.on('data', (d) => console.error(d.toString().trim()));
+
+      asrProc.on('exit', (code, sig) => {
+        console.log(`[asr] 进程已退出 (code=${code}, sig=${sig})`);
+        asrProc = null;
+      });
+
+      const startTs = Date.now();
+      while (Date.now() - startTs < 15000) {
+        if (await isAsrPortOpen()) {
+          console.log(`[asr] SenseVoice ASR 已就绪（就绪耗时 ${Date.now() - startTs}ms）`);
+          return true;
+        }
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      console.warn('[asr] 启动等待超时（15s 内 9882 端口未响应）');
+      return false;
+    } catch (e) {
+      console.error('[asr] 启动异常:', e.message);
+      asrProc = null;
+      return false;
+    } finally {
+      asrStartingPromise = null;
+    }
+  })();
+
+  return asrStartingPromise;
+}
+
+function stopASR() {
+  if (asrProc && !asrProc.killed) {
+    console.log('[asr] 正在关闭 ASR 进程...');
+    try {
+      if (asrProc.pid) exec(`taskkill /F /T /PID ${asrProc.pid}`, () => {});
+    } catch {}
+    asrProc = null;
+  }
+}
+
 // 同源转发：渲染层只打本服务的 /api/*，由主进程转发到本地 LLM/TTS，绕开浏览器跨域
 const DUMP_DIR = path.join(APP_ROOT, 'logs', 'tts-dump');
 let dumpSeq = 0;
@@ -171,6 +244,7 @@ function handleApi(req, res) {
   const routes = {
     '/api/llm': { host: '127.0.0.1', port: 11435, path: '/v1/chat/completions' },
     '/api/tts': { host: '127.0.0.1', port: 9880, path: '/tts' },
+    '/api/asr': { host: '127.0.0.1', port: 9882, path: '/asr' },
   };
   const target = routes[req.url.split('?')[0]];
   if (!target || req.method !== 'POST') {
@@ -191,9 +265,10 @@ function handleApi(req, res) {
 
   const isLlm = target.port === 11435;
   const isTts = target.port === 9880;
+  const isAsr = target.port === 9882;
 
-  // 只要有请求，刷新 GSV 活跃时间戳
-  touchGsvActivity();
+  // 只要有 LLM/TTS 请求，刷新 GSV 活跃时间戳
+  if (isLlm || isTts) touchGsvActivity();
 
   // 若收到 LLM 请求且处于 auto 模式，立即异步触发预热拉起（时间重叠）
   if (isLlm && GSV_MODE === 'auto') {
@@ -208,12 +283,14 @@ function handleApi(req, res) {
     // 若是 TTS 请求且开启了 GSV，等待服务端口就绪再转发，防止冷启动瞬间 502
     if (isTts && GSV_MODE !== 'never') {
       await ensureGSV();
+    } else if (isAsr) {
+      await ensureASR();
     }
 
     const forwardHeaders = {
       ...req.headers,
       'content-length': String(fullBody.length),
-      'content-type': 'application/json',
+      'content-type': isAsr ? (req.headers['content-type'] || 'audio/wav') : 'application/json',
       host: `${target.host}:${target.port}`,
     };
 
@@ -970,6 +1047,7 @@ let quitting = false;
 app.on('before-quit', () => {
   quitting = true;
   stopGSV().catch(() => {});
+  stopASR();
 });
 // 窗口生命周期落盘：万一再"找不到她"，能查是关了、崩了还是被顶到后面
 function winLog(msg) {
@@ -1079,6 +1157,19 @@ app.whenReady().then(() => {
   if (GSV_MODE === 'always') {
     ensureGSV().catch((e) => console.error('[gsv] 常驻启动失败:', e.message));
   }
+  // 预热拉起 SenseVoice ASR（CPU 跑，~230MB 内存，0 显存，即点即用）
+  ensureASR().catch((e) => console.error('[asr] 预拉起失败:', e.message));
+
+  // 麦克风录音权限自动放行
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media') return callback(true);
+    callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (permission === 'media') return true;
+    return false;
+  });
+
   console.error('[main] 启动 v3（debug 分历史 + 截屏工具）');
   // 只准 UI 层（含她的沙箱房间 iframe）访问本机：任何 http(s) 外发请求一律取消。
   // 她本来就能读任何文件（read_file 如此），但这一层发不出去——"别发出去"的硬闸。

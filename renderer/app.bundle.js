@@ -3212,6 +3212,162 @@ void main(){ o=texture(uTex,vUv); }`;
     } catch {
     }
   }, 2e4);
+  var micStream = null;
+  var micAudioCtx = null;
+  var micSource = null;
+  var micProcessor = null;
+  var micBuffers = [];
+  var isRecording = false;
+  function encodeWAV(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    const writeString = (v4, off, str) => {
+      for (let i3 = 0; i3 < str.length; i3++) v4.setUint8(off + i3, str.charCodeAt(i3));
+    };
+    writeString(view, 0, "RIFF");
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(view, 8, "WAVE");
+    writeString(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, "data");
+    view.setUint32(40, samples.length * 2, true);
+    let offset = 44;
+    for (let i3 = 0; i3 < samples.length; i3++, offset += 2) {
+      const s3 = Math.max(-1, Math.min(1, samples[i3]));
+      view.setInt16(offset, s3 < 0 ? s3 * 32768 : s3 * 32767, true);
+    }
+    return new Blob([view], { type: "audio/wav" });
+  }
+  async function startRecording() {
+    if (isRecording) return;
+    if (!unlocked) {
+      speech.unlock();
+      unlocked = true;
+    }
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16e3,
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      });
+    } catch (err) {
+      console.error("[mic] \u83B7\u53D6\u9EA6\u514B\u98CE\u5931\u8D25:", err);
+      showBubble("\u65E0\u6CD5\u8BBF\u95EE\u9EA6\u514B\u98CE\uFF0C\u8BF7\u68C0\u67E5\u7CFB\u7EDF\u8BBE\u7F6E\u4E0E\u6743\u9650");
+      return;
+    }
+    micAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16e3 });
+    micSource = micAudioCtx.createMediaStreamSource(micStream);
+    micProcessor = micAudioCtx.createScriptProcessor(4096, 1, 1);
+    micBuffers = [];
+    micProcessor.onaudioprocess = (e3) => {
+      if (!isRecording) return;
+      const inputData = e3.inputBuffer.getChannelData(0);
+      micBuffers.push(new Float32Array(inputData));
+    };
+    micSource.connect(micProcessor);
+    micProcessor.connect(micAudioCtx.destination);
+    isRecording = true;
+    const micBtn = $3("micbtn");
+    if (micBtn) micBtn.classList.add("recording");
+    showBubble("\u{1F399}\uFE0F \u6B63\u5728\u503E\u542C\u4E3B\u4EBA\u8BF4\u8BDD\u2026\uFF08\u518D\u6B21\u70B9\u51FB\u7ED3\u675F\u5E76\u8BC6\u522B\uFF09");
+  }
+  async function stopRecording() {
+    if (!isRecording) return null;
+    isRecording = false;
+    const micBtn = $3("micbtn");
+    if (micBtn) micBtn.classList.remove("recording");
+    if (micProcessor) {
+      try {
+        micProcessor.disconnect();
+      } catch {
+      }
+      micProcessor.onaudioprocess = null;
+      micProcessor = null;
+    }
+    if (micSource) {
+      try {
+        micSource.disconnect();
+      } catch {
+      }
+      micSource = null;
+    }
+    const sampleRate = micAudioCtx ? micAudioCtx.sampleRate : 16e3;
+    if (micAudioCtx) {
+      try {
+        await micAudioCtx.close();
+      } catch {
+      }
+      micAudioCtx = null;
+    }
+    if (micStream) {
+      micStream.getTracks().forEach((t3) => t3.stop());
+      micStream = null;
+    }
+    const totalLength = micBuffers.reduce((acc, b4) => acc + b4.length, 0);
+    if (totalLength === 0) return null;
+    const merged = new Float32Array(totalLength);
+    let offset = 0;
+    for (const b4 of micBuffers) {
+      merged.set(b4, offset);
+      offset += b4.length;
+    }
+    micBuffers = [];
+    return { blob: encodeWAV(merged, sampleRate), duration: totalLength / sampleRate };
+  }
+  async function handleMicToggle() {
+    if (isRecording) {
+      const result = await stopRecording();
+      if (!result || result.duration < 0.4) {
+        showBubble("\u5F55\u97F3\u65F6\u95F4\u592A\u77ED\u4E86\u54E6");
+        setTimeout(() => {
+          if (!busy) hideBubble();
+        }, 2500);
+        return;
+      }
+      showBubble("\u8BC6\u522B\u8BED\u97F3\u4E2D\u2026");
+      try {
+        const res = await fetch("/api/asr", {
+          method: "POST",
+          headers: { "Content-Type": "audio/wav" },
+          body: result.blob
+        });
+        const data = await res.json();
+        if (data && data.ok && data.text && data.text.trim()) {
+          const text = data.text.trim();
+          input.value = text;
+          autoGrowInput();
+          await send();
+        } else {
+          showBubble("\u6CA1\u542C\u6E05\u4E3B\u4EBA\u8BF4\u4E86\u4EC0\u4E48\u5462\uFF0C\u518D\u8BD5\u4E00\u6B21\u5427~");
+          setTimeout(() => {
+            if (!busy) hideBubble();
+          }, 3e3);
+        }
+      } catch (err) {
+        console.error("[asr] \u8BC6\u522B\u8BF7\u6C42\u5931\u8D25:", err);
+        showBubble("\u8BED\u97F3\u8BC6\u522B\u5931\u8D25: " + (err.message || "\u7F51\u7EDC\u6216\u670D\u52A1\u5F02\u5E38"));
+        setTimeout(() => {
+          if (!busy) hideBubble();
+        }, 4e3);
+      }
+    } else {
+      if (busy) {
+        showBubble("\u6B63\u5728\u5FD9\u788C\u4E2D\uFF0C\u8BF7\u7A0D\u5019\u2026");
+        return;
+      }
+      await startRecording();
+    }
+  }
+  $3("micbtn")?.addEventListener("click", handleMicToggle);
   $3("continuebtn").addEventListener("click", () => {
     if (busy) interrupt();
     else continueRequest();
