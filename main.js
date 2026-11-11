@@ -401,8 +401,10 @@ function spawnFF() {
 async function captureScreenBy(which) {
   const primary = screen.getPrimaryDisplay();
   const all = screen.getAllDisplays();
+  const isRoom = which === 'room';
+
   let target = primary;
-  if (which === 'room') {
+  if (isRoom) {
     if (!bedroomWin || bedroomWin.isDestroyed()) return null; // 卧室未开放
     const b = bedroomWin.getBounds();
     const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
@@ -413,17 +415,19 @@ async function captureScreenBy(which) {
   }
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: target.size.width, height: target.size.height } });
 
-  // Windows 下 desktopCapturer 返回的 source.display_id 为空字符串，无法直接通过 ID 匹配。
-  // 通过 screen.getAllDisplays() 的顺序与 sources 对应（二者均遵循 Windows GDI 显示器枚举顺序），
-  // 避免 fallback 到 sources[0] 导致无论如何都截到第 1 块屏（副屏）
-  let src = sources.find((s) => s.display_id && s.display_id === String(target.id));
-  if (!src) {
-    const targetIdx = all.findIndex((d) => d.id === target.id);
-    if (targetIdx >= 0 && targetIdx < sources.length) {
-      src = sources[targetIdx];
-    }
+  // Windows 下 Chromium 的 desktopCapturer 顺序：
+  // sources[0] 为 "屏幕 1"（Windows 主显示器，即用户工作的主屏）
+  // sources[1] 为 "屏幕 2"（扩展屏，即桌宠卧室）
+  let src = null;
+  if (isRoom) {
+    // 截取卧室副屏：取 sources[1]（屏幕 2），无副屏则回退 sources[0]
+    src = sources[1] || sources[0];
+  } else {
+    // 截取主屏：固定取 sources[0]（屏幕 1，主显示器）
+    src = sources[0];
   }
-  if (!src) src = sources[0];
+
+  winLog(`[cap] which=${which} picked=${src ? (src.name + ' ' + src.id) : 'null'} total_sources=${sources.length}`);
 
   return src ? src.thumbnail.toJPEG(85).toString('base64') : null;
 }
