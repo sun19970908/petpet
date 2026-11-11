@@ -351,6 +351,12 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     const model = 'strata-nothink'; // 固定 nothink：快；思考强度全靠 pet_think 指令动态控制
     const sendMsgs = bodyMsgs.slice();
     const needCfm = sendMsgs[sendMsgs.length - 1]?.role === 'assistant';
+    // cfm 的续写起点状态从预填充内容本身推断，不能一律当成“在思考块里”：
+    // 预填充可能以闭合的 <think>…</think> 结尾（当前配置，续写从正文开始），
+    // 也可能停在未闭合的 pet_think / tool_call 里（如强制工具预填 <tool_call>）。
+    const cfmText = needCfm ? String(sendMsgs[sendMsgs.length - 1].content || '') : '';
+    const startInThink = (cfmText.match(/<(?:pet_)?think>/g) || []).length > (cfmText.match(/<\/(?:pet_)?think>/g) || []).length;
+    const startInTool = (cfmText.match(/<(?:tool_call|invoke)>/g) || []).length > (cfmText.match(/<\/(?:tool_call|invoke)>/g) || []).length;
     const reqPayload = {
       model, messages: sendMsgs,
       tools: noTools ? undefined : TOOLS,
@@ -371,8 +377,8 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     const dec = new TextDecoder();
     let sse = '';
     let rawContent = '';
-    let inThink = needCfm;      // cfm 预填充：流从思考块内部开始
-    let inTool = false;         // 在 <tool_call>/<invoke> 文本块内
+    let inThink = startInThink;   // 由预填充推断：续写起点是否停在未闭合的思考块里
+    let inTool = startInTool;     // 由预填充推断：续写起点是否停在未闭合的 tool_call/invoke 块里
     let processed = 0;          // rawContent 已处理光标
     let finish = null, usage = null;
     const nativeCalls = new Map();
@@ -408,7 +414,8 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
             feedReplyDelta(rest.slice(0, m.index));
             processed += m.index;
             if (m[0] === '<pet_think>' || m[0] === '<think>') { inThink = true; processed += m[0].length; }
-            else { inTool = true; processed += m[0].length; }
+            else if (m[0] === '<tool_call>' || m[0] === '<invoke>') { inTool = true; processed += m[0].length; }
+            else { processed += m[0].length; }   // 正文态里的孤立关闭标签（如 cfm 后多吐的 </pet_think>）：直接丢弃
           } else {
             feedReplyDelta(rest.slice(0, rest.length - hold));
             processed += rest.length - hold;
@@ -599,18 +606,25 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       throw new Error('LLM 返回空回复: ' + JSON.stringify(data).slice(0, 200));
     }
     // 可见正文 = 思考剥离后的累积文本；流式期间已逐句 TTS（streamSpoken）
-    const text = stripThink(content);
+    // 模型忘记闭合 pet_think：stripThink 删不掉未闭合块，剩下的全是思考内容，不能当正文显示/念/存历史。
+    // 视为“思考后无正文”，交给下面的空正文自动续写路径（最多 2 次）。
+    const thinkOpens = (content.match(/<(?:pet_)?think>/g) || []).length;
+    const thinkCloses = (content.match(/<\/(?:pet_)?think>/g) || []).length;
+    const danglingThink = thinkOpens > thinkCloses;
+    const text = danglingThink ? '' : stripThink(content);
     if (!text) {
       if (emptyTextRetries < 2) {
         emptyTextRetries++;
         const fullContent = content.trim();
         const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
-        const hasToolIntent = toolKeywords.test(fullContent);
+        // 思考块没收尾时别再补 <tool_call> 预填（会落进思考块里，把续写带偏）
+        const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
+        const tail = hasToolIntent ? '\n<tool_call>' : '\n';
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
         if (lastMsg && lastMsg.role === 'assistant') {
-          lastMsg.content = (lastMsg.content || '').trimEnd() + '\n' + fullContent + (hasToolIntent ? '\n<tool_call>' : '\n');
+          lastMsg.content = (lastMsg.content || '').trimEnd() + '\n' + fullContent + tail;
         } else {
-          bodyMsgs.push({ role: 'assistant', content: fullContent + (hasToolIntent ? '\n<tool_call>' : '\n') });
+          bodyMsgs.push({ role: 'assistant', content: fullContent + tail });
         }
         showBubble(hasToolIntent ? '准备执行工具…' : '继续组织语言中…');
         continue;

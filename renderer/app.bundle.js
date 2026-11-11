@@ -2580,6 +2580,9 @@ void main(){ o=texture(uTex,vUv); }`;
       const model = "strata-nothink";
       const sendMsgs = bodyMsgs.slice();
       const needCfm = sendMsgs[sendMsgs.length - 1]?.role === "assistant";
+      const cfmText = needCfm ? String(sendMsgs[sendMsgs.length - 1].content || "") : "";
+      const startInThink = (cfmText.match(/<(?:pet_)?think>/g) || []).length > (cfmText.match(/<\/(?:pet_)?think>/g) || []).length;
+      const startInTool = (cfmText.match(/<(?:tool_call|invoke)>/g) || []).length > (cfmText.match(/<\/(?:tool_call|invoke)>/g) || []).length;
       const reqPayload = {
         model,
         messages: sendMsgs,
@@ -2602,8 +2605,8 @@ void main(){ o=texture(uTex,vUv); }`;
       const dec = new TextDecoder();
       let sse = "";
       let rawContent = "";
-      let inThink = needCfm;
-      let inTool = false;
+      let inThink = startInThink;
+      let inTool = startInTool;
       let processed = 0;
       let finish = null, usage = null;
       const nativeCalls = /* @__PURE__ */ new Map();
@@ -2648,8 +2651,10 @@ void main(){ o=texture(uTex,vUv); }`;
               if (m3[0] === "<pet_think>" || m3[0] === "<think>") {
                 inThink = true;
                 processed += m3[0].length;
-              } else {
+              } else if (m3[0] === "<tool_call>" || m3[0] === "<invoke>") {
                 inTool = true;
+                processed += m3[0].length;
+              } else {
                 processed += m3[0].length;
               }
             } else {
@@ -2861,18 +2866,22 @@ void main(){ o=texture(uTex,vUv); }`;
         }
         throw new Error("LLM \u8FD4\u56DE\u7A7A\u56DE\u590D: " + JSON.stringify(data).slice(0, 200));
       }
-      const text = stripThink(content);
+      const thinkOpens = (content.match(/<(?:pet_)?think>/g) || []).length;
+      const thinkCloses = (content.match(/<\/(?:pet_)?think>/g) || []).length;
+      const danglingThink = thinkOpens > thinkCloses;
+      const text = danglingThink ? "" : stripThink(content);
       if (!text) {
         if (emptyTextRetries < 2) {
           emptyTextRetries++;
           const fullContent = content.trim();
           const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
-          const hasToolIntent = toolKeywords.test(fullContent);
+          const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
+          const tail = hasToolIntent ? "\n<tool_call>" : "\n";
           const lastMsg = bodyMsgs[bodyMsgs.length - 1];
           if (lastMsg && lastMsg.role === "assistant") {
-            lastMsg.content = (lastMsg.content || "").trimEnd() + "\n" + fullContent + (hasToolIntent ? "\n<tool_call>" : "\n");
+            lastMsg.content = (lastMsg.content || "").trimEnd() + "\n" + fullContent + tail;
           } else {
-            bodyMsgs.push({ role: "assistant", content: fullContent + (hasToolIntent ? "\n<tool_call>" : "\n") });
+            bodyMsgs.push({ role: "assistant", content: fullContent + tail });
           }
           showBubble(hasToolIntent ? "\u51C6\u5907\u6267\u884C\u5DE5\u5177\u2026" : "\u7EE7\u7EED\u7EC4\u7EC7\u8BED\u8A00\u4E2D\u2026");
           continue;
