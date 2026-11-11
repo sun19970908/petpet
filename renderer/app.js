@@ -1298,12 +1298,19 @@ function setPendingImage(dataUrl) {
   pendingBox.style.display = dataUrl ? 'flex' : 'none';
   layoutChat();
 }
-function clearPendingImage() {
+function clearPendingImage(e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
   pendingImage = null;
   pendingBox.style.display = 'none';
   layoutChat();
+  if (lastPX >= 0 && lastPY >= 0) refreshClickThrough(lastPX, lastPY);
 }
-$('imgdel').addEventListener('click', clearPendingImage);
+const imgDelBtn = $('imgdel');
+imgDelBtn.addEventListener('click', clearPendingImage);
+imgDelBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 
 // 粘贴图片（截图工具/QQ/浏览器里 Ctrl+C 的图都能贴）
 input.addEventListener('paste', (e) => {
@@ -1339,20 +1346,25 @@ $('close').addEventListener('click', () => { if (window.petWindow?.quitApp) wind
 const petCanvas = $('pet');
 const petWrap = $('petwrap');
 const closeBtn = $('close');
+const inputRow = $('inputrow');
+const pendingBox = $('pendingimg');
 let clickThrough = null;
 function rectHit(el, x, y, insetX = 0, insetY = 0) {
   const r = el.getBoundingClientRect();
   return x >= r.left + insetX && x <= r.right - insetX && y >= r.top + insetY && y <= r.bottom - insetY;
 }
 function refreshClickThrough(x, y) {
-  // 画布热区向内收一圈（画布四周是透明边距，收窄能少挡桌面）；输入框/气泡/关闭钮外扩 6px 保证好点
+  // 画布热区向内收一圈（画布四周是透明边距，收窄能少挡桌面）；输入框/气泡/图片预览/关闭钮外扩 6px 保证好点
   // 卧室整个矩形都是实体场景（盖住副屏），不穿透
   const overRoom = roomRect && x >= roomRect.x && x <= roomRect.x + roomRect.width && y >= roomRect.y && y <= roomRect.y + roomRect.height;
+  const overPending = pendingBox && pendingBox.style.display !== 'none' && rectHit(pendingBox, x, y, -6, -6);
+  const overBubble = bubble && bubble.style.display !== 'none' && rectHit(bubble, x, y, -6, -6);
   const over = overRoom ||
     rectHit(petCanvas, x, y, petCanvas.getBoundingClientRect().width * 0.14, 8) ||
     rectHit(closeBtn, x, y, -6, -6) ||
     rectHit(inputRow, x, y, -6, -6) ||
-    (bubble.style.display !== 'none' && rectHit(bubble, x, y, -6, -6));
+    overPending ||
+    overBubble;
   if (over !== clickThrough) {
     clickThrough = over;
     window.petWindow?.setClickThrough?.(!over);
@@ -1363,8 +1375,6 @@ window.addEventListener('pointermove', (e) => { lastPX = e.clientX; lastPY = e.c
 
 // 拖拽 = 移动人物在屏幕上的位置（按右缘定位，不会贴出屏幕），位置存 localStorage
 let drag = null;
-const inputRow = $('inputrow');
-const pendingBox = $('pendingimg');
 // ===== 输入框自增高（textarea）：内容多行时变厚，上限约 5 行，超出内部滚动 =====
 function autoGrowInput() {
   input.style.height = 'auto';

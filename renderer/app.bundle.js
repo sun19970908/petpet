@@ -3536,12 +3536,19 @@ void main(){ o=texture(uTex,vUv); }`;
     pendingBox.style.display = dataUrl ? "flex" : "none";
     layoutChat();
   }
-  function clearPendingImage() {
+  function clearPendingImage(e3) {
+    if (e3) {
+      e3.preventDefault();
+      e3.stopPropagation();
+    }
     pendingImage = null;
     pendingBox.style.display = "none";
     layoutChat();
+    if (lastPX >= 0 && lastPY >= 0) refreshClickThrough(lastPX, lastPY);
   }
-  $3("imgdel").addEventListener("click", clearPendingImage);
+  var imgDelBtn = $3("imgdel");
+  imgDelBtn.addEventListener("click", clearPendingImage);
+  imgDelBtn.addEventListener("pointerdown", (e3) => e3.stopPropagation());
   input.addEventListener("paste", (e3) => {
     const item = [...e3.clipboardData?.items || []].find((i3) => i3.type.startsWith("image/"));
     if (!item) return;
@@ -3572,6 +3579,8 @@ void main(){ o=texture(uTex,vUv); }`;
   var petCanvas = $3("pet");
   var petWrap = $3("petwrap");
   var closeBtn = $3("close");
+  var inputRow = $3("inputrow");
+  var pendingBox = $3("pendingimg");
   var clickThrough = null;
   function rectHit(el, x4, y4, insetX = 0, insetY = 0) {
     const r2 = el.getBoundingClientRect();
@@ -3579,7 +3588,9 @@ void main(){ o=texture(uTex,vUv); }`;
   }
   function refreshClickThrough(x4, y4) {
     const overRoom = roomRect && x4 >= roomRect.x && x4 <= roomRect.x + roomRect.width && y4 >= roomRect.y && y4 <= roomRect.y + roomRect.height;
-    const over = overRoom || rectHit(petCanvas, x4, y4, petCanvas.getBoundingClientRect().width * 0.14, 8) || rectHit(closeBtn, x4, y4, -6, -6) || rectHit(inputRow, x4, y4, -6, -6) || bubble.style.display !== "none" && rectHit(bubble, x4, y4, -6, -6);
+    const overPending = pendingBox && pendingBox.style.display !== "none" && rectHit(pendingBox, x4, y4, -6, -6);
+    const overBubble = bubble && bubble.style.display !== "none" && rectHit(bubble, x4, y4, -6, -6);
+    const over = overRoom || rectHit(petCanvas, x4, y4, petCanvas.getBoundingClientRect().width * 0.14, 8) || rectHit(closeBtn, x4, y4, -6, -6) || rectHit(inputRow, x4, y4, -6, -6) || overPending || overBubble;
     if (over !== clickThrough) {
       clickThrough = over;
       window.petWindow?.setClickThrough?.(!over);
@@ -3593,8 +3604,6 @@ void main(){ o=texture(uTex,vUv); }`;
     refreshClickThrough(e3.clientX, e3.clientY);
   }, { passive: true });
   var drag = null;
-  var inputRow = $3("inputrow");
-  var pendingBox = $3("pendingimg");
   function autoGrowInput() {
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 140) + "px";
