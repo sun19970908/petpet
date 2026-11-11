@@ -22,7 +22,7 @@ function petPid() {
   } catch {}
   return null;
 }
-let restarts = [], lastLaunch = 0;
+let restarts = [], lastLaunch = 0, busySince = 0;
 function canRestart() { const n = Date.now(); restarts = restarts.filter((t) => n - t < 3600000); return restarts.length < 5; }
 function launchPet(why) {
   if (!canRestart()) { log('需要重启但 1 小时内已 5 次，暂缓（防连环崩）：' + why); return; }
@@ -43,7 +43,19 @@ function tick() {
     if (Date.now() - lastLaunch < 180000) return; // 刚拉起，先给时间上心跳
     let st = null;
     try { st = JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch {}
-    if (!st || !st.infwake) return;                // 无限唤醒没开 → 只做保活
+    if (!st) return;
+    // busy 卡死：心跳还活着但 busy 持续为 true（渲染层的 5 分钟兜底没救回来）→ 杀掉重拉
+    if (st.busy) {
+      if (!busySince) busySince = Date.now();
+      if (Date.now() - busySince > 600000) {
+        log('busy 持续超过 10 分钟（渲染层疑似卡死）→ 杀掉重拉');
+        busySince = 0;
+        killPet();
+        setTimeout(() => launchPet('busy 卡死'), 1500);
+        return;
+      }
+    } else busySince = 0;
+    if (!st.infwake) return;                // 无限唤醒没开 → 只做保活
     const age = Date.now() - (st.ts || 0);
     if (age > 180000) {
       log('无限唤醒心跳停了 ' + Math.round(age / 1000) + 's（渲染层疑似卡死）→ 杀掉重拉');

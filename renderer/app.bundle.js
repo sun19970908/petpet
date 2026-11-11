@@ -3238,6 +3238,34 @@ void main(){ o=texture(uTex,vUv); }`;
   setInterval(() => {
     if (infiniteWake && !busy) queueInfiniteWake(1e3);
   }, 6e4);
+  var busySeenSince = 0;
+  setInterval(() => {
+    if (!busy) {
+      busySeenSince = 0;
+      return;
+    }
+    if (!busySeenSince) {
+      busySeenSince = Date.now();
+      return;
+    }
+    if (Date.now() - busySeenSince < 5 * 6e4) return;
+    console.warn("[guard] busy \u5361\u4F4F\u8D85\u8FC7 5 \u5206\u949F\uFF0C\u5F3A\u5236\u4E2D\u65AD\u5E76\u91CA\u653E");
+    busySeenSince = 0;
+    try {
+      turnAbort?.abort();
+    } catch {
+    }
+    try {
+      speech.stop && speech.stop();
+    } catch {
+    }
+    busy = false;
+    showBubble("\uFF08\u5361\u4F4F\u4E86\uFF0C\u6211\u5F3A\u884C\u4E2D\u65AD\u4E86\u4E0A\u4E00\u8F6E\uFF5E\uFF09");
+    setTimeout(() => {
+      if (!busy) hideBubble();
+    }, 6e3);
+    if (infiniteWake) queueInfiniteWake(3e3);
+  }, 3e4);
   setInterval(() => {
     try {
       window.petWindow && window.petWindow.wakeBeat && window.petWindow.wakeBeat({ infwake: !!infiniteWake, busy: !!busy, ctx: lastCtxTokens });
@@ -3528,8 +3556,26 @@ void main(){ o=texture(uTex,vUv); }`;
       const dur = Math.max(700, Math.min(4e3, dist * 4));
       const t0 = performance.now();
       const ease = (t3) => t3 < 0.5 ? 2 * t3 * t3 : 1 - Math.pow(-2 * t3 + 2, 2) / 2;
+      let settled = false;
+      const guard = setTimeout(() => finish(true), dur + 1500);
+      function finish(instant) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(guard);
+        if (instant) {
+          petWrap.style.setProperty("--pet-right", tgtR + "px");
+          petWrap.style.setProperty("--pet-y", tgtB + "px");
+        }
+        savePetPos();
+        ensurePetVisible();
+        updateInRoom(true);
+        if (lastPX >= 0) refreshClickThrough(lastPX, lastPY);
+        resolve();
+      }
       function step(now) {
         if (token !== walkToken) {
+          settled = true;
+          clearTimeout(guard);
           resolve();
           return;
         }
@@ -3539,13 +3585,7 @@ void main(){ o=texture(uTex,vUv); }`;
         petWrap.style.setProperty("--pet-y", curB + (tgtB - curB) * e3 + "px");
         layoutChat();
         if (t3 < 1) requestAnimationFrame(step);
-        else {
-          savePetPos();
-          ensurePetVisible();
-          updateInRoom(true);
-          if (lastPX >= 0) refreshClickThrough(lastPX, lastPY);
-          resolve();
-        }
+        else finish(false);
       }
       requestAnimationFrame(step);
     });

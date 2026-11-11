@@ -924,6 +924,22 @@ function noteLoop(reply) {
   prevReplyNorm = cur;
 }
 setInterval(() => { if (infiniteWake && !busy) queueInfiniteWake(1000); }, 60000);   // 循环万一因异常断了，兜底续上
+// busy 卡死兜底：某个 await（工具/请求）永远不返回时 finally 不会执行，busy 会永远为 true，
+// 唤醒循环和上面的兜底全都停摆（看门狗只看心跳，还会以为一切正常）。持续 5 分钟就强制中断并续上。
+let busySeenSince = 0;
+setInterval(() => {
+  if (!busy) { busySeenSince = 0; return; }
+  if (!busySeenSince) { busySeenSince = Date.now(); return; }
+  if (Date.now() - busySeenSince < 5 * 60000) return;
+  console.warn('[guard] busy 卡住超过 5 分钟，强制中断并释放');
+  busySeenSince = 0;
+  try { turnAbort?.abort(); } catch {}
+  try { speech.stop && speech.stop(); } catch {}
+  busy = false;
+  showBubble('（卡住了，我强行中断了上一轮～）');
+  setTimeout(() => { if (!busy) hideBubble(); }, 6000);
+  if (infiniteWake) queueInfiniteWake(3000);
+}, 30000);
 setInterval(() => { try { window.petWindow && window.petWindow.wakeBeat && window.petWindow.wakeBeat({ infwake: !!infiniteWake, busy: !!busy, ctx: lastCtxTokens }); } catch {} }, 20000);
 $('continuebtn').addEventListener('click', () => {
   if (busy) interrupt();
@@ -1223,20 +1239,32 @@ function walkToFraction(fx, fy) {
     const dur = Math.max(700, Math.min(4000, dist * 4));
     const t0 = performance.now();
     const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+    let settled = false;
+    // 窗口被系统判为遮挡时 rAF 会被暂停，光靠 rAF 的滑行可能永远不结束 → 把整个工具轮卡在 busy 里。
+    // 定时器兜底：到点直接落位并 resolve（窗口恢复后也不会再跳）。
+    const guard = setTimeout(() => finish(true), dur + 1500);
+    function finish(instant) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(guard);
+      if (instant) {
+        petWrap.style.setProperty('--pet-right', tgtR + 'px');
+        petWrap.style.setProperty('--pet-y', tgtB + 'px');
+      }
+      savePetPos(); ensurePetVisible(); updateInRoom(true);
+      // 她走到静止的光标底下时不会有新的 pointermove，主动按最后位置重算一次穿透，否则点不到/拖不动她
+      if (lastPX >= 0) refreshClickThrough(lastPX, lastPY);
+      resolve();
+    }
     function step(now) {
-      if (token !== walkToken) { resolve(); return; }   // 被新的一次移动顶替
+      if (token !== walkToken) { settled = true; clearTimeout(guard); resolve(); return; }   // 被新的一次移动顶替
       const t = Math.min(1, (now - t0) / dur);
       const e = ease(t);
       petWrap.style.setProperty('--pet-right', (curR + (tgtR - curR) * e) + 'px');
       petWrap.style.setProperty('--pet-y', (curB + (tgtB - curB) * e) + 'px');
       layoutChat();
       if (t < 1) requestAnimationFrame(step);
-      else {
-        savePetPos(); ensurePetVisible(); updateInRoom(true);
-        // 她走到静止的光标底下时不会有新的 pointermove，主动按最后位置重算一次穿透，否则点不到/拖不动她
-        if (lastPX >= 0) refreshClickThrough(lastPX, lastPY);
-        resolve();
-      }
+      else finish(false);
     }
     requestAnimationFrame(step);
   });
