@@ -400,18 +400,31 @@ function spawnFF() {
 // 不再做双屏拼接：她的两个视角语义分离
 async function captureScreenBy(which) {
   const primary = screen.getPrimaryDisplay();
+  const all = screen.getAllDisplays();
   let target = primary;
   if (which === 'room') {
     if (!bedroomWin || bedroomWin.isDestroyed()) return null; // 卧室未开放
     const b = bedroomWin.getBounds();
     const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
-    target = screen.getAllDisplays().find((d) => {
+    target = all.find((d) => {
       const wa = d.workArea;
       return cx >= wa.x && cx < wa.x + wa.width && cy >= wa.y && cy < wa.y + wa.height;
-    }) || screen.getAllDisplays().find((d) => d.id !== primary.id) || primary;
+    }) || all.find((d) => d.id !== primary.id) || primary;
   }
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: target.size.width, height: target.size.height } });
-  const src = sources.find((s) => s.display_id === String(target.id)) || sources[0];
+
+  // Windows 下 desktopCapturer 返回的 source.display_id 为空字符串，无法直接通过 ID 匹配。
+  // 通过 screen.getAllDisplays() 的顺序与 sources 对应（二者均遵循 Windows GDI 显示器枚举顺序），
+  // 避免 fallback 到 sources[0] 导致无论如何都截到第 1 块屏（副屏）
+  let src = sources.find((s) => s.display_id && s.display_id === String(target.id));
+  if (!src) {
+    const targetIdx = all.findIndex((d) => d.id === target.id);
+    if (targetIdx >= 0 && targetIdx < sources.length) {
+      src = sources[targetIdx];
+    }
+  }
+  if (!src) src = sources[0];
+
   return src ? src.thumbnail.toJPEG(85).toString('base64') : null;
 }
 async function captureNow() { return captureScreenBy('main'); }
