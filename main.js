@@ -10,6 +10,10 @@ const { spawn } = require('child_process');
 const APP_ROOT = __dirname;
 const PORT = 12400;
 const SPLIT_WINDOWS = true;   // 双窗：卧室独立窗(锁副屏，不动) + 桌宠窗(主屏)。设 false 回退单窗旧行为
+// GPU 策略：跨屏透明窗的 Chromium GPU 合成会落到独显（3060 Ti）上（实测 ~137MB + 8~17% 3D），
+// 关掉 GPU 合成后独显占用归零（WebGL 精灵仍走核显硬件），代价约 0.4 核 CPU。
+// 想回硬件合成：启动时设 PET_HW_COMPOSITING=1
+if (process.env.PET_HW_COMPOSITING !== '1') app.commandLine.appendSwitch('disable-gpu-compositing');
 // 思考方案开关（启动脚本 set PET_THINK=...）：pet_think | off
 //   pet_think = pet_think 标签 + 动态思考强度（轻/标准/深，按问题特征），模型固定 nothink
 //   off       = 不注入思考模块
@@ -785,6 +789,11 @@ function unionBounds() {
   if (!isFinite(x0)) return screen.getPrimaryDisplay().workArea;
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
+// 临时测试开关：PET_ONLY_BEDROOM=1 时桌宠窗只铺副屏（卧室），用来对比跨屏窗对独显的占用
+const PET_ONLY_BEDROOM = process.env.PET_ONLY_BEDROOM === '1';
+function petArea() {
+  return (PET_ONLY_BEDROOM && bedroomDisplay()) ? bedroomDisplay().workArea : unionBounds();
+}
 
 let petWin = null;
 let bedroomWin = null;
@@ -865,7 +874,7 @@ function startTopmostGuard() {
 // Windows 实测：跨屏透明窗一旦再次 setAlwaysOnTop/moveTop，置顶样式就会丢（设 true 也回不来）。
 // 所以桌宠窗只在创建时置顶，之后永远不碰；卧室窗靠 focusable:false 防止点击抢层。
 function spawnPetOverlay(port) {
-  petWin = createPetOverlay(port, unionBounds());
+  petWin = createPetOverlay(port, petArea());
   wireLife(petWin, 'pet', () => spawnPetOverlay(port));
   petWin.on('always-on-top-changed', (e, on) => winLog('pet alwaysOnTop=' + on));
   startTopmostGuard();
@@ -948,7 +957,7 @@ app.whenReady().then(() => {
     winLog('displays changed: ' + JSON.stringify(screen.getAllDisplays().map((d) => [d.id, d.bounds.x, d.bounds.y, d.bounds.width, d.bounds.height, d.scaleFactor])));
     if (petWin) {
       if (SPLIT_WINDOWS && bedroomDisplay()) {
-        petWin.setBounds(unionBounds());
+        petWin.setBounds(petArea());
         petWin.setIgnoreMouseEvents(true, { forward: true });
       } else {
         petWin.setBounds(targetWorkArea());

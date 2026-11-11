@@ -3618,8 +3618,7 @@ void main(){ o=texture(uTex,vUv); }`;
         break;
       }
     }
-    const primaryScale = (displayInfo.find((d2) => d2.isPrimary) || {}).scaleFactor || WINDOW_DPR;
-    const factor = Math.max(0.25, Math.min(4, scale / primaryScale));
+    const factor = Math.max(0.25, Math.min(4, scale / WINDOW_DPR));
     dprFactor = factor;
     const t3 = Math.abs(factor - 1) < 0.02 ? "" : "scale(" + factor + ")";
     if (t3 === lastDprTransform) return;

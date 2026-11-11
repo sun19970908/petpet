@@ -1304,10 +1304,9 @@ function updatePetDprScale() {
     const b = d.bounds;
     if (sx >= b.x && sx <= b.x + b.width && sy >= b.y && sy <= b.y + b.height) { scale = d.scaleFactor || WINDOW_DPR; break; }
   }
-  // 实测（RDP 会话、混合 DPI）：跨屏窗口按主屏 DPI 渲染，副屏那份被系统位图放大 主屏scaleFactor/该屏scaleFactor 倍。
-  // 补偿系数 = 该屏scaleFactor / 主屏scaleFactor（主屏=1 不缩，副屏=0.5 缩半）
-  const primaryScale = (displayInfo.find((d) => d.isPrimary) || {}).scaleFactor || WINDOW_DPR;
-  const factor = Math.max(0.25, Math.min(4, scale / primaryScale));
+  // 补偿系数 = 该屏缩放 / 窗口渲染DPR：跨屏大窗按主屏DPI渲染时与旧公式等价；
+  // 窗口只铺单屏时 DPR 等于该屏缩放，系数=1（PET_ONLY_BEDROOM 测试模式）
+  const factor = Math.max(0.25, Math.min(4, scale / WINDOW_DPR));
   dprFactor = factor;
   const t = Math.abs(factor - 1) < 0.02 ? '' : 'scale(' + factor + ')';
   if (t === lastDprTransform) return;   // 拖动时每帧都会进来，值没变就别碰这 4 个元素
