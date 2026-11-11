@@ -255,8 +255,10 @@ function handleApi(req, res) {
       res.end('upstream error: ' + e.message);
     });
 
-    req.on('close', () => {
-      if (!upstream.destroyed) upstream.destroy();
+    // 客户端提前断开时才掐掉上游；不能监听 req 'close'——它在请求体读完就触发，
+    // 会在 upstream.end() 后立刻销毁转发连接（表现为 2ms 的 socket hang up）
+    res.on('close', () => {
+      if (!res.writableFinished && !upstream.destroyed) upstream.destroy();
     });
 
     upstream.end(fullBody);
