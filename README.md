@@ -12,7 +12,7 @@ Electron + [livliv player](https://github.com/livliv-dev/player) 的本地 AI �
 - **手动唤醒 / 插话打断（🔔 双语义）**：空闲点击 = 自动截屏 + 提示"你被唤醒了，用户没有给你指示，自由行动吧"；忙碌点击 = **打断**（`turnAbort.abort()` 掐断生成/TTS 请求 + `speech.stop()` 停语音，未发送的用户话自动回输入框，气泡"（已打断）"）。提交统一走 `submitRequest`（定时唤醒复用 `wakeNow()` 同一入口）；截图 HTTP 兜底 `/api/capture`
 - **自动唤醒**：🔔 旁的数字输入框 = 间隔（分钟，**0 = 关闭**），存 localStorage，到点调 `wakeNow()`（GPU 前置条件、忙时跳过自动继承）；回车应用
 - **无限唤醒上下文护栏**：每轮 `usage.prompt_tokens` ≥ 当前档案的 `contextLength`（`llm.config.json` 每档案可调，缺省 65536；renderer 回退 64000）累计 3 次 → 自动停无限唤醒；换档案即换阈值
-- **唤醒前置条件**：主卡（GPU 0）占用率 > `WAKE_GPU_LIMIT`（app.js，默认 40%）时跳过本次唤醒并提示；`nvidia-smi` 不可用则放行；GPU 查询走 IPC `/api/gpuutil`
+- **唤醒前置条件**：主卡（GPU 0）占用率 > 当前档案 `wakeGpuLimit`（`llm.config.json`，默认 40；≥100 跳过判定）时跳过本次唤醒并提示；`nvidia-smi` 不可用则放行；GPU 查询走 IPC `/api/gpuutil`
 - **文件工具**（原生 tool calls，实测通过）：`read_file`/`list_dir` 任意路径只读（**不截断**——为将来整份读聊天记录做上下文压缩预留；超大文件会自然撑爆请求，属可接受边界），`write_file` 仅限 `G:\AI\livliv-pet\pet_space\` 沙箱（200KB 上限）。主进程执行器 `runFsTool`（调用日志在 `logs/fstool.log`），IPC 与 `/api/fstool` HTTP 兜底共用。工具循环**无轮次上限**，唯一护栏：同一调用原样重复 3 次=卡死，收走工具逼文本回答；参数 JSON 解析失败会回喂准确错误让她自行重试（实测她能自我纠错）。历史只存最终问答，工具交换不落历史
 - **两层提示词解耦**：`renderer/system-prompt.txt`（宪法：身份/行为规则/**文件工具规则**，**在写沙箱外，只有用户能改**）+ `pet_space/persona.txt`（性格档案，**在她的写沙箱内，她可自己重写**——系统提示词里教了她何时/如何改）。系统消息 = system-prompt + persona，每次发送前都重新读取，改完下一条即生效。工具规则已并入 system-prompt.txt，代码里不再有硬编码提示词
 - **多模态**：输入框 Ctrl+V 粘贴图片 / 📷 按钮全屏截图（desktopCapturer），OpenAI `image_url` 格式进 Strata（实测图上数字识别正确）；历史图片折叠成 `[图片]` 占位

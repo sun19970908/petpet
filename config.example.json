@@ -6,6 +6,5 @@
   "ttsMode": "auto",
   "gsvIdleSeconds": 600,
   "watchdog": false,
-  "llmProfile": "strata",
-  "wakeGpuLimit": 40
+  "llmProfile": "strata"
 }
