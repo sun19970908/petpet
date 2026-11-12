@@ -17,5 +17,6 @@ contextBridge.exposeInMainWorld('petWindow', {
   roomStateSave: (s) => ipcRenderer.invoke('room-state-save', s),
   onDisplaysChanged: (cb) => ipcRenderer.on('displays-changed', () => cb()),
   onRoomChanged: (cb) => ipcRenderer.on('room-changed', () => cb()),
+  onStopInfwake: (cb) => ipcRenderer.on('stop-infwake', () => cb()),
   wakeBeat: (s) => ipcRenderer.invoke('wake-beat', s),
 });

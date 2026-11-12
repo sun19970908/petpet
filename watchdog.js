@@ -69,14 +69,58 @@ function petPid() {
 }
 
 let restarts = [], lastLaunch = 0, busySince = 0, lastTurnSeq = 0, lastSeenActTs = 0, offlineStreak = 0;
+let lastTickTs = Date.now(), pendingStopInfwake = false, stoppedCutoffKey = '';
+function getCutoffConfig() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
+    const raw = String(cfg.infwakeCutoff || '12:00').trim();
+    const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
+    if (m) {
+      const hour = Math.max(0, Math.min(23, Number(m[1])));
+      const min = Math.max(0, Math.min(59, Number(m[2])));
+      return { hour, min, str: `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}` };
+    }
+  } catch {}
+  return { hour: 12, min: 0, str: '12:00' };
+}
+function checkInfwakeCutoff() {
+  const now = Date.now();
+  const { hour, min, str } = getCutoffConfig();
+  const d = new Date(now);
+  const cutoffTs = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hour, min, 0, 0).getTime();
+  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${str}`;
+  if (lastTickTs < cutoffTs && now >= cutoffTs && stoppedCutoffKey !== key) {
+    stoppedCutoffKey = key;
+    pendingStopInfwake = true;
+    log(`到达每日无限唤醒截止时间 (${str}) → 准备关闭无限唤醒`);
+  }
+  lastTickTs = now;
+}
+function stopInfwakeOnPet(cb) {
+  const req = http.request({ host: '127.0.0.1', port: 12400, path: '/api/infwake/stop', method: 'POST', timeout: 5000 }, (r) => {
+    const chunks = [];
+    r.on('data', (c) => chunks.push(c));
+    r.on('end', () => {
+      try {
+        const j = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        cb(r.statusCode === 200 && Boolean(j && j.sent));
+      } catch { cb(false); }
+    });
+  });
+  req.on('error', () => cb(false));
+  req.on('timeout', () => { try { req.destroy(); } catch {} cb(false); });
+  req.end();
+}
 function canRestart() { const n = Date.now(); restarts = restarts.filter((t) => n - t < 3600000); return restarts.length < 5; }
 function launchPet(why) {
   if (Date.now() - lastLaunch < 45000) return; // 冷却：避免上一轮刚拉起尚未就绪又叠着拉一次
   if (!canRestart()) { log('需要重启但 1 小时内已 5 次，暂缓（防连环崩）：' + why); return; }
   restarts.push(Date.now()); lastLaunch = Date.now();
-  log(`重启宠物 start-pet.bat ${WATCHDOG_GSV_MODE}（原因：${why}）`);
+  const args = ['/c', PETBAT, WATCHDOG_GSV_MODE];
+  if (pendingStopInfwake) args.push('--no-infwake');
+  log(`重启宠物 start-pet.bat ${WATCHDOG_GSV_MODE}${pendingStopInfwake ? ' --no-infwake' : ''}（原因：${why}）`);
   try {
-    const p = spawn('cmd', ['/c', PETBAT, WATCHDOG_GSV_MODE], {
+    const p = spawn('cmd', args, {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
@@ -94,6 +138,7 @@ function killPet() {
 }
 
 function tick() {
+  checkInfwakeCutoff();
   probe((up, why) => {
     if (!up) {
       offlineStreak += 1;
@@ -113,6 +158,14 @@ function tick() {
       return;
     }
     offlineStreak = 0;
+    if (pendingStopInfwake) {
+      stopInfwakeOnPet((sent) => {
+        if (sent) {
+          pendingStopInfwake = false;
+          log('已通过 /api/infwake/stop 关闭无限唤醒');
+        }
+      });
+    }
     if (Date.now() - lastLaunch < 180000) return; // 刚拉起，先给时间上心跳
     let st = null;
     try { st = JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch {}

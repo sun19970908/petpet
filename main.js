@@ -71,12 +71,14 @@ let cliGsvMode = null;
 let cliGsvIdle = null;
 let cliCapMain = null;
 let cliCapRoom = null;
+let cliNoInfwake = false;
 for (const arg of process.argv.slice(1)) {
   if (!arg || arg === '.' || arg.endsWith('electron.exe') || arg.endsWith('main.js')) continue;
   if (arg.startsWith('--gsv-mode=')) cliGsvMode = arg.slice(11);
   else if (arg.startsWith('--gsv-idle=')) cliGsvIdle = arg.slice(11);
   else if (arg.startsWith('--cap-main=')) cliCapMain = arg.slice(11);
   else if (arg.startsWith('--cap-room=')) cliCapRoom = arg.slice(11);
+  else if (arg === '--no-infwake') cliNoInfwake = true;
   else if (arg === 'debug' || arg === '--debug') process.env.PET_DEBUG = '1';
   else if (['auto', 'always', 'on', 'never', 'off'].includes(arg.toLowerCase())) cliGsvMode = arg;
   else if (/^\d+$/.test(arg)) cliGsvIdle = arg;
@@ -815,7 +817,32 @@ function isFileStrictlyInPetSpace(targetPath) {
 const isFileStrictlyInNotes = isFileStrictlyInPetSpace;
 const HISTORY_FILE = path.join(APP_ROOT, 'history', '聊天记录.json'); // 在 pet_space 沙箱外：她无权改写聊天记录
 const HISTORY_FILE_DEBUG = path.join(APP_ROOT, 'history', 'debug-聊天记录.json'); // debug 模式独立历史
-function historyFile(mode) { return mode === 'debug' ? HISTORY_FILE_DEBUG : HISTORY_FILE; }
+const INFWAKE_DIR = path.join(APP_ROOT, 'history', 'infwake');
+function getConfig() {
+  try { return JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'config.json'), 'utf8')); }
+  catch { return {}; }
+}
+function getInfwakeCutoff() {
+  const raw = String(getConfig().infwakeCutoff || '12:00').trim();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  const hour = m ? Math.max(0, Math.min(23, Number(m[1]))) : 12;
+  const min = m ? Math.max(0, Math.min(59, Number(m[2]))) : 0;
+  return { str: `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`, hour, min };
+}
+function getInfwakePhaseId(now = new Date()) {
+  const { hour, min } = getInfwakeCutoff();
+  const shifted = new Date(now.getTime() - (hour * 60 + min) * 60000);
+  const y = shifted.getFullYear();
+  const mo = String(shifted.getMonth() + 1).padStart(2, '0');
+  const d = String(shifted.getDate()).padStart(2, '0');
+  return `${y}${mo}${d}`;
+}
+function historyFile(mode) {
+  if (mode === 'debug') return HISTORY_FILE_DEBUG;
+  if (mode === 'infwake') return path.join(INFWAKE_DIR, `${getInfwakePhaseId()}.json`);
+  if (mode === 'debug-infwake') return path.join(INFWAKE_DIR, `debug-${getInfwakePhaseId()}.json`);
+  return HISTORY_FILE;
+}
 function fstoolTail(n = 10) {
   try {
     const lines = fs.readFileSync(path.join(APP_ROOT, 'logs', 'fstool.log'), 'utf8').trim().split('\n');
@@ -837,6 +864,25 @@ function historyLoad(mode) {
   } catch { return []; }
 }
 function historySave(arr, mode) {
+  const targetFile = historyFile(mode);
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  const isInfwake = mode === 'infwake' || mode === 'debug-infwake';
+  if (isInfwake) {
+    // 无限唤醒独立记录：剔除一切 user 占位、唤醒提示词与截图引用，只保留纯 assistant 回复
+    const cleaned = (Array.isArray(arr) ? arr : [])
+      .filter((m) => m && m.role === 'assistant')
+      .map((m) => {
+        if (typeof m.content === 'string') return { role: 'assistant', content: m.content };
+        if (Array.isArray(m.content)) {
+          const text = m.content.filter((c) => c?.type === 'text').map((c) => c.text || '').join('');
+          return { role: 'assistant', content: text };
+        }
+        return null;
+      })
+      .filter((m) => m && typeof m.content === 'string' && m.content.trim());
+    fs.writeFileSync(targetFile, JSON.stringify(cleaned, null, 1), 'utf8');
+    return true;
+  }
   // 写盘时把 dataURL 图片抽取成独立文件（history/img/），JSON 里只留可预览的相对路径——防止记录膨胀
   const IMG_DIR = path.join(APP_ROOT, 'history', 'img');
   fs.mkdirSync(IMG_DIR, { recursive: true });
@@ -858,7 +904,7 @@ function historySave(arr, mode) {
     });
     return { ...m, content };
   });
-  fs.writeFileSync(historyFile(mode), JSON.stringify(cleaned, null, 1), 'utf8');
+  fs.writeFileSync(targetFile, JSON.stringify(cleaned, null, 1), 'utf8');
   return true;
 }
 // ComfyUI 生图通道（本机 8188）：她把工作流交给 ComfyUI 跑，产出图拉到 pet_space/generated 并回传给她看
@@ -1241,7 +1287,24 @@ function serveStatic(req, res) {
     if (req.url.startsWith('/api/')) {
       if (req.url.split('?')[0] === '/api/config') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ think: THINK_MODE, bedroom: Boolean(bedroomDisplay()) }));
+        res.end(JSON.stringify({
+          think: THINK_MODE,
+          bedroom: Boolean(bedroomDisplay()),
+          infwakeCutoff: getInfwakeCutoff().str,
+          infwakePhase: getInfwakePhaseId(),
+        }));
+        return;
+      }
+      if (req.url.split('?')[0] === '/api/infwake/stop' && req.method === 'POST') {
+        let sent = false;
+        try {
+          if (petWin && !petWin.isDestroyed()) {
+            petWin.webContents.send('stop-infwake');
+            sent = true;
+          }
+        } catch {}
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, sent }));
         return;
       }
       if (req.url.split('?')[0] === '/api/room-state') {
@@ -1470,13 +1533,20 @@ function baseWin(area, opts = {}) {
 function createWindow(port) {            // 单窗旧行为：副屏整屋 / 主屏桌宠（SPLIT_WINDOWS=false 时）
   const win = baseWin(targetWorkArea());
   win.setIgnoreMouseEvents(!bedroomDisplay(), { forward: true });
-  win.loadURL(`http://127.0.0.1:${port}/` + (process.env.PET_DEBUG ? '?debug=1' : ''));
+  const qs = [];
+  if (process.env.PET_DEBUG) qs.push('debug=1');
+  if (cliNoInfwake) qs.push('noinfwake=1');
+  win.loadURL(`http://127.0.0.1:${port}/` + (qs.length ? '?' + qs.join('&') : ''));
   return win;
 }
 function createPetOverlay(port, area) {  // 双窗：桌宠窗（主屏全屏透明、穿透、只画她+聊天）
   const win = baseWin(area);
   win.setIgnoreMouseEvents(true, { forward: true });
-  win.loadURL(`http://127.0.0.1:${port}/?role=pet` + (process.env.PET_DEBUG ? '&debug=1' : '') + (process.env.PET_AUTOWAKE ? '&autowake=' + encodeURIComponent(process.env.PET_AUTOWAKE_TEXT || '1') : ''));
+  const qs = ['role=pet'];
+  if (process.env.PET_DEBUG) qs.push('debug=1');
+  if (process.env.PET_AUTOWAKE) qs.push('autowake=' + encodeURIComponent(process.env.PET_AUTOWAKE_TEXT || '1'));
+  if (cliNoInfwake) qs.push('noinfwake=1');
+  win.loadURL(`http://127.0.0.1:${port}/?` + qs.join('&'));
   return win;
 }
 function createBedroomWindow(port, area) { // 双窗：卧室窗（副屏整屋、锁死不动、不穿透以便点帘灯）

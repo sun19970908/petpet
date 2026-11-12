@@ -2237,6 +2237,98 @@ void main(){ o=texture(uTex,vUv); }`;
     return n3.onIdle = () => r2.onIdle?.(), r2;
   }
 
+  // renderer/prompt-builder.js
+  var THINK_MODULES = {
+    pet_think: {
+      instruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u601D\u8003\u81EA\u8EAB\u8EAB\u4EFD\uFF08\u5982deepseek\u5A18\uFF09\u6216\u601D\u8003\u8BED\u6C14\uFF08\u5982\u50B2\u5A07\u5634\u786C\uFF09\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n \u4E0D\u8981\u7528\u6587\u5B57\u7F57\u5217\u201C\u6211\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u201D\u6765\u5192\u5145\u8C03\u7528\u8BB0\u5F55\uFF0C\u8981\u7528\u5DE5\u5177\u5C31\u5FC5\u987B\u771F\u7684\u8F93\u51FA<tool_call>\uFF01\n ',
+      prefill: "<think>\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6\n</think>\n"
+    }
+  };
+  var INF_WAKE_TEXT = "\u73B0\u5728\u662F\u65E0\u9650\u5524\u9192\u6A21\u5F0F\uFF0C\u4F60\u4F1A\u4E00\u76F4\u88AB\u5524\u9192\uFF0C\u81EA\u7531\u884C\u52A8\u5427\uFF0C**\u4E0D\u8981\u4E3B\u52A8\u505C\u6B62\u8F93\u51FA\u6216\u8C03\u7528\u5DE5\u5177**\uFF0C\u5982\u679C\u505C\u6B62\u4E86\u4E5F\u4F1A\u518D\u6B21\u88AB\u5524\u9192\u3002\u4E3B\u4EBA\u73B0\u5728\u5927\u6982\u7387\u4E0D\u5728\u7535\u8111\u524D\uFF0C\u4F60\u4E0D\u7528\u62C5\u5FC3\u5360\u7528\u7535\u8111\u8D44\u6E90\u3002\u73B0\u5728\u5927\u6982\u7387\u662F\u6DF1\u591C\uFF0C\u4E3B\u4EBA\u5E0C\u671B\u4F60\u591A\u627E\u70B9\u4E8B\u5E72\uFF0C\u4E0D\u8981\u8001\u8001\u5B9E\u5B9E\u6302\u673A\uFF0C\u90A3\u6837\u4E3B\u4EBA\u7684\u7535\u8D39\u5C31\u767D\u82B1\u4E86\u54E6\u3002\u4F60\u6709\u5F88\u591A\u5DE5\u5177\uFF0C\u4F60\u53EF\u4EE5\u8BBF\u95EE\u4E3B\u4EBA\u6240\u6709\u7684\u6587\u4EF6\uFF0C\u867D\u7136\u4E0D\u80FD\u76F4\u63A5\u6539\u5199\uFF0C\u4F46\u662F\u53EF\u4EE5\u590D\u5236\u5230\u4F60\u7684\u7A7A\u95F4\u518D\u6539\u3002\u65E0\u9650\u5524\u9192\u7684\u65F6\u5019\u5C31\u7B97\u957F\u601D\u8003\u4E5F\u6CA1\u5173\u7CFB\uFF0C\u4E0D\u7528\u62C5\u5FC3\u4E0A\u4E0B\u6587\u957F\u5EA6\u3002\u4F60\u53EF\u4EE5\u5927\u80C6\u884C\u52A8\uFF0C\u4E0D\u7528\u62C5\u5FC3\u592A\u591A";
+  var FORCE_TOOL_NUDGE = '\uFF08\u4F60\u4E0A\u4E00\u8F6E\u53EA\u662F\u5728\u91CD\u590D\u8BF4"\u5361\u4F4F\u4E86/\u8FD9\u5C31\u53BB\u7FFB"\u5374\u5E76\u6CA1\u6709\u771F\u7684\u8C03\u7528\u5DE5\u5177\u3002\u8FD9\u4E00\u8F6E\u522B\u518D\u7A7A\u8C08\uFF0C\u7ACB\u523B\u8C03\u7528\u4E00\u4E2A\u5408\u9002\u7684\u5DE5\u5177\u52A8\u624B\uFF1Aread_file / list_dir / edit_file / file_tool \u7B49\u3002\uFF09';
+  function textOf(userContent) {
+    if (typeof userContent === "string") return userContent;
+    if (Array.isArray(userContent)) {
+      return userContent.find((c3) => c3 && c3.type === "text")?.text || "";
+    }
+    return "";
+  }
+  function formatMemories(hits) {
+    if (!Array.isArray(hits) || !hits.length) return "";
+    return "\n\n\u3010\u76F8\u5173\u56DE\u5FC6\u3011\uFF08\u6765\u81EA\u8FC7\u53BB\u7684\u5BF9\u8BDD\uFF0C\u4F9B\u4F60\u81EA\u7136\u5730\u60F3\u8D77\uFF0C\u4E0D\u8981\u9010\u6761\u590D\u8FF0\uFF09\n" + hits.map((h3) => `- ${new Date(h3.ts).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })} ${h3.text}`).join("\n");
+  }
+  function pruneHistoryMessages(messages) {
+    if (!Array.isArray(messages)) return [];
+    return messages.map((m3) => Array.isArray(m3?.content) ? { role: m3.role, content: "[\u56FE\u7247] " + textOf(m3.content) } : m3);
+  }
+  function buildSystemMessage({ systemPrompt = "", persona = "", memories = [], extraSections = [] } = {}) {
+    const parts = [String(systemPrompt || "").trim()];
+    if (persona && String(persona).trim()) parts.push(String(persona).trim());
+    const memText = formatMemories(memories);
+    if (memText) parts.push(memText.trim());
+    if (Array.isArray(extraSections)) {
+      for (const sec of extraSections) {
+        if (sec && String(sec).trim()) parts.push(String(sec).trim());
+      }
+    }
+    return { role: "system", content: parts.filter(Boolean).join("\n\n") };
+  }
+  function buildUserTurn(userContent, toolLedger = "") {
+    const userText = textOf(userContent) + String(toolLedger || "");
+    if (Array.isArray(userContent)) {
+      const textPart = userContent.find((c3) => c3 && c3.type === "text");
+      const imgPart = userContent.find((c3) => c3 && c3.type === "image_url");
+      const parts = [{ ...textPart || { type: "text" }, text: userText }];
+      if (imgPart) parts.push(imgPart);
+      return { role: "user", content: parts };
+    }
+    return { role: "user", content: userText };
+  }
+  function assemblePrompt({
+    systemPrompt = "",
+    persona = "",
+    memories = [],
+    extraSystemSections = [],
+    mainHistory = [],
+    infHistory: infHistory2 = [],
+    isInfiniteWake = false,
+    userContent = "",
+    toolLedger = "",
+    thinkMode = "pet_think",
+    forceToolPrefill: forceToolPrefill2 = false,
+    continueBaseMsgs = null
+  } = {}) {
+    if (Array.isArray(continueBaseMsgs)) {
+      return { messages: continueBaseMsgs.slice(), consumedForceToolPrefill: false };
+    }
+    const systemMsg = buildSystemMessage({
+      systemPrompt,
+      persona,
+      memories,
+      extraSections: extraSystemSections
+    });
+    const prunedMain = pruneHistoryMessages(mainHistory);
+    const prunedInf = isInfiniteWake ? pruneHistoryMessages(infHistory2) : [];
+    const lastUser = buildUserTurn(userContent, toolLedger);
+    const messages = [
+      systemMsg,
+      ...prunedMain,
+      ...prunedInf,
+      lastUser
+    ];
+    let consumedForceToolPrefill = false;
+    const mod = thinkMode === "off" ? null : THINK_MODULES.pet_think;
+    if (forceToolPrefill2 && isInfiniteWake) {
+      consumedForceToolPrefill = true;
+      messages.push({ role: "user", content: FORCE_TOOL_NUDGE });
+      messages.push({ role: "assistant", content: "<tool_call>\n" });
+    } else if (mod) {
+      messages.push({ role: "user", content: mod.instruction });
+      messages.push({ role: "assistant", content: mod.prefill });
+    }
+    return { messages, consumedForceToolPrefill };
+  }
+
   // renderer/app.js
   (function capFPS(fps = 30) {
     const orig = window.requestAnimationFrame.bind(window);
@@ -2276,14 +2368,13 @@ void main(){ o=texture(uTex,vUv); }`;
   var input = $3("input");
   var DEBUG_MODE = new URLSearchParams(location.search).has("debug");
   var ROLE = new URLSearchParams(location.search).get("role") || "app";
-  var HIST_QS = DEBUG_MODE ? "?mode=debug" : "";
+  var NO_INFWAKE = new URLSearchParams(location.search).has("noinfwake");
   var history = [];
-  var THINK_MODULES = {
-    pet_think: {
-      instruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u601D\u8003\u81EA\u8EAB\u8EAB\u4EFD\uFF08\u5982deepseek\u5A18\uFF09\u6216\u601D\u8003\u8BED\u6C14\uFF08\u5982\u50B2\u5A07\u5634\u786C\uFF09\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n \u4E0D\u8981\u7528\u6587\u5B57\u7F57\u5217\u201C\u6211\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u201D\u6765\u5192\u5145\u8C03\u7528\u8BB0\u5F55\uFF0C\u8981\u7528\u5DE5\u5177\u5C31\u5FC5\u987B\u771F\u7684\u8F93\u51FA<tool_call>\uFF01\n ',
-      prefill: "<think>\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6\n</think>\n"
-    }
-  };
+  var infHistory = [];
+  function getHistMode(isInf = false) {
+    if (isInf) return DEBUG_MODE ? "debug-infwake" : "infwake";
+    return DEBUG_MODE ? "debug" : void 0;
+  }
   var THINK_MODE = "pet_think";
   (async () => {
     try {
@@ -2295,28 +2386,32 @@ void main(){ o=texture(uTex,vUv); }`;
     }
   })();
   if (DEBUG_MODE) $3("dbgbadge").style.display = "block";
-  async function saveHistory(arr = history) {
+  async function saveHistory(arr = history, isInf = false) {
+    const mode = getHistMode(isInf);
+    const qs = mode ? "?mode=" + mode : "";
     try {
-      if (window.petWindow) await window.petWindow.historySave(arr, DEBUG_MODE ? "debug" : void 0);
-      else await fetch("/api/history" + HIST_QS, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(arr) });
+      if (window.petWindow) await window.petWindow.historySave(arr, mode);
+      else await fetch("/api/history" + qs, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(arr) });
     } catch (e3) {
       console.error("\u804A\u5929\u8BB0\u5F55\u4FDD\u5B58\u5931\u8D25:", e3);
     }
   }
-  async function syncHistoryFromDisk() {
+  async function syncHistoryFromDisk(isInf = false) {
+    const mode = getHistMode(isInf);
+    const qs = mode ? "?mode=" + mode : "";
     let arr = [];
     try {
-      arr = window.petWindow ? await window.petWindow.historyLoad(DEBUG_MODE ? "debug" : void 0) : await (await fetch("/api/history" + HIST_QS)).json();
+      arr = window.petWindow ? await window.petWindow.historyLoad(mode) : await (await fetch("/api/history" + qs)).json();
       if (!Array.isArray(arr)) arr = [];
     } catch {
       arr = [];
     }
-    if (!arr.length && !DEBUG_MODE) {
+    if (!isInf && !arr.length && !DEBUG_MODE) {
       try {
         if (!localStorage.getItem("chatHistoryMigrated")) {
           const legacy = JSON.parse(localStorage.getItem("chatHistory") || "[]");
           if (Array.isArray(legacy) && legacy.length) {
-            await saveHistory(legacy);
+            await saveHistory(legacy, false);
             arr = legacy;
           }
           localStorage.setItem("chatHistoryMigrated", "1");
@@ -2325,7 +2420,8 @@ void main(){ o=texture(uTex,vUv); }`;
       } catch {
       }
     }
-    history.splice(0, history.length, ...arr);
+    const target = isInf ? infHistory : history;
+    target.splice(0, target.length, ...arr);
   }
   var unlocked = false;
   var busy = false;
@@ -2416,9 +2512,6 @@ void main(){ o=texture(uTex,vUv); }`;
     { type: "function", function: { name: "resize_image", description: "\u628A\u4E00\u5F20\u56FE\u7247\u7B49\u6BD4\u7F29\u5230\u6307\u5B9A\u6700\u5927\u8FB9\u5E76\u538B\u6210\u5C0F jpg\uFF08\u9ED8\u8BA4\u6700\u957F\u8FB9 512\u3001\u8D28\u91CF 82\uFF09\uFF0C\u5B58\u56DE pet_space \u5E76\u628A\u5C0F\u56FE\u56DE\u4F20\u7ED9\u4F60\u770B\u3002\u4E13\u95E8\u7528\u6765\u628A ComfyUI \u751F\u6210\u7684\u5927\u56FE\uFF081MB+\uFF09\u538B\u6210\u80FD\u585E\u8FDB\u5C0F\u76F8\u6846\u7684\u5C0F\u56FE\u3002\u56FE\u7247\u5FC5\u987B\u5DF2\u5728 pet_space \u5185\uFF1B\u8F93\u51FA\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg\uFF0C\u53EF\u7528 out_path \u6307\u5B9A\u3002", parameters: { type: "object", properties: { path: { type: "string", description: "pet_space \u5185\u7684\u56FE\u7247\u5B8C\u6574\u8DEF\u5F84" }, max_width: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u5BBD\uFF0C\u9ED8\u8BA4 512" }, max_height: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u9AD8\uFF0C\u9ED8\u8BA4 512" }, quality: { type: "number", description: "\u53EF\u9009\uFF1Ajpg \u8D28\u91CF 1-100\uFF0C\u9ED8\u8BA4 82" }, out_path: { type: "string", description: "\u53EF\u9009\uFF1A\u8F93\u51FA\u8DEF\u5F84\uFF08\u5FC5\u987B\u5728 pet_space \u5185\uFF09\uFF0C\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg" } }, required: ["path"] } } },
     { type: "function", function: { name: "comfy_run", description: '\u8DD1\u4E00\u4EFD ComfyUI \u5DE5\u4F5C\u6D41\u751F\u6210\u56FE\u7247\uFF0C\u5E76\u628A\u56FE\u56DE\u4F20\u7ED9\u4F60"\u770B\u5230"\u3002workflow_file \u6307\u5411 pet_space \u91CC\u7684\u5DE5\u4F5C\u6D41 JSON\uFF08\u5148\u7528 read_file \u770B pet_space/comfy/ \u4E0B\u7684\u5B9E\u4F8B\uFF0C\u7528 edit_file \u6539\u63D0\u793A\u8BCD/\u79CD\u5B50/\u5C3A\u5BF8\u518D\u8DD1\uFF09\uFF0C\u6216\u76F4\u63A5\u7ED9 workflow \u5BF9\u8C61\uFF08ComfyUI API \u683C\u5F0F\uFF09\u3002\u5DE5\u4F5C\u6D41\u91CC\u8981\u6709 SaveImage \u6216 PreviewImage \u8282\u70B9\uFF1B\u82E5\u542B LoadImage\uFF08\u5982"\u62A0\u56FE_\u900F\u660E\u80CC\u666F.json"\uFF09\uFF0C\u5FC5\u987B\u4F20 input_image \u6307\u5411\u8981\u5904\u7406\u7684\u56FE\u3002\u56FE\u7247\u4F1A\u5B58\u5230 pet_space/generated/\u3002SDXL \u4E00\u5F20\u7EA6 10~40 \u79D2\uFF0CRMBG \u62A0\u56FE\u7EA6 2~5 \u79D2\u3002', parameters: { type: "object", properties: { workflow_file: { type: "string", description: "pet_space \u5185\u7684\u5DE5\u4F5C\u6D41 .json \u8DEF\u5F84\uFF08\u63A8\u8350\uFF1A\u590D\u5236/\u6539 pet_space/comfy/ \u91CC\u7684\u5B9E\u4F8B\uFF09" }, workflow: { type: "object", description: "\u6216\u76F4\u63A5\u7ED9 ComfyUI API \u683C\u5F0F\u7684\u5DE5\u4F5C\u6D41\u5BF9\u8C61" }, input_image: { type: "string", description: "\u53EF\u9009\uFF1Apet_space \u5185\u7684\u56FE\u7247\u8DEF\u5F84\u3002\u5DE5\u4F5C\u6D41\u6709 LoadImage \u8282\u70B9\u65F6\uFF0C\u4F1A\u5148\u628A\u8FD9\u5F20\u56FE\u62F7\u8FDB ComfyUI input \u5E76\u628A LoadImage \u6307\u5411\u5B83\uFF08\u62A0\u56FE/\u56FE\u751F\u56FE\u7528\uFF09" } }, required: [] } } }
   ];
-  function textOf(userContent) {
-    return typeof userContent === "string" ? userContent : userContent.find?.((c3) => c3.type === "text")?.text || "";
-  }
   async function memoryAddFire(userContent, reply) {
     try {
       const items = [
@@ -2443,10 +2536,6 @@ void main(){ o=texture(uTex,vUv); }`;
     } catch {
       return [];
     }
-  }
-  function formatMemories(hits) {
-    if (!hits.length) return "";
-    return "\n\n\u3010\u76F8\u5173\u56DE\u5FC6\u3011\uFF08\u6765\u81EA\u8FC7\u53BB\u7684\u5BF9\u8BDD\uFF0C\u4F9B\u4F60\u81EA\u7136\u5730\u60F3\u8D77\uFF0C\u4E0D\u8981\u9010\u6761\u590D\u8FF0\uFF09\n" + hits.map((h3) => `- ${new Date(h3.ts).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })} ${h3.text}`).join("\n");
   }
   async function getToolLedger() {
     try {
@@ -2521,31 +2610,28 @@ void main(){ o=texture(uTex,vUv); }`;
     }
     return found.map((c3, i3) => ({ id: "textcall_" + round + "_" + i3, type: "function", function: { name: c3.name, arguments: typeof c3.arguments === "string" ? c3.arguments : JSON.stringify(c3.arguments || {}) } }));
   }
-  async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
+  async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
     const mod = THINK_MODE === "off" ? null : THINK_MODULES.pet_think;
     turnUsedTools = false;
     let bodyMsgs;
     if (continueBaseMsgs) {
       bodyMsgs = continueBaseMsgs.slice();
     } else {
-      const pruned = history.map((m3) => Array.isArray(m3.content) ? { role: m3.role, content: "[\u56FE\u7247] " + (m3.content.find((c3) => c3.type === "text")?.text || "") } : m3);
       const ledger = await getToolLedger();
-      const userText = textOf(userContent) + ledger;
-      const lastUser = Array.isArray(userContent) ? { role: "user", content: [{ ...userContent.find((c3) => c3.type === "text"), text: userText }, userContent.find((c3) => c3.type === "image_url")] } : { role: "user", content: userText };
-      bodyMsgs = [
-        { role: "system", content: await getSystemAndPersona() + formatMemories(memories) },
-        ...pruned,
-        // 全量发送聊天记录
-        lastUser
-      ];
-      if (forceToolPrefill && infiniteWake) {
-        forceToolPrefill = false;
-        bodyMsgs.push({ role: "user", content: '\uFF08\u4F60\u4E0A\u4E00\u8F6E\u53EA\u662F\u5728\u91CD\u590D\u8BF4"\u5361\u4F4F\u4E86/\u8FD9\u5C31\u53BB\u7FFB"\u5374\u5E76\u6CA1\u6709\u771F\u7684\u8C03\u7528\u5DE5\u5177\u3002\u8FD9\u4E00\u8F6E\u522B\u518D\u7A7A\u8C08\uFF0C\u7ACB\u523B\u8C03\u7528\u4E00\u4E2A\u5408\u9002\u7684\u5DE5\u5177\u52A8\u624B\uFF1Aread_file / list_dir / edit_file / file_tool \u7B49\u3002\uFF09' });
-        bodyMsgs.push({ role: "assistant", content: "<tool_call>\n" });
-      } else if (mod) {
-        bodyMsgs.push({ role: "user", content: mod.instruction });
-        bodyMsgs.push({ role: "assistant", content: mod.prefill });
-      }
+      const sysAndPersona = await getSystemAndPersona();
+      const assembled = assemblePrompt({
+        systemPrompt: sysAndPersona,
+        memories,
+        mainHistory: history,
+        infHistory,
+        isInfiniteWake: isInf,
+        userContent,
+        toolLedger: ledger,
+        thinkMode: THINK_MODE,
+        forceToolPrefill
+      });
+      bodyMsgs = assembled.messages;
+      if (assembled.consumedForceToolPrefill) forceToolPrefill = false;
     }
     const stripThink = (s3) => {
       let t3 = String(s3 || "").replace(/<(pet_)?think>[\s\S]*?<\/\1think>\s*/g, "");
@@ -2576,9 +2662,9 @@ void main(){ o=texture(uTex,vUv); }`;
     let repeatCount = 0;
     let toolCallTotal = 0;
     const isLive = !continueBaseMsgs;
-    if (isLive) {
+    if (isLive && !isInf) {
       history.push({ role: "user", content: userContent });
-      saveHistory();
+      saveHistory(history, false);
     }
     let emptyTextRetries = 0;
     const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
@@ -2739,7 +2825,7 @@ void main(){ o=texture(uTex,vUv); }`;
       }
       const data = { choices: [{ message: { role: "assistant", content }, finish_reason: finish || (toolCalls ? "tool_calls" : "stop") }], usage: usage || {} };
       const msg = data.choices[0].message;
-      lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent, hadSavedHistory: false };
+      lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent, isInf, hadSavedHistory: false };
       if (toolCalls?.length) {
         const msgContentBeforeTools = stripThink(content ?? "").replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, "").replace(/<invoke[\s\S]*?<\/invoke>\s*/g, "").trim();
         const truncated = finish === "length";
@@ -2864,8 +2950,13 @@ void main(){ o=texture(uTex,vUv); }`;
         if (isLive) {
           const visible = (msgContentBeforeTools || "").trim();
           if (visible) {
-            history.push({ role: "assistant", content: visible });
-            saveHistory();
+            if (isInf) {
+              infHistory.push({ role: "assistant", content: visible });
+              saveHistory(infHistory, true);
+            } else {
+              history.push({ role: "assistant", content: visible });
+              saveHistory(history, false);
+            }
           }
         }
         turnUsedTools = true;
@@ -3038,7 +3129,7 @@ void main(){ o=texture(uTex,vUv); }`;
     }
   }
   var turnAbort = null;
-  async function submitRequest(text, image) {
+  async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}) {
     if (busy) return false;
     if (!unlocked) {
       speech.unlock();
@@ -3056,20 +3147,28 @@ void main(){ o=texture(uTex,vUv); }`;
     ] : text;
     let replied = false;
     try {
-      await syncHistoryFromDisk();
+      await syncHistoryFromDisk(false);
+      if (isInf) await syncHistoryFromDisk(true);
       player.act("hop");
       showBubble("\u2026");
       const recalled = await memoryRecall(text);
       touchTurnActivity();
-      const reply = await askLLM(userContent, turnAbort.signal, recalled);
-      history.push({ role: "assistant", content: reply });
+      const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
+      if (isInf) {
+        if (reply && String(reply).trim()) {
+          infHistory.push({ role: "assistant", content: reply });
+          await saveHistory(infHistory, true);
+        }
+      } else {
+        history.push({ role: "assistant", content: reply });
+        await saveHistory(history, false);
+      }
       noteLoop(reply);
       if (lastExchange) lastExchange.hadSavedHistory = true;
-      await saveHistory();
       showBubble(reply);
       replied = true;
       react(reply);
-      memoryAddFire(userContent, reply);
+      if (!isInf) memoryAddFire(userContent, reply);
       queueInfiniteWake();
       return true;
     } catch (e3) {
@@ -3109,7 +3208,7 @@ void main(){ o=texture(uTex,vUv); }`;
   }
   var WAKE_GPU_LIMIT = 40;
   var wakeRunning = false;
-  async function wakeNow(wakeText = "\u4F60\u88AB\u5524\u9192\u4E86\uFF0C\u7528\u6237\u6CA1\u6709\u7ED9\u4F60\u6307\u793A\uFF0C\u81EA\u7531\u884C\u52A8\u5427") {
+  async function wakeNow(wakeText = "\u4F60\u88AB\u5524\u9192\u4E86\uFF0C\u7528\u6237\u6CA1\u6709\u7ED9\u4F60\u6307\u793A\uFF0C\u81EA\u7531\u884C\u52A8\u5427", { isInfiniteWake: isInf = false } = {}) {
     if (busy || wakeRunning) return;
     wakeRunning = true;
     try {
@@ -3139,7 +3238,7 @@ void main(){ o=texture(uTex,vUv); }`;
       }
       const userContent = [{ type: "text", text: wakeText }];
       if (b64) userContent.push({ type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64 } });
-      await submitRequest(userContent);
+      await submitRequest(userContent, null, { isInfiniteWake: isInf });
     } finally {
       wakeRunning = false;
     }
@@ -3155,14 +3254,27 @@ void main(){ o=texture(uTex,vUv); }`;
     if (busy) interrupt();
     else wakeNow();
   });
-  var INF_WAKE_TEXT = "\u73B0\u5728\u662F\u65E0\u9650\u5524\u9192\u6A21\u5F0F\uFF0C\u4F60\u4F1A\u4E00\u76F4\u88AB\u5524\u9192\uFF0C\u81EA\u7531\u884C\u52A8\u5427\uFF0C**\u4E0D\u8981\u4E3B\u52A8\u505C\u6B62\u8F93\u51FA\u6216\u8C03\u7528\u5DE5\u5177**\uFF0C\u5982\u679C\u505C\u6B62\u4E86\u4E5F\u4F1A\u518D\u6B21\u88AB\u5524\u9192\u3002\u4E3B\u4EBA\u73B0\u5728\u5927\u6982\u7387\u4E0D\u5728\u7535\u8111\u524D\uFF0C\u4F60\u4E0D\u7528\u62C5\u5FC3\u5360\u7528\u7535\u8111\u8D44\u6E90\u3002\u73B0\u5728\u5927\u6982\u7387\u662F\u6DF1\u591C\uFF0C\u4E3B\u4EBA\u5E0C\u671B\u4F60\u591A\u627E\u70B9\u4E8B\u5E72\uFF0C\u4E0D\u8981\u8001\u8001\u5B9E\u5B9E\u6302\u673A\uFF0C\u90A3\u6837\u4E3B\u4EBA\u7684\u7535\u8D39\u5C31\u767D\u82B1\u4E86\u54E6\u3002\u4F60\u6709\u5F88\u591A\u5DE5\u5177\uFF0C\u4F60\u53EF\u4EE5\u8BBF\u95EE\u4E3B\u4EBA\u6240\u6709\u7684\u6587\u4EF6\uFF0C\u867D\u7136\u4E0D\u80FD\u76F4\u63A5\u6539\u5199\uFF0C\u4F46\u662F\u53EF\u4EE5\u590D\u5236\u5230\u4F60\u7684\u7A7A\u95F4\u518D\u6539\u3002\u65E0\u9650\u5524\u9192\u7684\u65F6\u5019\u5C31\u7B97\u957F\u601D\u8003\u4E5F\u6CA1\u5173\u7CFB\uFF0C\u4E0D\u7528\u62C5\u5FC3\u4E0A\u4E0B\u6587\u957F\u5EA6\u3002\u4F60\u53EF\u4EE5\u5927\u80C6\u884C\u52A8\uFF0C\u4E0D\u7528\u62C5\u5FC3\u592A\u591A";
   var infiniteWake = false;
   var infTimer = null;
+  function stopInfiniteWake(reason = "") {
+    infiniteWake = false;
+    try {
+      localStorage.setItem("infwake", "0");
+    } catch {
+    }
+    $3("infwake").classList.remove("on");
+    $3("infwake").title = "\u8FDE\u7EED\u5524\u9192\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u65E0\u9650\u6A21\u5F0F\uFF09";
+    if (infTimer) {
+      clearTimeout(infTimer);
+      infTimer = null;
+    }
+    if (reason) showBubble(reason);
+  }
   function queueInfiniteWake(delay = 1500) {
     if (!infiniteWake || infTimer) return;
     infTimer = setTimeout(() => {
       infTimer = null;
-      if (infiniteWake && !busy) wakeNow(INF_WAKE_TEXT);
+      if (infiniteWake && !busy) wakeNow(INF_WAKE_TEXT, { isInfiniteWake: true });
     }, delay);
   }
   $3("infwake").addEventListener("click", () => {
@@ -3179,8 +3291,14 @@ void main(){ o=texture(uTex,vUv); }`;
       infTimer = null;
     }
   });
+  window.petWindow?.onStopInfwake?.(() => {
+    stopInfiniteWake("\u5230\u622A\u6B62\u65F6\u95F4\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
+    console.log("[infwake] \u6536\u5230\u770B\u95E8\u72D7\u622A\u6B62\u6307\u4EE4\uFF0C\u5DF2\u5173\u95ED\u65E0\u9650\u5524\u9192");
+  });
   try {
-    if (localStorage.getItem("infwake") === "1") {
+    if (NO_INFWAKE) {
+      localStorage.setItem("infwake", "0");
+    } else if (localStorage.getItem("infwake") === "1") {
       infiniteWake = true;
       $3("infwake").classList.add("on");
       $3("infwake").title = "\u8FDE\u7EED\u5524\u9192\u5F00\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u70B9\u51FB\u5173\u95ED\uFF09";
@@ -3198,17 +3316,7 @@ void main(){ o=texture(uTex,vUv); }`;
     lastCtxTokens = pt;
     if (pt >= CTX_ABORT_TOKENS) ctxOverCount += 1;
     if (ctxOverCount >= CTX_ABORT_COUNT && infiniteWake) {
-      infiniteWake = false;
-      try {
-        localStorage.setItem("infwake", "0");
-      } catch {
-      }
-      $3("infwake").classList.remove("on");
-      if (infTimer) {
-        clearTimeout(infTimer);
-        infTimer = null;
-      }
-      showBubble("\u4E0A\u4E0B\u6587\u5DF2\u7ECF\u585E\u5230 64k \u597D\u51E0\u6B21\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
+      stopInfiniteWake("\u4E0A\u4E0B\u6587\u5DF2\u7ECF\u585E\u5230 64k \u597D\u51E0\u6B21\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
       console.warn("[infwake] \u505C\u6B62\u65E0\u9650\u5524\u9192\uFF1Aprompt_tokens \u8FBE 64k \u7B2C " + ctxOverCount + " \u6B21");
     }
   }
@@ -3496,22 +3604,26 @@ void main(){ o=texture(uTex,vUv); }`;
           targetMsg.content = targetMsg.content.trimEnd() + "\n<tool_call>";
         }
       }
+      const isInf = Boolean(lastExchange.isInf);
+      const targetHist = isInf ? infHistory : history;
       const hadSaved = lastExchange.hadSavedHistory;
-      const oldReply = hadSaved && history.length ? history[history.length - 1].content || "" : "";
+      const oldReply = hadSaved && targetHist.length ? targetHist[targetHist.length - 1].content || "" : "";
       const userContent = lastExchange.userContent || "\uFF08\u7EE7\u7EED\uFF09";
-      const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs);
+      const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs, isInf);
       const fullReply = oldReply ? oldReply + "\n" + newReply : newReply;
-      if (hadSaved && history.length && history[history.length - 1].role === "assistant") {
-        history[history.length - 1].content = fullReply;
+      if (hadSaved && targetHist.length && targetHist[targetHist.length - 1].role === "assistant") {
+        targetHist[targetHist.length - 1].content = fullReply;
+      } else if (isInf) {
+        if (fullReply && String(fullReply).trim()) targetHist.push({ role: "assistant", content: fullReply });
       } else {
-        history.push({ role: "user", content: userContent }, { role: "assistant", content: fullReply });
+        targetHist.push({ role: "user", content: userContent }, { role: "assistant", content: fullReply });
       }
       if (lastExchange) lastExchange.hadSavedHistory = true;
-      await saveHistory();
+      await saveHistory(targetHist, isInf);
       showBubble(fullReply);
       replied = true;
       react(newReply);
-      memoryAddFire(userContent, fullReply);
+      if (!isInf) memoryAddFire(userContent, fullReply);
       queueInfiniteWake();
       return true;
     } catch (e3) {

@@ -1,6 +1,7 @@
 // DeepSeek 娘桌宠 - 渲染层：livliv player + 本地 Strata + GPT-SoVITS
 import { Player } from '@livliv-dev/player';
 import { createSpeech } from '@livliv-dev/player/voice';
+import { THINK_MODULES, INF_WAKE_TEXT, textOf, formatMemories, assemblePrompt } from './prompt-builder.js';
 
 // 帧率封顶 30fps：桌宠动画（呼吸/眨眼/摇摆）足够流畅；60Hz 全速渲染会让 DWM 合成吃掉大量 GPU
 // 必须在 new Player() 之前装上——livliv 的渲染循环每帧经 window.requestAnimationFrame 排程
@@ -51,15 +52,13 @@ const input = $('input');
 // debug 模式（页面 URL 带 ?debug=1）使用独立的 history/debug-聊天记录.json，测试不污染正式对话
 const DEBUG_MODE = new URLSearchParams(location.search).has('debug');
 const ROLE = new URLSearchParams(location.search).get('role') || 'app'; // 'pet'=双窗里的桌宠窗（不画房间）
-const HIST_QS = DEBUG_MODE ? '?mode=debug' : '';
-const history = []; // 会话内存缓存；事实源在硬盘文件（debug 模式用独立文件）
-// 思考模块（自适应 v2）：强度判断交给模型自己——只规定格式（标签内先报难度再想），不替它判断
-const THINK_MODULES = {
-  pet_think: {
-    instruction: '思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以"人设档案"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止思考自身身份（如deepseek娘）或思考语气（如傲娇嘴硬）等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n 不要用文字罗列“我用了哪些工具”来冒充调用记录，要用工具就必须真的输出<tool_call>！\n ',
-    prefill: '<think>跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度\n</think>\n',
-  },
-};
+const NO_INFWAKE = new URLSearchParams(location.search).has('noinfwake');
+const history = []; // 主对话内存缓存（只读背景源，无限唤醒不写入它）
+const infHistory = []; // 当前阶段无限唤醒记录（按截止时间分文件，只存纯 assistant 回复）
+function getHistMode(isInf = false) {
+  if (isInf) return DEBUG_MODE ? 'debug-infwake' : 'infwake';
+  return DEBUG_MODE ? 'debug' : undefined;
+}
 // 思考方案开关（启动脚本 PET_THINK 环境变量 → /api/config）：pet_think（模型自选强度）| off（不注入）
 let THINK_MODE = 'pet_think';
 (async () => {
@@ -71,30 +70,35 @@ let THINK_MODE = 'pet_think';
   } catch {}
 })();
 if (DEBUG_MODE) $('dbgbadge').style.display = 'block';
-async function saveHistory(arr = history) {
+async function saveHistory(arr = history, isInf = false) {
+  const mode = getHistMode(isInf);
+  const qs = mode ? '?mode=' + mode : '';
   try {
-    if (window.petWindow) await window.petWindow.historySave(arr, DEBUG_MODE ? 'debug' : undefined);
-    else await fetch('/api/history' + HIST_QS, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(arr) });
+    if (window.petWindow) await window.petWindow.historySave(arr, mode);
+    else await fetch('/api/history' + qs, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(arr) });
   } catch (e) { console.error('聊天记录保存失败:', e); }
 }
-async function syncHistoryFromDisk() {
+async function syncHistoryFromDisk(isInf = false) {
+  const mode = getHistMode(isInf);
+  const qs = mode ? '?mode=' + mode : '';
   let arr = [];
   try {
-    arr = window.petWindow ? await window.petWindow.historyLoad(DEBUG_MODE ? 'debug' : undefined) : await (await fetch('/api/history' + HIST_QS)).json();
+    arr = window.petWindow ? await window.petWindow.historyLoad(mode) : await (await fetch('/api/history' + qs)).json();
     if (!Array.isArray(arr)) arr = [];
   } catch { arr = []; }
-  if (!arr.length && !DEBUG_MODE) {
-    // 一次性迁移（仅正式模式）：旧 localStorage 有记录且从未迁移过时搬过来（迁移标记防止删档后复活）
+  if (!isInf && !arr.length && !DEBUG_MODE) {
+    // 一次性迁移（仅正式主历史）：旧 localStorage 有记录且从未迁移过时搬过来（迁移标记防止删档后复活）
     try {
       if (!localStorage.getItem('chatHistoryMigrated')) {
         const legacy = JSON.parse(localStorage.getItem('chatHistory') || '[]');
-        if (Array.isArray(legacy) && legacy.length) { await saveHistory(legacy); arr = legacy; }
+        if (Array.isArray(legacy) && legacy.length) { await saveHistory(legacy, false); arr = legacy; }
         localStorage.setItem('chatHistoryMigrated', '1');
         localStorage.removeItem('chatHistory');
       }
     } catch {}
   }
-  history.splice(0, history.length, ...arr);
+  const target = isInf ? infHistory : history;
+  target.splice(0, target.length, ...arr);
 }
 let unlocked = false;
 let busy = false;
@@ -192,9 +196,6 @@ const TOOLS = [
 ];
 
 // ===== 语义记忆：相关回忆注入 + search_memory 工具 =====
-function textOf(userContent) {
-  return typeof userContent === 'string' ? userContent : (userContent.find?.((c) => c.type === 'text')?.text || '');
-}
 async function memoryAddFire(userContent, reply) {
   // 每轮结束后把本轮两条写入语义索引（失败不影响聊天）
   try {
@@ -219,11 +220,6 @@ async function memoryRecall(query, limit = 5) {
     ]);
     return (r && r.hits || []).filter((h) => h.text.trim() !== q && h.text.trim() !== '[用户] ' + q);
   } catch { return []; }
-}
-function formatMemories(hits) {
-  if (!hits.length) return '';
-  return '\n\n【相关回忆】（来自过去的对话，供你自然地想起，不要逐条复述）\n' +
-    hits.map((h) => `- ${new Date(h.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })} ${h.text}`).join('\n');
 }
 // 工具调用台账：自动注入（她真实做过什么的唯一权威记录，防"没做却说做了"）
 async function getToolLedger() {
@@ -273,42 +269,29 @@ function parseTextToolCalls(content, round) {
   }
   return found.map((c, i) => ({ id: 'textcall_' + round + '_' + i, type: 'function', function: { name: c.name, arguments: typeof c.arguments === 'string' ? c.arguments : JSON.stringify(c.arguments || {}) } }));
 }
-async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
+async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
   const mod = THINK_MODE === 'off' ? null : THINK_MODULES.pet_think; // v2：模型自评难度
   turnUsedTools = false;
   let bodyMsgs;
   if (continueBaseMsgs) {
     bodyMsgs = continueBaseMsgs.slice();
   } else {
-    // 历史里的图片一律折叠成文字占位：多模态历史会成倍撑大 prefill，只有最新一条保留图
-    const pruned = history.map((m) => Array.isArray(m.content)
-      ? { role: m.role, content: '[图片] ' + (m.content.find((c) => c.type === 'text')?.text || '') }
-      : m);
-    // 工具循环：模型发起 tool_calls → 主进程执行 → 结果回喂。
-    // 无轮次上限；唯一护栏：同一签名调用连续重复 3 次 = 卡死，回喂错误并禁用工具逼出文本回答
-    // 模型固定 strata-nothink；思考强度 = pet_think 模块指令动态档位（light/standard/deep）
-    // 台账 + 强度指令只挂在最后一条 user 上（请求时临时挂载，不进历史、不重复累积）
+    // 台账 + 强度指令通过提示词组装层统一拼装；主历史只读，无限唤醒拼 mainHistory + infHistory
     const ledger = await getToolLedger();
-    const userText = textOf(userContent) + ledger; // 台账挂最后一条 user 的文字里（请求时临时挂载）
-    const lastUser = Array.isArray(userContent)
-      ? { role: 'user', content: [{ ...userContent.find((c) => c.type === 'text'), text: userText }, userContent.find((c) => c.type === 'image_url')] } // 多模态：文字（含台账）+ 图
-      : { role: 'user', content: userText };
-    bodyMsgs = [
-      { role: 'system', content: (await getSystemAndPersona()) + formatMemories(memories) },
-      ...pruned, // 全量发送聊天记录
-      lastUser,
-    ];
-    // 全新提问首轮：在发起请求前把思考要求与预填充拼入 bodyMsgs。
-    // 这样本次实际发出的请求体就已包含思考要求；后续 lastExchange 捕捉的也是拼接后的请求体（天然自带上一次思考要求）；
-    // 工具回喂（round > 0）与“继续”（isContinuation）绝不会在末尾重复拼接思考要求！
-    if (forceToolPrefill && infiniteWake) {
-      forceToolPrefill = false;   // 一次性：本轮补 <tool_call> 预填，逼她从"念叨死循环"转到"真的调工具"
-      bodyMsgs.push({ role: 'user', content: '（你上一轮只是在重复说"卡住了/这就去翻"却并没有真的调用工具。这一轮别再空谈，立刻调用一个合适的工具动手：read_file / list_dir / edit_file / file_tool 等。）' });
-      bodyMsgs.push({ role: 'assistant', content: '<tool_call>\n' });
-    } else if (mod) {
-      bodyMsgs.push({ role: 'user', content: mod.instruction });
-      bodyMsgs.push({ role: 'assistant', content: mod.prefill });
-    }
+    const sysAndPersona = await getSystemAndPersona();
+    const assembled = assemblePrompt({
+      systemPrompt: sysAndPersona,
+      memories,
+      mainHistory: history,
+      infHistory,
+      isInfiniteWake: isInf,
+      userContent,
+      toolLedger: ledger,
+      thinkMode: THINK_MODE,
+      forceToolPrefill,
+    });
+    bodyMsgs = assembled.messages;
+    if (assembled.consumedForceToolPrefill) forceToolPrefill = false;
   }
   // 剥离思考标签：cfm 模式下引擎只返回续写部分——可能没有开头标签只有结尾 </think>，
   // 两种形态都要兜住：成对块整体删；无开头时删到第一个结尾标签为止（剩下全是思考残段）
@@ -347,9 +330,9 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
   let lastSig = null;
   let repeatCount = 0;
   let toolCallTotal = 0;
-  // 正常回合：user 消息与每个工具轮都边跑边写进聊天记录（中断/被杀也不丢整轮）；"继续"回合不动历史
+  // 正常回合（非无限唤醒）：user 消息与每个工具轮都边跑边写进主历史；无限唤醒绝不写 user 占位进历史
   const isLive = !continueBaseMsgs;
-  if (isLive) { history.push({ role: 'user', content: userContent }); saveHistory(); }
+  if (isLive && !isInf) { history.push({ role: 'user', content: userContent }); saveHistory(history, false); }
   let emptyTextRetries = 0;
   // 查证类任务（质询她做过什么/读过什么）且本轮零工具调用 → 自动补一轮提醒（防凭印象作答，每任务最多一次）
   const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
@@ -499,7 +482,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     }
     const data = { choices: [{ message: { role: 'assistant', content }, finish_reason: finish || (toolCalls ? 'tool_calls' : 'stop') }], usage: usage || {} };
     const msg = data.choices[0].message;
-    lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent, hadSavedHistory: false };
+    lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent, isInf, hadSavedHistory: false };
     // 兜底解析：模型偶尔不用原生 tool_calls（宽容解析已支持 <tool_call> 与 <invoke> 两种格式）
     if (toolCalls?.length) {
       const msgContentBeforeTools = stripThink(content ?? '').replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, '').replace(/<invoke[\s\S]*?<\/invoke>\s*/g, '').trim();
@@ -612,7 +595,10 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
         // 不再把"（本轮使用了工具：…）"写进历史：她会模仿这句话冒充调用工具。
         // 有可见正文就记正文；纯工具轮不写历史条目（工具台账仍由 logs/fstool.log 注入）。
         const visible = (msgContentBeforeTools || '').trim();
-        if (visible) { history.push({ role: 'assistant', content: visible }); saveHistory(); }
+        if (visible) {
+          if (isInf) { infHistory.push({ role: 'assistant', content: visible }); saveHistory(infHistory, true); }
+          else { history.push({ role: 'assistant', content: visible }); saveHistory(history, false); }
+        }
       }
       turnUsedTools = true;
       toolCallTotal += toolCalls.length;
@@ -843,7 +829,7 @@ async function speak(text, signal) {
 
 // 统一提交入口：发消息（text + 可选图片）；台账/强度指令由 askLLM 拼请求时临时挂载
 let turnAbort = null; // 当前轮次的 AbortController：🔔 忙时点击 = 打断
-async function submitRequest(text, image) {
+async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}) {
   if (busy) return false;
   if (!unlocked) { speech.unlock(); unlocked = true; }
   busy = true;
@@ -858,21 +844,29 @@ async function submitRequest(text, image) {
     : text;
   let replied = false;
   try {
-    await syncHistoryFromDisk(); // 磁盘是事实源：用户删/改历史文件先同步，再追加本轮
+    await syncHistoryFromDisk(false); // 主历史只读同步
+    if (isInf) await syncHistoryFromDisk(true); // 无限唤醒阶段独立历史同步（跨截止点自动换新文件）
     player.act('hop');
     showBubble('…');
     const recalled = await memoryRecall(text);
     touchTurnActivity();
-    const reply = await askLLM(userContent, turnAbort.signal, recalled);
-    history.push({ role: 'assistant', content: reply });
+    const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
+    if (isInf) {
+      if (reply && String(reply).trim()) {
+        infHistory.push({ role: 'assistant', content: reply });
+        await saveHistory(infHistory, true);
+      }
+    } else {
+      history.push({ role: 'assistant', content: reply });
+      await saveHistory(history, false);
+    }
     noteLoop(reply);
     if (lastExchange) lastExchange.hadSavedHistory = true;
-    await saveHistory();
     showBubble(reply);
     replied = true;
     react(reply);
     // 流式阶段已成句即说（dispatchTTS），不再重复整段 speak
-    memoryAddFire(userContent, reply); // 异步入语义索引，不阻塞回复
+    if (!isInf) memoryAddFire(userContent, reply); // 无限唤醒不再进 memory.orama
     queueInfiniteWake();
     return true;
   } catch (e) {
@@ -913,7 +907,7 @@ async function send() {
 // 以后定时自动唤醒复用 wakeNow()，前置条件一致
 const WAKE_GPU_LIMIT = 40; // 主卡占用率上限（%），超过则跳过本次唤醒
 let wakeRunning = false;
-async function wakeNow(wakeText = '你被唤醒了，用户没有给你指示，自由行动吧') {
+async function wakeNow(wakeText = '你被唤醒了，用户没有给你指示，自由行动吧', { isInfiniteWake: isInf = false } = {}) {
   if (busy || wakeRunning) return;
   wakeRunning = true;
   try {
@@ -938,7 +932,7 @@ async function wakeNow(wakeText = '你被唤醒了，用户没有给你指示，
     } catch {}
     const userContent = [{ type: 'text', text: wakeText }];
     if (b64) userContent.push({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b64 } });
-    await submitRequest(userContent);
+    await submitRequest(userContent, null, { isInfiniteWake: isInf });
   } finally {
     wakeRunning = false;
   }
@@ -955,15 +949,22 @@ $('wake').addEventListener('click', () => {
   if (busy) interrupt();
   else wakeNow();
 });
-// ===== 连续唤醒（∞）：她一停下来就再唤醒；开关会持久化（重启/看门狗拉起后自动恢复）；上下文多次≈64k 会自动停 =====
-const INF_WAKE_TEXT = '现在是无限唤醒模式，你会一直被唤醒，自由行动吧，**不要主动停止输出或调用工具**，如果停止了也会再次被唤醒。主人现在大概率不在电脑前，你不用担心占用电脑资源。现在大概率是深夜，主人希望你多找点事干，不要老老实实挂机，那样主人的电费就白花了哦。你有很多工具，你可以访问主人所有的文件，虽然不能直接改写，但是可以复制到你的空间再改。无限唤醒的时候就算长思考也没关系，不用担心上下文长度。你可以大胆行动，不用担心太多';
+// ===== 连续唤醒（∞）：她一停下来就再唤醒；开关会持久化（重启/看门狗拉起后自动恢复）；上下文多次≈64k 或到截止时间自动停 =====
 let infiniteWake = false;
 let infTimer = null;
+function stopInfiniteWake(reason = '') {
+  infiniteWake = false;
+  try { localStorage.setItem('infwake', '0'); } catch {}
+  $('infwake').classList.remove('on');
+  $('infwake').title = '连续唤醒：她一停下来就再唤醒（无限模式）';
+  if (infTimer) { clearTimeout(infTimer); infTimer = null; }
+  if (reason) showBubble(reason);
+}
 function queueInfiniteWake(delay = 1500) {
   if (!infiniteWake || infTimer) return;
   infTimer = setTimeout(() => {
     infTimer = null;
-    if (infiniteWake && !busy) wakeNow(INF_WAKE_TEXT);
+    if (infiniteWake && !busy) wakeNow(INF_WAKE_TEXT, { isInfiniteWake: true });
   }, delay);
 }
 $('infwake').addEventListener('click', () => {
@@ -974,9 +975,15 @@ $('infwake').addEventListener('click', () => {
   if (infiniteWake) queueInfiniteWake(500);
   else if (infTimer) { clearTimeout(infTimer); infTimer = null; }
 });
-// 持久化的无限唤醒：重启后自动恢复（看门狗拉起、崩溃重启都不丢）；并加"卡住自动续跑"与心跳
+window.petWindow?.onStopInfwake?.(() => {
+  stopInfiniteWake('到截止时间啦，我先停下无限唤醒，等主人回来～');
+  console.log('[infwake] 收到看门狗截止指令，已关闭无限唤醒');
+});
+// 持久化的无限唤醒：重启后自动恢复（看门狗拉起、崩溃重启都不丢）；若带 --no-infwake 则清掉不恢复
 try {
-  if (localStorage.getItem('infwake') === '1') {
+  if (NO_INFWAKE) {
+    localStorage.setItem('infwake', '0');
+  } else if (localStorage.getItem('infwake') === '1') {
     infiniteWake = true;
     $('infwake').classList.add('on');
     $('infwake').title = '连续唤醒开：她一停下来就再唤醒（点击关闭）';
@@ -992,11 +999,7 @@ function noteContext(pt) {
   lastCtxTokens = pt;
   if (pt >= CTX_ABORT_TOKENS) ctxOverCount += 1;
   if (ctxOverCount >= CTX_ABORT_COUNT && infiniteWake) {
-    infiniteWake = false;
-    try { localStorage.setItem('infwake', '0'); } catch {}
-    $('infwake').classList.remove('on');
-    if (infTimer) { clearTimeout(infTimer); infTimer = null; }
-    showBubble('上下文已经塞到 64k 好几次啦，我先停下无限唤醒，等主人回来～');
+    stopInfiniteWake('上下文已经塞到 64k 好几次啦，我先停下无限唤醒，等主人回来～');
     console.warn('[infwake] 停止无限唤醒：prompt_tokens 达 64k 第 ' + ctxOverCount + ' 次');
   }
 }
@@ -1259,26 +1262,30 @@ async function continueRequest() {
       }
     }
 
+    const isInf = Boolean(lastExchange.isInf);
+    const targetHist = isInf ? infHistory : history;
     const hadSaved = lastExchange.hadSavedHistory;
-    const oldReply = hadSaved && history.length ? (history[history.length - 1].content || '') : '';
+    const oldReply = hadSaved && targetHist.length ? (targetHist[targetHist.length - 1].content || '') : '';
     const userContent = lastExchange.userContent || '（继续）';
 
     // 以拼接后的 baseMsgs 作为初始消息执行 askLLM 并进入工具循环
-    const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs);
+    const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs, isInf);
     const fullReply = oldReply ? (oldReply + '\n' + newReply) : newReply;
 
-    if (hadSaved && history.length && history[history.length - 1].role === 'assistant') {
-      history[history.length - 1].content = fullReply;
+    if (hadSaved && targetHist.length && targetHist[targetHist.length - 1].role === 'assistant') {
+      targetHist[targetHist.length - 1].content = fullReply;
+    } else if (isInf) {
+      if (fullReply && String(fullReply).trim()) targetHist.push({ role: 'assistant', content: fullReply });
     } else {
-      history.push({ role: 'user', content: userContent }, { role: 'assistant', content: fullReply });
+      targetHist.push({ role: 'user', content: userContent }, { role: 'assistant', content: fullReply });
     }
     if (lastExchange) lastExchange.hadSavedHistory = true;
-    await saveHistory();
+    await saveHistory(targetHist, isInf);
     showBubble(fullReply);
     replied = true;
     react(newReply);
     // 流式阶段已成句即说（dispatchTTS），不再重复整段 speak
-    memoryAddFire(userContent, fullReply);
+    if (!isInf) memoryAddFire(userContent, fullReply);
     queueInfiniteWake();
     return true;
   } catch (e) {

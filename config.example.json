@@ -1,5 +1,6 @@
 {
   "siliconflowKey": "your-siliconflow-api-key-here",
   "embeddingModel": "BAAI/bge-m3",
-  "embeddingDim": 1024
+  "embeddingDim": 1024,
+  "infwakeCutoff": "12:00"
 }
