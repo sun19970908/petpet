@@ -9,7 +9,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@livliv-dev/player": "^0.3.0",
+    "@livliv-dev/player": "^0.5.0",
     "@orama/orama": "^3.1.18",
     "@orama/tokenizers": "^3.1.18"
   },

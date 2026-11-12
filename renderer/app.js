@@ -129,6 +129,7 @@ window.addEventListener('keydown', () => { lastInteractTime = Date.now(); }, { p
 // 重写 Player 原型上的 play 方法，加入动态 FPS 限制
 Player.prototype.play = function() {
   if (this.raf || this.disposed) return;
+  this.replaying = false;
   this.last = performance.now();
   lastDrawTime = performance.now();
 
@@ -155,7 +156,7 @@ Player.prototype.play = function() {
       lastDrawTime = now;
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
-      if (this.visible) {
+      if (this.visible || this.renderWhenHidden) {
         this.draw(dt);
       }
     }
