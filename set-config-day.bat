@@ -1,11 +1,12 @@
 @echo off
+chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
 rem =======================================================
 rem  [白天配置卡片] 用记事本修改下方参数，保存后双击运行即可应用
 rem  (此脚本将自动改写 config.json，无需重启桌宠即时生效)
-rem =======================================================
+rem  =======================================================
 
 rem 1. 当前 LLM 档案名称 (对应 llm.config.json 中的 profile 名称，例如：硅基流动 或 strata)
 set "LLM_PROFILE=硅基流动"
@@ -37,7 +38,8 @@ if errorlevel 1 (
 
 "%NODE_CMD%" "%~dp0lib\apply-config.js" "%~f0"
 if errorlevel 1 (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%~dp0config.json'; $c=Get-Content -Raw $p | ConvertFrom-Json; if('%LLM_PROFILE%') { $c.llmProfile='%LLM_PROFILE%' }; if('%TTS_MODE%') { $c.ttsMode='%TTS_MODE%' }; if('%GSV_IDLE%') { $c.gsvIdleSeconds=[int]'%GSV_IDLE%' }; $c.watchdog=('%WATCHDOG%' -eq 'on'); $c | ConvertTo-Json -Depth 5 | Set-Content $p -Encoding UTF8; Write-Host '[OK] 已通过备用通道成功改写 config.json！'"
+  echo [WARN] Node 改写失败，尝试 PowerShell 备用通道...
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%~dp0config.json'; $c=Get-Content -Raw $p | ConvertFrom-Json; if('%LLM_PROFILE%') { $c.llmProfile='%LLM_PROFILE%' }; if('%TTS_MODE%') { $c.ttsMode='%TTS_MODE%' }; if('%GSV_IDLE%') { $c.gsvIdleSeconds=[int]'%GSV_IDLE%' }; $c.watchdog=('%WATCHDOG%' -eq 'on'); [IO.File]::WriteAllText($p, ($c | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false)); Write-Host '[OK] 已通过备用通道成功改写 config.json！'"
 )
 
 if /i "%WATCHDOG%"=="on" (
