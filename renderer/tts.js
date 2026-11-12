@@ -75,10 +75,65 @@ export function splitForTTS(text, minLen = 6, targetLen = 14) {
 export function createTtsController({ ttsUrl, ttsRef, speech, touchTurnActivity }) {
   let gsvDownUntil = 0;
 
+  function fetchTts(seg, signal) {
+    return fetch(ttsUrl, {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: seg,
+        text_lang: 'zh',
+        prompt_lang: 'zh',
+        text_split_method: 'cut5',
+        media_type: 'wav',
+        streaming_mode: 2,
+        temperature: 0.4,
+        top_P: 0.7,
+        top_K: 3,
+        ...ttsRef,
+      }),
+    });
+  }
+
+  async function sayResponse(res, label, signal) {
+    const hooks = {
+      onStart: () => rlog('tts-play-start', label),
+      onEnd: () => rlog('tts-play-end', label),
+      onFail: () => rlog('tts-play-fail', label),
+    };
+    if (!res.body) {
+      const blob = await res.blob();
+      touchTurnActivity();
+      rlog('tts-ok', blob.size + 'B');
+      speech.say(blob, hooks);
+      return;
+    }
+    let totalBytes = 0;
+    let firstChunk = false;
+    const t0 = Date.now();
+    const { readable, writable } = new TransformStream({
+      transform(chunk, controller) {
+        totalBytes += chunk.byteLength;
+        if (!firstChunk) {
+          firstChunk = true;
+          rlog('tts-first-chunk', `${label} in ${Date.now() - t0}ms (${chunk.byteLength}B)`);
+        }
+        touchTurnActivity();
+        controller.enqueue(chunk);
+      },
+    });
+    const streamedRes = new Response(readable, { status: res.status, headers: res.headers });
+    speech.say(streamedRes, hooks);
+    await res.body.pipeTo(writable, signal ? { signal } : undefined);
+    touchTurnActivity();
+    rlog('tts-stream-ok', totalBytes + 'B');
+  }
+
   async function speakSegment(seg, signal) {
     touchTurnActivity();
     if (Date.now() < gsvDownUntil) { rlog('tts-skip-down', Math.round((gsvDownUntil - Date.now()) / 1000) + 's left'); return; }
-    rlog('tts-start', seg.slice(0, 30));
+    const label = seg.slice(0, 30);
+    rlog('tts-start', label);
     const ctrl = new AbortController();
     const onAbort = () => { try { ctrl.abort(); } catch {} };
     if (signal) {
@@ -87,23 +142,7 @@ export function createTtsController({ ttsUrl, ttsRef, speech, touchTurnActivity 
     }
     const timer = setTimeout(onAbort, 120000);
     try {
-      const res = await fetch(ttsUrl, {
-        method: 'POST',
-        signal: ctrl.signal,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: seg,
-          text_lang: 'zh',
-          prompt_lang: 'zh',
-          text_split_method: 'cut5',
-          media_type: 'wav',
-          streaming_mode: false,
-          temperature: 0.4,
-          top_P: 0.7,
-          top_K: 3,
-          ...ttsRef,
-        }),
-      });
+      const res = await fetchTts(seg, ctrl.signal);
       touchTurnActivity();
       if (res.status === 502 || res.status === 503 || res.status === 504) {
         gsvDownUntil = Date.now() + 60000;
@@ -111,10 +150,7 @@ export function createTtsController({ ttsUrl, ttsRef, speech, touchTurnActivity 
         return;
       }
       if (!res.ok) throw new Error('TTS HTTP ' + res.status);
-      const blob = await res.blob();
-      touchTurnActivity();
-      rlog('tts-ok', blob.size + 'B');
-      speech.say(blob);
+      await sayResponse(res, label, ctrl.signal);
     } catch (e) {
       if (signal && signal.aborted) { rlog('tts-abort', 'turn aborted'); return; }
       if (ctrl.signal.aborted) { gsvDownUntil = Date.now() + 60000; rlog('tts-timeout', 'silent 60s'); return; }
@@ -133,23 +169,14 @@ export function createTtsController({ ttsUrl, ttsRef, speech, touchTurnActivity 
     for (const seg of segs) {
       if (signal && signal.aborted) return;
       if (Date.now() < gsvDownUntil) return;
-      let blob = null;
       try {
-        const res = await fetch(ttsUrl, {
-          method: 'POST', signal,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: seg, text_lang: 'zh', prompt_lang: 'zh', text_split_method: 'cut5',
-            media_type: 'wav', streaming_mode: false, temperature: 0.4, top_P: 0.7, top_K: 3, ...ttsRef,
-          }),
-        });
-        if (res.ok) blob = await res.blob();
-        else { fails += 1; console.warn('TTS HTTP ' + res.status); }
+        const res = await fetchTts(seg, signal);
+        if (!res.ok) { fails += 1; console.warn('TTS HTTP ' + res.status); }
+        else { await sayResponse(res, seg.slice(0, 30), signal); fails = 0; }
       } catch (e) {
         if (signal && signal.aborted) return;
         fails += 1; console.warn('TTS 失败：' + String(e && e.message || e));
       }
-      if (blob) { speech.say(blob); fails = 0; }
       if (fails >= 3) return;
     }
   }

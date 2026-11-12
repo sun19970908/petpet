@@ -289,11 +289,26 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
     req.on('data', (c) => chunks.push(c));
     req.on('end', async () => {
       const fullBody = Buffer.concat(chunks);
+      const dumpTtsPair = (reqBuf, resBuf, ext) => {
+        try {
+          fs.mkdirSync(DUMP_DIR, { recursive: true });
+          const seq = String(++dumpSeq).padStart(3, '0');
+          fs.writeFileSync(path.join(DUMP_DIR, `${seq}-req.json`), reqBuf);
+          fs.writeFileSync(path.join(DUMP_DIR, `${seq}-res.${ext}`), resBuf);
+          const files = fs.readdirSync(DUMP_DIR).map((f) => ({ name: f, time: fs.statSync(path.join(DUMP_DIR, f)).mtimeMs })).sort((a, b) => a.time - b.time);
+          while (files.length > 30) fs.unlinkSync(path.join(DUMP_DIR, files.shift().name));
+        } catch {}
+      };
       const ttsT0 = isTts ? Date.now() : 0;
       let ttsText = '';
+      let ttsStreamWav = false;
       if (isTts) {
-        try { ttsText = String(JSON.parse(fullBody.toString('utf8')).text || ''); } catch {}
-        logTo(TTS_LOG, '请求: ' + ttsText.slice(0, 60).replace(/\s+/g, ' ') + (ttsText.length > 60 ? '…' : '') + ' (' + ttsText.length + ' 字)');
+        let reqBody = {};
+        try { reqBody = JSON.parse(fullBody.toString('utf8')) || {}; } catch {}
+        ttsText = String(reqBody.text || '');
+        const mediaType = String(reqBody.media_type || 'wav').toLowerCase();
+        ttsStreamWav = Boolean(reqBody.streaming_mode) && reqBody.streaming_mode !== 'false' && reqBody.streaming_mode !== '0' && mediaType === 'wav';
+        logTo(TTS_LOG, '请求: ' + ttsText.slice(0, 60).replace(/\s+/g, ' ') + (ttsText.length > 60 ? '…' : '') + ' (' + ttsText.length + ' 字' + (ttsStreamWav ? ', stream-wav' : '') + ')');
       }
 
       if (isTts) {
@@ -343,6 +358,24 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
             up.pipe(res);
             return;
           }
+          if (ttsStreamWav) {
+            if (!res.headersSent) res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'audio/wav' });
+            const wavChunks = [];
+            up.on('data', (c) => {
+              wavChunks.push(c);
+              if (!res.destroyed && !res.writableEnded) {
+                try { res.write(c); } catch {}
+              }
+            });
+            up.on('end', () => {
+              dumpTtsPair(fullBody, Buffer.concat(wavChunks), 'wav');
+              if (!res.destroyed && !res.writableEnded) try { res.end(); } catch {}
+            });
+            up.on('error', () => {
+              if (!res.destroyed && !res.writableEnded) try { res.end(); } catch {}
+            });
+            return;
+          }
           const ff = spawnFF();
           activeFf = ff;
           if (!ff) {
@@ -371,14 +404,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
               }
             });
             ff.stdout.on('end', () => {
-              try {
-                fs.mkdirSync(DUMP_DIR, { recursive: true });
-                const seq = String(++dumpSeq).padStart(3, '0');
-                fs.writeFileSync(path.join(DUMP_DIR, `${seq}-req.json`), fullBody);
-                fs.writeFileSync(path.join(DUMP_DIR, `${seq}-res.mp3`), Buffer.concat(resChunks));
-                const files = fs.readdirSync(DUMP_DIR).map((f) => ({ name: f, time: fs.statSync(path.join(DUMP_DIR, f)).mtimeMs })).sort((a, b) => a.time - b.time);
-                while (files.length > 30) fs.unlinkSync(path.join(DUMP_DIR, files.shift().name));
-              } catch {}
+              dumpTtsPair(fullBody, Buffer.concat(resChunks), 'mp3');
               if (!res.destroyed && !res.writableEnded) try { res.end(); } catch {}
             });
           }
