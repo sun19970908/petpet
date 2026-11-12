@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const net = require('net');
+const { appendLine, createRotatingStream, readLastLines } = require('./lib/logger');
 
 // 防护 Windows 下脱钩控制台/管道关闭时 console.log / pipe 触发的 EPIPE/EOF 未捕获异常弹窗
 if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on('error', () => {});
@@ -14,20 +15,14 @@ if (process.stderr && typeof process.stderr.on === 'function') process.stderr.on
 process.on('uncaughtException', (err) => {
   const code = err && err.code;
   const msg = (err && (err.stack || err.message)) || String(err);
-  try {
-    fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
-    fs.appendFileSync(path.join(__dirname, 'logs', 'main-err.log'), `${new Date().toISOString()} [uncaughtException] code=${code || 'none'} ${msg}\n`);
-  } catch {}
+  appendLine(path.join(__dirname, 'logs', 'main-err.log'), `[uncaughtException] code=${code || 'none'} ${msg}`, { maxBytes: 2 * 1024 * 1024 });
   if (code === 'EOF' || code === 'EPIPE' || code === 'ECONNRESET' || code === 'ERR_STREAM_DESTROYED' || code === 'ERR_STREAM_WRITE_AFTER_END') {
     return;
   }
 });
 process.on('unhandledRejection', (reason) => {
   const msg = (reason && (reason.stack || reason.message)) || String(reason);
-  try {
-    fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
-    fs.appendFileSync(path.join(__dirname, 'logs', 'main-err.log'), `${new Date().toISOString()} [unhandledRejection] ${msg}\n`);
-  } catch {}
+  appendLine(path.join(__dirname, 'logs', 'main-err.log'), `[unhandledRejection] ${msg}`, { maxBytes: 2 * 1024 * 1024 });
 });
 
 const APP_ROOT = __dirname;
@@ -101,10 +96,7 @@ const GSV_PORT = 9880;
 const GSV_LOG = path.join(APP_ROOT, 'logs', 'gsv.log');
 const TTS_LOG = path.join(APP_ROOT, 'logs', 'tts.log');
 function logTo(file, msg) {
-  try {
-    fs.mkdirSync(path.join(APP_ROOT, 'logs'), { recursive: true });
-    fs.appendFileSync(file, new Date().toISOString() + ' ' + msg + '\n');
-  } catch {}
+  appendLine(file, msg, { maxBytes: file === GSV_LOG ? 5 * 1024 * 1024 : 2 * 1024 * 1024 });
 }
 
 let gsvProc = null;
@@ -152,8 +144,7 @@ async function ensureGSV() {
       // 必须消费子进程输出：GPT-SoVITS 的 tqdm 进度条输出很多，管道写满后子进程会卡死（TTS 偶发卡住的元凶）。
       // 顺便落到 logs/gsv.log，方便看"控制台"。
       try {
-        const gsvLogStream = fs.createWriteStream(GSV_LOG, { flags: 'a' });
-        gsvLogStream.on('error', () => {});
+        const gsvLogStream = createRotatingStream(GSV_LOG, 5 * 1024 * 1024);
         gsvProc.stdout.pipe(gsvLogStream);
         gsvProc.stderr.pipe(gsvLogStream);
       } catch {}
@@ -331,16 +322,7 @@ function handleApi(req, res) {
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
-        try {
-          const dbgLog = path.join(APP_ROOT, 'logs', 'renderer-dbg.log');
-          fs.mkdirSync(path.dirname(dbgLog), { recursive: true });
-          try {
-            if (fs.existsSync(dbgLog) && fs.statSync(dbgLog).size > 5 * 1024 * 1024) {
-              fs.renameSync(dbgLog, dbgLog + '.bak');
-            }
-          } catch {}
-          fs.appendFileSync(dbgLog, Buffer.concat(chunks) + '\n');
-        } catch {}
+        appendLine(path.join(APP_ROOT, 'logs', 'renderer-dbg.log'), Buffer.concat(chunks).toString('utf8'), { stamp: false, maxBytes: 5 * 1024 * 1024 });
         res.writeHead(204); res.end();
       });
       return;
@@ -349,11 +331,8 @@ function handleApi(req, res) {
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
-        try {
-          const line = Buffer.concat(chunks).toString('utf8');
-          fs.mkdirSync(path.join(APP_ROOT, 'logs'), { recursive: true });
-          fs.appendFileSync(path.join(APP_ROOT, 'logs', 'renderer.log'), new Date().toISOString() + ' ' + line + '\n');
-        } catch {}
+        const line = Buffer.concat(chunks).toString('utf8');
+        appendLine(path.join(APP_ROOT, 'logs', 'renderer.log'), line, { maxBytes: 2 * 1024 * 1024 });
         res.writeHead(204); res.end();
       });
       return;
@@ -844,17 +823,14 @@ function historyFile(mode) {
   return HISTORY_FILE;
 }
 function fstoolTail(n = 10) {
-  try {
-    const lines = fs.readFileSync(path.join(APP_ROOT, 'logs', 'fstool.log'), 'utf8').trim().split('\n');
-    return lines.slice(-n).map((l) => {
-      try {
-        const d = JSON.parse(l);
-        const a = d.args || {};
-        const detail = (a.src_path && a.dest_path ? a.src_path + ' -> ' + a.dest_path : '') || a.path || a.query || ('content ' + String(a.content || '').length + '字') || '';
-        return `${d.t.slice(5, 16).replace('T', ' ')} UTC ${d.name} ${detail}`;
-      } catch { return l.slice(0, 100); }
-    });
-  } catch { return []; }
+  return readLastLines(path.join(APP_ROOT, 'logs', 'fstool.log'), n).map((l) => {
+    try {
+      const d = JSON.parse(l);
+      const a = d.args || {};
+      const detail = (a.src_path && a.dest_path ? a.src_path + ' -> ' + a.dest_path : '') || a.path || a.query || ('content ' + String(a.content || '').length + '字') || '';
+      return `${d.t.slice(5, 16).replace('T', ' ')} UTC ${d.name} ${detail}`;
+    } catch { return l.slice(0, 100); }
+  });
 }
 function historyLoad(mode) {
   try {
@@ -1017,11 +993,7 @@ function runFsTool(call) {
 function runFsToolCore(call) {
   try {
     let { name, args } = call;
-    try {
-      fs.mkdirSync(path.join(APP_ROOT, 'logs'), { recursive: true });
-      fs.appendFileSync(path.join(APP_ROOT, 'logs', 'fstool.log'),
-        JSON.stringify({ t: new Date().toISOString(), name, args }) + '\n');
-    } catch {}
+    appendLine(path.join(APP_ROOT, 'logs', 'fstool.log'), JSON.stringify({ t: new Date().toISOString(), name, args }), { stamp: false, maxBytes: 5 * 1024 * 1024 });
     // 旧工具名 → file_tool 兼容映射（历史消息里可能残留旧调用，别报未知工具）
     if (name === 'write_file') { name = 'file_tool'; args.action = 'write'; }
     else if (name === 'append_file') { name = 'file_tool'; args.action = 'append'; }
@@ -1509,10 +1481,7 @@ app.on('before-quit', () => {
 });
 // 窗口生命周期落盘：万一再"找不到她"，能查是关了、崩了还是被顶到后面
 function winLog(msg) {
-  try {
-    fs.mkdirSync(path.join(APP_ROOT, 'logs'), { recursive: true });
-    fs.appendFileSync(path.join(APP_ROOT, 'logs', 'windows.log'), new Date().toISOString() + ' ' + msg + '\n');
-  } catch {}
+  appendLine(path.join(APP_ROOT, 'logs', 'windows.log'), msg, { maxBytes: 2 * 1024 * 1024 });
 }
 function baseWin(area, opts = {}) {
   const win = new BrowserWindow({

@@ -1735,8 +1735,8 @@ window.petWindow?.onDisplaysChanged?.(async () => {
   } catch {}
 });
 
-// ===== TEMP 诊断桩：指针事件计数 + 视线参数上报（每 2s） =====
-{
+// ===== 诊断桩：仅在 ?debug=1 时每 2s 上报指针与视线参数（日常不写盘避免日志膨胀） =====
+if (DEBUG_MODE) {
   const dbg = { ptr: 0, mouse: 0, lastX: null, lastY: null, lastTarget: '', sent: 0 };
   window.addEventListener('pointermove', (e) => {
     dbg.ptr++; dbg.lastX = e.clientX; dbg.lastY = e.clientY; dbg.lastTarget = e.target?.id || e.target?.tagName || '?';
@@ -1756,7 +1756,7 @@ window.petWindow?.onDisplaysChanged?.(async () => {
     dbg.sent++;
   }, 2000);
 }
-// ===== TEMP 诊断桩结束 =====
+// ===== 诊断桩结束 =====
 // 一段话说完 6 秒后收起气泡（错误信息保留）
 speech.onIdle = () => {
   if (bubble.classList.contains('error')) return;

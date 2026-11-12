@@ -3,6 +3,7 @@
 //   - 探 127.0.0.1:12400；不在线 → 重拉 start-pet.bat（1 小时最多 5 次，防连环崩）；若端口被僵死进程占住则先杀再拉
 //   - 在线但 .wake-state.json 显示"无限唤醒开着、心跳却停了 >180s"或"同轮次无任何活动进展 >600s" → 杀掉重拉（重启后自动恢复无限唤醒）
 const http = require('http'), fs = require('fs'), path = require('path'), { spawn, execSync } = require('child_process');
+const { appendLine } = require('./lib/logger');
 if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on('error', () => {});
 if (process.stderr && typeof process.stderr.on === 'function') process.stderr.on('error', () => {});
 
@@ -19,11 +20,7 @@ const WATCHDOG_GSV_MODE = (
 
 function log(m) {
   const s = new Date().toISOString() + ' ' + m;
-  try {
-    fs.mkdirSync(path.dirname(LOG), { recursive: true });
-    try { if (fs.existsSync(LOG) && fs.statSync(LOG).size > 5 * 1024 * 1024) fs.renameSync(LOG, LOG + '.bak'); } catch {}
-    fs.appendFileSync(LOG, s + '\n');
-  } catch {}
+  appendLine(LOG, m, { maxBytes: 5 * 1024 * 1024 });
   try { console.log(s); } catch {}
 }
 

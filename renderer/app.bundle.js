@@ -4129,7 +4129,7 @@ void main(){ o=texture(uTex,vUv); }`;
     } catch {
     }
   });
-  {
+  if (DEBUG_MODE) {
     const dbg = { ptr: 0, mouse: 0, lastX: null, lastY: null, lastTarget: "", sent: 0 };
     window.addEventListener("pointermove", (e3) => {
       dbg.ptr++;
