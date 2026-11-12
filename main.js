@@ -8,6 +8,28 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const net = require('net');
 
+// 防护 Windows 下脱钩控制台/管道关闭时 console.log / pipe 触发的 EPIPE/EOF 未捕获异常弹窗
+if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on('error', () => {});
+if (process.stderr && typeof process.stderr.on === 'function') process.stderr.on('error', () => {});
+process.on('uncaughtException', (err) => {
+  const code = err && err.code;
+  const msg = (err && (err.stack || err.message)) || String(err);
+  try {
+    fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
+    fs.appendFileSync(path.join(__dirname, 'logs', 'main-err.log'), `${new Date().toISOString()} [uncaughtException] code=${code || 'none'} ${msg}\n`);
+  } catch {}
+  if (code === 'EOF' || code === 'EPIPE' || code === 'ECONNRESET' || code === 'ERR_STREAM_DESTROYED' || code === 'ERR_STREAM_WRITE_AFTER_END') {
+    return;
+  }
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = (reason && (reason.stack || reason.message)) || String(reason);
+  try {
+    fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
+    fs.appendFileSync(path.join(__dirname, 'logs', 'main-err.log'), `${new Date().toISOString()} [unhandledRejection] ${msg}\n`);
+  } catch {}
+});
+
 const APP_ROOT = __dirname;
 const PORT = 12400;
 const SPLIT_WINDOWS = true;   // 双窗：卧室独立窗(锁副屏，不动) + 桌宠窗(主屏)。设 false 回退单窗旧行为
@@ -129,9 +151,17 @@ async function ensureGSV() {
       // 顺便落到 logs/gsv.log，方便看"控制台"。
       try {
         const gsvLogStream = fs.createWriteStream(GSV_LOG, { flags: 'a' });
+        gsvLogStream.on('error', () => {});
         gsvProc.stdout.pipe(gsvLogStream);
         gsvProc.stderr.pipe(gsvLogStream);
       } catch {}
+
+      gsvProc.on('error', (err) => {
+        logTo(GSV_LOG, `=== 进程错误 ${err.message} ===`);
+        gsvProc = null;
+      });
+      if (gsvProc.stdout) gsvProc.stdout.on('error', () => {});
+      if (gsvProc.stderr) gsvProc.stderr.on('error', () => {});
 
       gsvProc.on('exit', (code, sig) => {
         console.log(`[gsv] 进程已退出 (code=${code}, sig=${sig})`);
@@ -234,8 +264,18 @@ async function ensureASR() {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      asrProc.stdout.on('data', (d) => console.log(d.toString('utf8').trim()));
-      asrProc.stderr.on('data', (d) => console.error(d.toString('utf8').trim()));
+      asrProc.on('error', (err) => {
+        console.error(`[asr] 进程启动/运行错误: ${err.message}`);
+        asrProc = null;
+      });
+      if (asrProc.stdout) {
+        asrProc.stdout.on('error', () => {});
+        asrProc.stdout.on('data', (d) => console.log(d.toString('utf8').trim()));
+      }
+      if (asrProc.stderr) {
+        asrProc.stderr.on('error', () => {});
+        asrProc.stderr.on('data', (d) => console.error(d.toString('utf8').trim()));
+      }
 
       asrProc.on('exit', (code, sig) => {
         console.log(`[asr] 进程已退出 (code=${code}, sig=${sig})`);
@@ -290,8 +330,14 @@ function handleApi(req, res) {
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
         try {
-          fs.mkdirSync(path.join(APP_ROOT, 'logs'), { recursive: true });
-          fs.appendFileSync(path.join(APP_ROOT, 'logs', 'renderer-dbg.log'), Buffer.concat(chunks) + '\n');
+          const dbgLog = path.join(APP_ROOT, 'logs', 'renderer-dbg.log');
+          fs.mkdirSync(path.dirname(dbgLog), { recursive: true });
+          try {
+            if (fs.existsSync(dbgLog) && fs.statSync(dbgLog).size > 5 * 1024 * 1024) {
+              fs.renameSync(dbgLog, dbgLog + '.bak');
+            }
+          } catch {}
+          fs.appendFileSync(dbgLog, Buffer.concat(chunks) + '\n');
         } catch {}
         res.writeHead(204); res.end();
       });
@@ -350,6 +396,7 @@ function handleApi(req, res) {
       host: `${target.host}:${target.port}`,
     };
 
+    let activeFf = null;
     const upstream = http.request({
       host: target.host,
       port: target.port,
@@ -359,41 +406,82 @@ function handleApi(req, res) {
     }, (up) => {
       if (isTts) {
         logTo(TTS_LOG, '上游 ' + up.statusCode + ' in ' + (Date.now() - ttsT0) + 'ms');
+        if (up.statusCode >= 400) {
+          if (!res.headersSent) res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/json' });
+          up.on('error', () => { try { if (!res.destroyed && !res.writableEnded) res.end(); } catch {} });
+          up.pipe(res);
+          return;
+        }
         const ff = spawnFF();
-        if (!ff) { res.writeHead(502); res.end('ffmpeg missing'); return; }
-        res.writeHead(up.statusCode, { 'Content-Type': 'audio/mpeg' });
+        activeFf = ff;
+        if (!ff) {
+          if (!res.headersSent) res.writeHead(502);
+          if (!res.destroyed && !res.writableEnded) res.end('ffmpeg missing');
+          return;
+        }
+        const cleanupFf = () => {
+          try { up.unpipe(ff.stdin); } catch {}
+          try { if (!ff.killed) ff.kill(); } catch {}
+        };
+        if (!res.headersSent) res.writeHead(up.statusCode, { 'Content-Type': 'audio/mpeg' });
         const resChunks = [];
-        ff.stdout.on('data', (c) => { resChunks.push(c); res.write(c); });
-        ff.stdout.on('end', () => {
-          try {
-            fs.mkdirSync(DUMP_DIR, { recursive: true });
-            const seq = String(++dumpSeq).padStart(3, '0');
-            fs.writeFileSync(path.join(DUMP_DIR, `${seq}-req.json`), fullBody);
-            fs.writeFileSync(path.join(DUMP_DIR, `${seq}-res.mp3`), Buffer.concat(resChunks));
-            const files = fs.readdirSync(DUMP_DIR).map((f) => ({ name: f, time: fs.statSync(path.join(DUMP_DIR, f)).mtimeMs })).sort((a, b) => a.time - b.time);
-            while (files.length > 30) fs.unlinkSync(path.join(DUMP_DIR, files.shift().name));
-          } catch {}
-          res.end();
+        ff.on('error', (err) => {
+          console.error('[ffmpeg] 进程错误:', err.message);
+          cleanupFf();
+          if (!res.destroyed && !res.writableEnded) try { res.end(); } catch {}
         });
-        ff.stderr.on('data', (c) => console.error('[ffmpeg]', String(c).trim()));
+        if (ff.stdin) ff.stdin.on('error', () => { try { up.unpipe(ff.stdin); } catch {} });
+        if (ff.stdout) {
+          ff.stdout.on('error', () => cleanupFf());
+          ff.stdout.on('data', (c) => {
+            resChunks.push(c);
+            if (!res.destroyed && !res.writableEnded) {
+              try { res.write(c); } catch {}
+            }
+          });
+          ff.stdout.on('end', () => {
+            try {
+              fs.mkdirSync(DUMP_DIR, { recursive: true });
+              const seq = String(++dumpSeq).padStart(3, '0');
+              fs.writeFileSync(path.join(DUMP_DIR, `${seq}-req.json`), fullBody);
+              fs.writeFileSync(path.join(DUMP_DIR, `${seq}-res.mp3`), Buffer.concat(resChunks));
+              const files = fs.readdirSync(DUMP_DIR).map((f) => ({ name: f, time: fs.statSync(path.join(DUMP_DIR, f)).mtimeMs })).sort((a, b) => a.time - b.time);
+              while (files.length > 30) fs.unlinkSync(path.join(DUMP_DIR, files.shift().name));
+            } catch {}
+            if (!res.destroyed && !res.writableEnded) try { res.end(); } catch {}
+          });
+        }
+        if (ff.stderr) {
+          ff.stderr.on('error', () => {});
+          ff.stderr.on('data', (c) => console.error('[ffmpeg]', String(c).trim()));
+        }
+        up.on('error', () => cleanupFf());
         up.pipe(ff.stdin);
-        up.on('error', () => { try { ff.kill(); } catch {} });
       } else {
-        res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/octet-stream' });
+        if (!res.headersSent) res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/octet-stream' });
+        up.on('error', () => { try { if (!res.destroyed && !res.writableEnded) res.end(); } catch {} });
         up.pipe(res);
       }
     });
 
+    res.on('error', () => {});
     upstream.on('error', (e) => {
       if (isTts) logTo(TTS_LOG, '上游错误: ' + e.message + ' in ' + (Date.now() - ttsT0) + 'ms');
-      res.writeHead(502);
-      res.end('upstream error: ' + e.message);
+      if (!res.headersSent) {
+        try { res.writeHead(502); } catch {}
+      }
+      if (!res.destroyed && !res.writableEnded) {
+        try { res.end('upstream error: ' + e.message); } catch {}
+      }
     });
 
     // 客户端提前断开时才掐掉上游；不能监听 req 'close'——它在请求体读完就触发，
     // 会在 upstream.end() 后立刻销毁转发连接（表现为 2ms 的 socket hang up）
     res.on('close', () => {
-      if (!res.writableFinished && !upstream.destroyed) upstream.destroy();
+      if (!res.writableFinished) {
+        if (!upstream.destroyed) upstream.destroy();
+        if (activeFf && !activeFf.killed) try { activeFf.kill(); } catch {}
+      }
     });
 
     upstream.end(fullBody);
@@ -435,29 +523,38 @@ function resolveCapSource(sources, cfg, defaultIdx, targetDisplayId) {
 }
 
 const SCREENCAP_EXE = path.join(APP_ROOT, 'tools', 'ScreenCap.exe');
+let capTmpSeq = 0;
+const inFlightCapture = {};
 
 async function captureWithScreenCap(targetArg, which) {
   if (!fs.existsSync(SCREENCAP_EXE)) return null;
-  const outPath = path.join(APP_ROOT, 'logs', `last_cap_${which}.jpg`);
+  const logDir = path.join(APP_ROOT, 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const tmpPath = path.join(logDir, `.tmp_cap_${which}_${process.pid}_${++capTmpSeq}.jpg`);
+  const finalPath = path.join(logDir, `last_cap_${which}.jpg`);
   return new Promise((resolve) => {
-    const p = spawn(SCREENCAP_EXE, ['cap', outPath, String(targetArg), '85'], { windowsHide: true });
+    const p = spawn(SCREENCAP_EXE, ['cap', tmpPath, String(targetArg), '85'], { windowsHide: true });
     let stdout = '';
     let stderr = '';
     p.stdout.on('data', (d) => { stdout += d; });
     p.stderr.on('data', (d) => { stderr += d; });
     p.on('close', (code) => {
-      if (code === 0 && fs.existsSync(outPath)) {
+      if (code === 0 && fs.existsSync(tmpPath)) {
         try {
-          const buf = fs.readFileSync(outPath);
+          const buf = fs.readFileSync(tmpPath);
+          try { fs.writeFileSync(finalPath, buf); } catch {}
+          try { fs.unlinkSync(tmpPath); } catch {}
           resolve({ ok: true, buffer: buf, stdout: stdout.trim() });
           return;
         } catch (e) {
           stderr += ' ' + e.message;
         }
       }
+      try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
       resolve({ ok: false, code, stderr: stderr.trim() });
     });
     p.on('error', (err) => {
+      try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
       resolve({ ok: false, error: err.message });
     });
   });
@@ -467,6 +564,18 @@ async function captureWithScreenCap(targetArg, which) {
 //           'room' = 卧室窗所在屏（她自己的房间，通常副屏——看照片墙/窗帘的实际状态）
 // 不再做双屏拼接：她的两个视角语义分离
 async function captureScreenBy(which) {
+  if (inFlightCapture[which]) return inFlightCapture[which];
+  inFlightCapture[which] = (async () => {
+    try {
+      return await _doCaptureScreenBy(which);
+    } finally {
+      inFlightCapture[which] = null;
+    }
+  })();
+  return inFlightCapture[which];
+}
+
+async function _doCaptureScreenBy(which) {
   const isRoom = which === 'room';
   if (isRoom && (!bedroomWin || bedroomWin.isDestroyed())) return null; // 卧室未开放
 
