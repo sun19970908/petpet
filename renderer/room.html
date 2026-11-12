@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh"><head><meta charset="utf-8"><title>卧室</title>
-<style>html,body{margin:0;height:100%;overflow:hidden;background:transparent}#rf{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#0e1628}#rf{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
 </head>
 <body>
   <iframe id="rf" sandbox="allow-scripts" src="/pet_space/room/index.html"></iframe>
@@ -28,7 +28,10 @@
       }
     });
     window.petWindow && window.petWindow.onRoomChanged && window.petWindow.onRoomChanged(() => { try { rf.src = '/pet_space/room/index.html?t=' + Date.now(); } catch {} });
-    rf.addEventListener('load', poll);
+    rf.addEventListener('load', () => {
+      poll();
+      try { window.petWindow && window.petWindow.notifyRoomReloaded && window.petWindow.notifyRoomReloaded(); } catch {}
+    });
     setInterval(poll, 1500);
   </script>
 </body></html>

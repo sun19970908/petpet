@@ -137,7 +137,16 @@ function maybeRoomChanged(call) {
   const roomDir = path.resolve(PET_SPACE_DIR, 'room').toUpperCase();
   const cands = [a.path, a.dest_path, a.out_path].filter(Boolean).map((p) => path.resolve(String(p)).toUpperCase());
   if (!cands.some((p) => p === roomDir || p.startsWith(roomDir + path.sep))) return;
-  try { const t = (SPLIT_WINDOWS && bedroomWin) ? bedroomWin : petWin; if (t) t.webContents.send('room-changed'); } catch {}
+  try {
+    const t = (SPLIT_WINDOWS && bedroomWin && !bedroomWin.isDestroyed()) ? bedroomWin : petWin;
+    if (!t || t.isDestroyed()) return;
+    if (t === bedroomWin) {
+      if (t.isMinimized()) t.restore();
+      if (!t.isVisible()) t.showInactive();
+    }
+    t.webContents.send('room-changed');
+    if (t === bedroomWin) t.webContents.invalidate();
+  } catch {}
 }
 
 const { runFsTool } = createFsTools({
@@ -333,8 +342,9 @@ app.on('before-quit', () => {
 function baseWin(area, opts = {}) {
   const win = new BrowserWindow({
     x: area.x, y: area.y, width: area.width, height: area.height,
-    transparent: true, frame: false, hasShadow: false, alwaysOnTop: opts.topmost !== false, skipTaskbar: true, resizable: false,
+    transparent: opts.transparent !== false, frame: false, hasShadow: false, alwaysOnTop: opts.topmost !== false, skipTaskbar: true, resizable: false,
     focusable: opts.focusable !== false,
+    ...(opts.backgroundColor ? { backgroundColor: opts.backgroundColor } : {}),
     webPreferences: {
       contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js'),
       backgroundThrottling: false,
@@ -363,7 +373,7 @@ function createPetOverlay(port, area) {
   return win;
 }
 function createBedroomWindow(port, area) {
-  const win = baseWin(area, { focusable: true, topmost: false });
+  const win = baseWin(area, { focusable: true, topmost: false, transparent: false, backgroundColor: '#0e1628' });
   win.setIgnoreMouseEvents(false);
   win.loadURL(`http://127.0.0.1:${port}/renderer/room.html`);
   return win;
@@ -441,6 +451,12 @@ app.whenReady().then(() => {
   ipcMain.on('pet-click-through', (e, on) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     if (win) win.setIgnoreMouseEvents(!!on, { forward: true });
+  });
+  ipcMain.on('room-reloaded', (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (win && !win.isDestroyed()) {
+      try { win.webContents.invalidate(); } catch {}
+    }
   });
   ipcMain.on('pet-quit', () => app.quit());
 
