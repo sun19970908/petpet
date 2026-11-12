@@ -2329,6 +2329,12 @@ void main(){ o=texture(uTex,vUv); }`;
   }
   var unlocked = false;
   var busy = false;
+  var turnSeq = 0;
+  var lastTurnActivityTs = 0;
+  var turnAbortReason = "";
+  function touchTurnActivity() {
+    lastTurnActivityTs = Date.now();
+  }
   var lastDrawTime = 0;
   var lastInteractTime = Date.now();
   window.addEventListener("pointermove", () => {
@@ -2410,13 +2416,13 @@ void main(){ o=texture(uTex,vUv); }`;
     { type: "function", function: { name: "resize_image", description: "\u628A\u4E00\u5F20\u56FE\u7247\u7B49\u6BD4\u7F29\u5230\u6307\u5B9A\u6700\u5927\u8FB9\u5E76\u538B\u6210\u5C0F jpg\uFF08\u9ED8\u8BA4\u6700\u957F\u8FB9 512\u3001\u8D28\u91CF 82\uFF09\uFF0C\u5B58\u56DE pet_space \u5E76\u628A\u5C0F\u56FE\u56DE\u4F20\u7ED9\u4F60\u770B\u3002\u4E13\u95E8\u7528\u6765\u628A ComfyUI \u751F\u6210\u7684\u5927\u56FE\uFF081MB+\uFF09\u538B\u6210\u80FD\u585E\u8FDB\u5C0F\u76F8\u6846\u7684\u5C0F\u56FE\u3002\u56FE\u7247\u5FC5\u987B\u5DF2\u5728 pet_space \u5185\uFF1B\u8F93\u51FA\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg\uFF0C\u53EF\u7528 out_path \u6307\u5B9A\u3002", parameters: { type: "object", properties: { path: { type: "string", description: "pet_space \u5185\u7684\u56FE\u7247\u5B8C\u6574\u8DEF\u5F84" }, max_width: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u5BBD\uFF0C\u9ED8\u8BA4 512" }, max_height: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u9AD8\uFF0C\u9ED8\u8BA4 512" }, quality: { type: "number", description: "\u53EF\u9009\uFF1Ajpg \u8D28\u91CF 1-100\uFF0C\u9ED8\u8BA4 82" }, out_path: { type: "string", description: "\u53EF\u9009\uFF1A\u8F93\u51FA\u8DEF\u5F84\uFF08\u5FC5\u987B\u5728 pet_space \u5185\uFF09\uFF0C\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg" } }, required: ["path"] } } },
     { type: "function", function: { name: "comfy_run", description: '\u8DD1\u4E00\u4EFD ComfyUI \u5DE5\u4F5C\u6D41\u751F\u6210\u56FE\u7247\uFF0C\u5E76\u628A\u56FE\u56DE\u4F20\u7ED9\u4F60"\u770B\u5230"\u3002workflow_file \u6307\u5411 pet_space \u91CC\u7684\u5DE5\u4F5C\u6D41 JSON\uFF08\u5148\u7528 read_file \u770B pet_space/comfy/ \u4E0B\u7684\u5B9E\u4F8B\uFF0C\u7528 edit_file \u6539\u63D0\u793A\u8BCD/\u79CD\u5B50/\u5C3A\u5BF8\u518D\u8DD1\uFF09\uFF0C\u6216\u76F4\u63A5\u7ED9 workflow \u5BF9\u8C61\uFF08ComfyUI API \u683C\u5F0F\uFF09\u3002\u5DE5\u4F5C\u6D41\u91CC\u8981\u6709 SaveImage \u6216 PreviewImage \u8282\u70B9\uFF1B\u82E5\u542B LoadImage\uFF08\u5982"\u62A0\u56FE_\u900F\u660E\u80CC\u666F.json"\uFF09\uFF0C\u5FC5\u987B\u4F20 input_image \u6307\u5411\u8981\u5904\u7406\u7684\u56FE\u3002\u56FE\u7247\u4F1A\u5B58\u5230 pet_space/generated/\u3002SDXL \u4E00\u5F20\u7EA6 10~40 \u79D2\uFF0CRMBG \u62A0\u56FE\u7EA6 2~5 \u79D2\u3002', parameters: { type: "object", properties: { workflow_file: { type: "string", description: "pet_space \u5185\u7684\u5DE5\u4F5C\u6D41 .json \u8DEF\u5F84\uFF08\u63A8\u8350\uFF1A\u590D\u5236/\u6539 pet_space/comfy/ \u91CC\u7684\u5B9E\u4F8B\uFF09" }, workflow: { type: "object", description: "\u6216\u76F4\u63A5\u7ED9 ComfyUI API \u683C\u5F0F\u7684\u5DE5\u4F5C\u6D41\u5BF9\u8C61" }, input_image: { type: "string", description: "\u53EF\u9009\uFF1Apet_space \u5185\u7684\u56FE\u7247\u8DEF\u5F84\u3002\u5DE5\u4F5C\u6D41\u6709 LoadImage \u8282\u70B9\u65F6\uFF0C\u4F1A\u5148\u628A\u8FD9\u5F20\u56FE\u62F7\u8FDB ComfyUI input \u5E76\u628A LoadImage \u6307\u5411\u5B83\uFF08\u62A0\u56FE/\u56FE\u751F\u56FE\u7528\uFF09" } }, required: [] } } }
   ];
-  function textOf(userContent2) {
-    return typeof userContent2 === "string" ? userContent2 : userContent2.find?.((c3) => c3.type === "text")?.text || "";
+  function textOf(userContent) {
+    return typeof userContent === "string" ? userContent : userContent.find?.((c3) => c3.type === "text")?.text || "";
   }
-  async function memoryAddFire(userContent2, reply) {
+  async function memoryAddFire(userContent, reply) {
     try {
       const items = [
-        { text: "[\u7528\u6237] " + textOf(userContent2), role: "user", kind: "chat", ts: Date.now() },
+        { text: "[\u7528\u6237] " + textOf(userContent), role: "user", kind: "chat", ts: Date.now() },
         { text: "[DeepSeek\u5A18] " + reply, role: "assistant", kind: "chat", ts: Date.now() + 1 }
       ];
       if (window.petWindow) await window.petWindow.memoryAdd(items, DEBUG_MODE ? "debug" : void 0);
@@ -2426,9 +2432,14 @@ void main(){ o=texture(uTex,vUv); }`;
   }
   async function memoryRecall(query, limit = 5) {
     try {
-      const r2 = window.petWindow ? await window.petWindow.memorySearch(query, DEBUG_MODE ? "debug" : void 0, limit) : await (await fetch("/api/memory-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, mode: DEBUG_MODE ? "debug" : void 0, limit }) })).json();
-      const cur = textOf(query).trim();
-      return (r2.hits || []).filter((h3) => h3.text.trim() !== cur && h3.text.trim() !== "[\u7528\u6237] " + cur);
+      const q3 = textOf(query).trim();
+      if (!q3) return [];
+      const searchP = window.petWindow ? window.petWindow.memorySearch(q3, DEBUG_MODE ? "debug" : void 0, limit) : fetch("/api/memory-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q3, mode: DEBUG_MODE ? "debug" : void 0, limit }) }).then((res) => res.json());
+      const r2 = await Promise.race([
+        searchP,
+        new Promise((resolve) => setTimeout(() => resolve({ hits: [] }), 8e3))
+      ]);
+      return (r2 && r2.hits || []).filter((h3) => h3.text.trim() !== q3 && h3.text.trim() !== "[\u7528\u6237] " + q3);
     } catch {
       return [];
     }
@@ -2510,7 +2521,7 @@ void main(){ o=texture(uTex,vUv); }`;
     }
     return found.map((c3, i3) => ({ id: "textcall_" + round + "_" + i3, type: "function", function: { name: c3.name, arguments: typeof c3.arguments === "string" ? c3.arguments : JSON.stringify(c3.arguments || {}) } }));
   }
-  async function askLLM(userContent2, signal, memories, continueBaseMsgs = null) {
+  async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     const mod = THINK_MODE === "off" ? null : THINK_MODULES.pet_think;
     turnUsedTools = false;
     let bodyMsgs;
@@ -2519,8 +2530,8 @@ void main(){ o=texture(uTex,vUv); }`;
     } else {
       const pruned = history.map((m3) => Array.isArray(m3.content) ? { role: m3.role, content: "[\u56FE\u7247] " + (m3.content.find((c3) => c3.type === "text")?.text || "") } : m3);
       const ledger = await getToolLedger();
-      const userText = textOf(userContent2) + ledger;
-      const lastUser = Array.isArray(userContent2) ? { role: "user", content: [{ ...userContent2.find((c3) => c3.type === "text"), text: userText }, userContent2.find((c3) => c3.type === "image_url")] } : { role: "user", content: userText };
+      const userText = textOf(userContent) + ledger;
+      const lastUser = Array.isArray(userContent) ? { role: "user", content: [{ ...userContent.find((c3) => c3.type === "text"), text: userText }, userContent.find((c3) => c3.type === "image_url")] } : { role: "user", content: userText };
       bodyMsgs = [
         { role: "system", content: await getSystemAndPersona() + formatMemories(memories) },
         ...pruned,
@@ -2566,11 +2577,11 @@ void main(){ o=texture(uTex,vUv); }`;
     let toolCallTotal = 0;
     const isLive = !continueBaseMsgs;
     if (isLive) {
-      history.push({ role: "user", content: userContent2 });
+      history.push({ role: "user", content: userContent });
       saveHistory();
     }
     let emptyTextRetries = 0;
-    const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent2));
+    const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
     let verificationNudged = false;
     const isContinuation = Boolean(continueBaseMsgs);
     let streamSpoken = false;
@@ -2584,6 +2595,7 @@ void main(){ o=texture(uTex,vUv); }`;
     };
     let lastBubbleTs = 0;
     for (let round = 0; ; round++) {
+      touchTurnActivity();
       const slicer = makeSentenceSlicer();
       const model = "strata-nothink";
       const sendMsgs = bodyMsgs.slice();
@@ -2609,6 +2621,7 @@ void main(){ o=texture(uTex,vUv); }`;
         body: JSON.stringify(reqPayload)
       });
       if (!res.ok) throw new Error(`LLM HTTP ${res.status}: ${(await res.text()).slice(0, 120)}`);
+      touchTurnActivity();
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let sse = "";
@@ -2676,6 +2689,7 @@ void main(){ o=texture(uTex,vUv); }`;
       while (true) {
         const rd = await reader.read();
         if (rd.done) break;
+        touchTurnActivity();
         sse += dec.decode(rd.value, { stream: true });
         let nl;
         while ((nl = sse.indexOf("\n")) >= 0) {
@@ -2725,7 +2739,7 @@ void main(){ o=texture(uTex,vUv); }`;
       }
       const data = { choices: [{ message: { role: "assistant", content }, finish_reason: finish || (toolCalls ? "tool_calls" : "stop") }], usage: usage || {} };
       const msg = data.choices[0].message;
-      lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent: userContent2, hadSavedHistory: false };
+      lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent, hadSavedHistory: false };
       if (toolCalls?.length) {
         const msgContentBeforeTools = stripThink(content ?? "").replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, "").replace(/<invoke[\s\S]*?<\/invoke>\s*/g, "").trim();
         const truncated = finish === "length";
@@ -2829,7 +2843,9 @@ void main(){ o=texture(uTex,vUv); }`;
             bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: result });
             continue;
           }
+          touchTurnActivity();
           const out = window.petWindow?.fsTool ? await window.petWindow.fsTool({ name: call.function?.name, args: parsed }) : await (await fetch("/api/fstool", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: call.function?.name, args: parsed }) })).json();
+          touchTurnActivity();
           bodyMsgs.push({
             role: "tool",
             tool_call_id: call.id,
@@ -2956,6 +2972,7 @@ void main(){ o=texture(uTex,vUv); }`;
     }
   }
   async function speakSegment(seg, signal) {
+    touchTurnActivity();
     if (Date.now() < gsvDownUntil) {
       rlog("tts-skip-down", Math.round((gsvDownUntil - Date.now()) / 1e3) + "s left");
       return;
@@ -2991,6 +3008,7 @@ void main(){ o=texture(uTex,vUv); }`;
           ...TTS_REF
         })
       });
+      touchTurnActivity();
       if (res.status === 502 || res.status === 503 || res.status === 504) {
         gsvDownUntil = Date.now() + 6e4;
         rlog("tts-upstream-" + res.status, "silent 60s");
@@ -2998,6 +3016,7 @@ void main(){ o=texture(uTex,vUv); }`;
       }
       if (!res.ok) throw new Error("TTS HTTP " + res.status);
       const blob = await res.blob();
+      touchTurnActivity();
       rlog("tts-ok", blob.size + "B");
       speech.say(blob);
     } catch (e3) {
@@ -3015,6 +3034,7 @@ void main(){ o=texture(uTex,vUv); }`;
     } finally {
       clearTimeout(timer);
       if (signal) signal.removeEventListener("abort", onAbort);
+      touchTurnActivity();
     }
   }
   var turnAbort = null;
@@ -3025,18 +3045,23 @@ void main(){ o=texture(uTex,vUv); }`;
       unlocked = true;
     }
     busy = true;
+    turnSeq += 1;
+    turnAbortReason = "";
+    touchTurnActivity();
     turnAbort = new AbortController();
     const isAbort = (e3) => e3?.name === "AbortError" || turnAbort?.signal.aborted;
-    await syncHistoryFromDisk();
-    player.act("hop");
-    showBubble("\u2026");
+    const userContent = image ? [
+      { type: "text", text: text || "\uFF08\u5E2E\u6211\u770B\u770B\u8FD9\u5F20\u56FE\uFF09" },
+      { type: "image_url", image_url: { url: image } }
+    ] : text;
     let replied = false;
     try {
-      const userContent2 = image ? [
-        { type: "text", text: text || "\uFF08\u5E2E\u6211\u770B\u770B\u8FD9\u5F20\u56FE\uFF09" },
-        { type: "image_url", image_url: { url: image } }
-      ] : text;
-      const reply = await askLLM(userContent2, turnAbort.signal, await memoryRecall(text));
+      await syncHistoryFromDisk();
+      player.act("hop");
+      showBubble("\u2026");
+      const recalled = await memoryRecall(text);
+      touchTurnActivity();
+      const reply = await askLLM(userContent, turnAbort.signal, recalled);
       history.push({ role: "assistant", content: reply });
       noteLoop(reply);
       if (lastExchange) lastExchange.hadSavedHistory = true;
@@ -3044,19 +3069,20 @@ void main(){ o=texture(uTex,vUv); }`;
       showBubble(reply);
       replied = true;
       react(reply);
-      memoryAddFire(userContent2, reply);
+      memoryAddFire(userContent, reply);
       queueInfiniteWake();
       return true;
     } catch (e3) {
       if (isAbort(e3)) {
         if (!replied) {
-          showBubble("\uFF08\u5DF2\u6253\u65AD\uFF09");
+          showBubble(turnAbortReason === "guard" ? "\uFF08\u4E0A\u4E00\u8F6E\u54CD\u5E94\u8D85\u65F6\uFF0C\u81EA\u52A8\u91CD\u8FDE\u2026\uFF09" : "\uFF08\u5DF2\u6253\u65AD\uFF09");
           setTimeout(() => {
             if (!busy) hideBubble();
           }, 3e3);
           const t3 = typeof userContent === "string" ? userContent : userContent.find?.((c3) => c3.type === "text")?.text || "";
           if (t3 && !/^(你被唤醒了|现在是无限唤醒模式|（)/.test(t3)) input.value = t3;
         }
+        if (turnAbortReason === "guard") queueInfiniteWake(3e3);
         return false;
       }
       showBubble(String(e3.message || e3), true);
@@ -3065,6 +3091,7 @@ void main(){ o=texture(uTex,vUv); }`;
     } finally {
       busy = false;
       turnAbort = null;
+      touchTurnActivity();
       input.focus();
     }
   }
@@ -3081,38 +3108,45 @@ void main(){ o=texture(uTex,vUv); }`;
     await submitRequest(text, pendingImage);
   }
   var WAKE_GPU_LIMIT = 40;
+  var wakeRunning = false;
   async function wakeNow(wakeText = "\u4F60\u88AB\u5524\u9192\u4E86\uFF0C\u7528\u6237\u6CA1\u6709\u7ED9\u4F60\u6307\u793A\uFF0C\u81EA\u7531\u884C\u52A8\u5427") {
-    if (busy) return;
-    let util = null;
+    if (busy || wakeRunning) return;
+    wakeRunning = true;
     try {
-      const raw = window.petWindow ? await window.petWindow.gpuUtil() : await (await fetch("/api/gpuutil")).text();
-      util = parseInt(raw, 10);
-      if (!Number.isFinite(util)) util = null;
-    } catch {
-    }
-    if (util !== null && util > WAKE_GPU_LIMIT) {
-      if (infiniteWake) {
-        queueInfiniteWake(3e4);
+      let util = null;
+      try {
+        const raw = window.petWindow ? await window.petWindow.gpuUtil() : await (await fetch("/api/gpuutil")).text();
+        util = parseInt(raw, 10);
+        if (!Number.isFinite(util)) util = null;
+      } catch {
+      }
+      if (util !== null && util > WAKE_GPU_LIMIT) {
+        if (infiniteWake) {
+          queueInfiniteWake(3e4);
+          return;
+        }
+        showBubble(`\u663E\u5361\u6B63\u5FD9\uFF08${util}%\uFF09\uFF0C\u8FD9\u6B21\u5148\u4E0D\u5524\u9192\u5566\uFF0C\u7A0D\u540E\u518D\u53EB\u6211`);
+        setTimeout(() => {
+          if (!busy) hideBubble();
+        }, 6e3);
         return;
       }
-      showBubble(`\u663E\u5361\u6B63\u5FD9\uFF08${util}%\uFF09\uFF0C\u8FD9\u6B21\u5148\u4E0D\u5524\u9192\u5566\uFF0C\u7A0D\u540E\u518D\u53EB\u6211`);
-      setTimeout(() => {
-        if (!busy) hideBubble();
-      }, 6e3);
-      return;
+      let b64 = null;
+      try {
+        b64 = window.petWindow ? await window.petWindow.captureScreen() : await (await fetch("/api/capture")).text();
+        if (b64 === "null") b64 = null;
+      } catch {
+      }
+      const userContent = [{ type: "text", text: wakeText }];
+      if (b64) userContent.push({ type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64 } });
+      await submitRequest(userContent);
+    } finally {
+      wakeRunning = false;
     }
-    let b64 = null;
-    try {
-      b64 = window.petWindow ? await window.petWindow.captureScreen() : await (await fetch("/api/capture")).text();
-      if (b64 === "null") b64 = null;
-    } catch {
-    }
-    const userContent2 = [{ type: "text", text: wakeText }];
-    if (b64) userContent2.push({ type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64 } });
-    await submitRequest(userContent2);
   }
   function interrupt() {
     if (!busy) return false;
+    turnAbortReason = "user";
     turnAbort?.abort();
     speech.stop();
     return true;
@@ -3220,19 +3254,16 @@ void main(){ o=texture(uTex,vUv); }`;
   setInterval(() => {
     if (infiniteWake && !busy) queueInfiniteWake(1e3);
   }, 6e4);
-  var busySeenSince = 0;
   setInterval(() => {
-    if (!busy) {
-      busySeenSince = 0;
+    if (!busy) return;
+    if (!lastTurnActivityTs) {
+      touchTurnActivity();
       return;
     }
-    if (!busySeenSince) {
-      busySeenSince = Date.now();
-      return;
-    }
-    if (Date.now() - busySeenSince < 5 * 6e4) return;
-    console.warn("[guard] busy \u5361\u4F4F\u8D85\u8FC7 5 \u5206\u949F\uFF0C\u5F3A\u5236\u4E2D\u65AD\u5E76\u91CA\u653E");
-    busySeenSince = 0;
+    if (Date.now() - lastTurnActivityTs < 5 * 6e4) return;
+    console.warn("[guard] \u5F53\u524D\u8F6E\u6B21\u65E0\u4EFB\u4F55\u8FDB\u5C55\u8D85\u8FC7 5 \u5206\u949F\uFF0C\u5F3A\u5236\u4E2D\u65AD\u5E76\u91CA\u653E");
+    turnAbortReason = "guard";
+    touchTurnActivity();
     try {
       turnAbort?.abort();
     } catch {
@@ -3250,7 +3281,13 @@ void main(){ o=texture(uTex,vUv); }`;
   }, 3e4);
   setInterval(() => {
     try {
-      window.petWindow && window.petWindow.wakeBeat && window.petWindow.wakeBeat({ infwake: !!infiniteWake, busy: !!busy, ctx: lastCtxTokens });
+      window.petWindow && window.petWindow.wakeBeat && window.petWindow.wakeBeat({
+        infwake: !!infiniteWake,
+        busy: !!busy,
+        ctx: lastCtxTokens,
+        turnSeq,
+        lastActivityTs: lastTurnActivityTs
+      });
     } catch {
     }
   }, 2e4);
@@ -3429,6 +3466,9 @@ void main(){ o=texture(uTex,vUv); }`;
       unlocked = true;
     }
     busy = true;
+    turnSeq += 1;
+    turnAbortReason = "";
+    touchTurnActivity();
     turnAbort = new AbortController();
     const isAbort = (e3) => e3?.name === "AbortError" || turnAbort?.signal.aborted;
     player.act("hop");
@@ -3458,30 +3498,31 @@ void main(){ o=texture(uTex,vUv); }`;
       }
       const hadSaved = lastExchange.hadSavedHistory;
       const oldReply = hadSaved && history.length ? history[history.length - 1].content || "" : "";
-      const userContent2 = lastExchange.userContent || "\uFF08\u7EE7\u7EED\uFF09";
-      const newReply = await askLLM(userContent2, turnAbort.signal, [], baseMsgs);
+      const userContent = lastExchange.userContent || "\uFF08\u7EE7\u7EED\uFF09";
+      const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs);
       const fullReply = oldReply ? oldReply + "\n" + newReply : newReply;
       if (hadSaved && history.length && history[history.length - 1].role === "assistant") {
         history[history.length - 1].content = fullReply;
       } else {
-        history.push({ role: "user", content: userContent2 }, { role: "assistant", content: fullReply });
+        history.push({ role: "user", content: userContent }, { role: "assistant", content: fullReply });
       }
       if (lastExchange) lastExchange.hadSavedHistory = true;
       await saveHistory();
       showBubble(fullReply);
       replied = true;
       react(newReply);
-      memoryAddFire(userContent2, fullReply);
+      memoryAddFire(userContent, fullReply);
       queueInfiniteWake();
       return true;
     } catch (e3) {
       if (isAbort(e3)) {
         if (!replied) {
-          showBubble("\uFF08\u5DF2\u6253\u65AD\uFF09");
+          showBubble(turnAbortReason === "guard" ? "\uFF08\u4E0A\u4E00\u8F6E\u54CD\u5E94\u8D85\u65F6\uFF0C\u81EA\u52A8\u91CD\u8FDE\u2026\uFF09" : "\uFF08\u5DF2\u6253\u65AD\uFF09");
           setTimeout(() => {
             if (!busy) hideBubble();
           }, 3e3);
         }
+        if (turnAbortReason === "guard") queueInfiniteWake(3e3);
         return false;
       }
       showBubble("\u7EE7\u7EED\u5931\u8D25: " + String(e3.message || e3), true);
@@ -3490,6 +3531,7 @@ void main(){ o=texture(uTex,vUv); }`;
     } finally {
       busy = false;
       turnAbort = null;
+      touchTurnActivity();
       input.focus();
     }
   }

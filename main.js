@@ -683,7 +683,7 @@ async function memoryInit(mode) {
     try {
       // Orama v3 的分词器必须挂在 components: { tokenizer } 下，否则会退化为默认空格分词（中文 0 命中）
       const db = await create({ schema: MEMORY_SCHEMA, components: { tokenizer: tok } });
-      const buf = fs.readFileSync(file);
+      const buf = await fs.promises.readFile(file);
       let raw;
       try { raw = JSON.parse(buf.toString('utf8')); } catch { raw = buf; }
       await load(db, raw);
@@ -692,15 +692,28 @@ async function memoryInit(mode) {
   }
   return create({ schema: MEMORY_SCHEMA, components: { tokenizer: tok } });
 }
-async function memorySave(mode) {
+const memSaveState = {};
+async function memorySaveNow(mode) {
   const { save } = await getOrama();
   const db = mode === 'debug' ? memoryDBDebug : memoryDB;
   if (!db) return;
-  fs.mkdirSync(path.dirname(memoryFileFor(mode)), { recursive: true });
+  const target = memoryFileFor(mode);
+  await fs.promises.mkdir(path.dirname(target), { recursive: true });
   const raw = await save(db);
   // v3：对象 → JSON 文本；旧版：ArrayBuffer/typed array → Buffer
   const isPlainObject = raw && typeof raw === 'object' && !Buffer.isBuffer(raw) && !(raw instanceof ArrayBuffer) && !ArrayBuffer.isView(raw);
-  fs.writeFileSync(memoryFileFor(mode), isPlainObject ? JSON.stringify(raw) : Buffer.from(raw));
+  const data = isPlainObject ? JSON.stringify(raw) : Buffer.from(raw);
+  const tmp = target + '.tmp';
+  await fs.promises.writeFile(tmp, data);
+  await fs.promises.rename(tmp, target);
+}
+async function memorySave(mode) {
+  const k = mode === 'debug' ? 'debug' : 'prod';
+  if (memSaveState[k]) clearTimeout(memSaveState[k]);
+  memSaveState[k] = setTimeout(() => {
+    memSaveState[k] = null;
+    memorySaveNow(mode).catch((e) => console.error('[memory] 索引异步落盘失败:', e.message));
+  }, 5000);
 }
 
 // 硅基流动 embeddings（config.json: siliconflowKey / embeddingModel）
@@ -708,6 +721,7 @@ async function sfEmbed(texts) {
   const cfg = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'config.json'), 'utf8'));
   const res = await fetch('https://api.siliconflow.cn/v1/embeddings', {
     method: 'POST',
+    signal: AbortSignal.timeout(8000),
     headers: { 'Authorization': 'Bearer ' + cfg.siliconflowKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: cfg.embeddingModel || 'BAAI/bge-m3', input: texts }),
   });
@@ -716,12 +730,24 @@ async function sfEmbed(texts) {
   return d.data.map((x) => x.embedding);
 }
 
+const memInitPromise = {};
+async function ensureMemoryDB(mode) {
+  const k = mode === 'debug' ? 'debug' : 'prod';
+  if (mode === 'debug' && memoryDBDebug) return memoryDBDebug;
+  if (mode !== 'debug' && memoryDB) return memoryDB;
+  if (memInitPromise[k]) return memInitPromise[k];
+  memInitPromise[k] = memoryInit(mode).then((db) => {
+    if (mode === 'debug') memoryDBDebug = db;
+    else memoryDB = db;
+    return db;
+  }).finally(() => { memInitPromise[k] = null; });
+  return memInitPromise[k];
+}
+
 async function memoryAdd(items, mode) {
   if (!items?.length) return { ok: true, count: 0 };
   const { insert } = await getOrama();
-  if (mode === 'debug') { if (!memoryDBDebug) memoryDBDebug = await memoryInit(mode); }
-  else { if (!memoryDB) memoryDB = await memoryInit(mode); }
-  const db = mode === 'debug' ? memoryDBDebug : memoryDB;
+  const db = await ensureMemoryDB(mode);
   const texts = items.map((i) => String(i.text || ''));
   let vectors;
   try { vectors = await sfEmbed(texts); }
@@ -736,9 +762,7 @@ async function memoryAdd(items, mode) {
 async function memorySearch(query, mode, limit = 5) {
   const { search } = await getOrama();
   // 冷启动保障：若此前未调用过 memoryAdd，显式加载或创建 db
-  if (mode === 'debug') { if (!memoryDBDebug) memoryDBDebug = await memoryInit(mode); }
-  else { if (!memoryDB) memoryDB = await memoryInit(mode); }
-  const db = mode === 'debug' ? memoryDBDebug : memoryDB;
+  const db = await ensureMemoryDB(mode);
   if (!db) return { ok: true, hits: [] };
   let qvec = null;
   try { qvec = (await sfEmbed([String(query)]))[0]; } catch {} // embed 失败 → 退化为纯词法
@@ -1513,7 +1537,17 @@ app.whenReady().then(() => {
 
   // 无限唤醒心跳：供外部看门狗判断"进程活着但循环死了"（渲染层每 20s 写一次）
   ipcMain.handle('wake-beat', (e, s) => {
-    try { fs.mkdirSync(PET_SPACE_DIR, { recursive: true }); fs.writeFileSync(path.join(PET_SPACE_DIR, '.wake-state.json'), JSON.stringify({ ts: Date.now(), infwake: !!(s && s.infwake), busy: !!(s && s.busy), ctx: Number(s && s.ctx) || 0 })); } catch {}
+    try {
+      fs.mkdirSync(PET_SPACE_DIR, { recursive: true });
+      fs.writeFileSync(path.join(PET_SPACE_DIR, '.wake-state.json'), JSON.stringify({
+        ts: Date.now(),
+        infwake: !!(s && s.infwake),
+        busy: !!(s && s.busy),
+        ctx: Number(s && s.ctx) || 0,
+        turnSeq: Number(s && s.turnSeq) || 0,
+        lastActivityTs: Number(s && s.lastActivityTs) || 0,
+      }));
+    } catch {}
   });
 
   // 文件工具：读/列目录无限制，写仅限 pet_space 沙箱

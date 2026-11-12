@@ -98,6 +98,10 @@ async function syncHistoryFromDisk() {
 }
 let unlocked = false;
 let busy = false;
+let turnSeq = 0;
+let lastTurnActivityTs = 0;
+let turnAbortReason = '';
+function touchTurnActivity() { lastTurnActivityTs = Date.now(); }
 
 // ===== 渲染帧率节流控制（解决巨幅全屏透明窗高频重绘吃满 GPU/DWM 的问题） =====
 let lastDrawTime = 0;
@@ -204,11 +208,16 @@ async function memoryAddFire(userContent, reply) {
 }
 async function memoryRecall(query, limit = 5) {
   try {
-    const r = window.petWindow
-      ? await window.petWindow.memorySearch(query, DEBUG_MODE ? 'debug' : undefined, limit)
-      : await (await fetch('/api/memory-search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, mode: DEBUG_MODE ? 'debug' : undefined, limit }) })).json();
-    const cur = textOf(query).trim();
-    return (r.hits || []).filter((h) => h.text.trim() !== cur && h.text.trim() !== '[用户] ' + cur);
+    const q = textOf(query).trim();
+    if (!q) return [];
+    const searchP = window.petWindow
+      ? window.petWindow.memorySearch(q, DEBUG_MODE ? 'debug' : undefined, limit)
+      : fetch('/api/memory-search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q, mode: DEBUG_MODE ? 'debug' : undefined, limit }) }).then((res) => res.json());
+    const r = await Promise.race([
+      searchP,
+      new Promise((resolve) => setTimeout(() => resolve({ hits: [] }), 8000)),
+    ]);
+    return (r && r.hits || []).filter((h) => h.text.trim() !== q && h.text.trim() !== '[用户] ' + q);
   } catch { return []; }
 }
 function formatMemories(hits) {
@@ -357,6 +366,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
   };
   let lastBubbleTs = 0;
   for (let round = 0; ; round++) {
+    touchTurnActivity();
     const slicer = makeSentenceSlicer();
     const model = 'strata-nothink'; // 固定 nothink：快；思考强度全靠 pet_think 指令动态控制
     const sendMsgs = bodyMsgs.slice();
@@ -382,6 +392,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
       body: JSON.stringify(reqPayload),
     });
     if (!res.ok) throw new Error(`LLM HTTP ${res.status}: ${(await res.text()).slice(0, 120)}`);
+    touchTurnActivity();
     // ===== SSE 解析 =====
     const reader = res.body.getReader();
     const dec = new TextDecoder();
@@ -443,6 +454,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
     while (true) {
       const rd = await reader.read();
       if (rd.done) break;
+      touchTurnActivity();
       sse += dec.decode(rd.value, { stream: true });
       let nl;
       while ((nl = sse.indexOf('\n')) >= 0) {
@@ -573,9 +585,11 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null) {
           bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: result });
           continue;
         }
+        touchTurnActivity();
         const out = window.petWindow?.fsTool
           ? await window.petWindow.fsTool({ name: call.function?.name, args: parsed })
           : await (await fetch('/api/fstool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: call.function?.name, args: parsed }) })).json();
+        touchTurnActivity();
         bodyMsgs.push({
           role: 'tool', tool_call_id: call.id,
           content: out.ok
@@ -749,6 +763,7 @@ function rlog(tag, msg) {
   try { fetch('/api/log', { method: 'POST', body: tag + ' ' + String(msg == null ? '' : msg) }).catch(() => {}); } catch {}
 }
 async function speakSegment(seg, signal) {
+  touchTurnActivity();
   if (Date.now() < gsvDownUntil) { rlog('tts-skip-down', Math.round((gsvDownUntil - Date.now()) / 1000) + 's left'); return; }
   rlog('tts-start', seg.slice(0, 30));
   // 单段合成上限 2 分钟：某一段卡住时不能把整条 TTS 队列（以及后续每一轮的语音）永久堵死
@@ -777,6 +792,7 @@ async function speakSegment(seg, signal) {
         ...TTS_REF,
       }),
     });
+    touchTurnActivity();
     if (res.status === 502 || res.status === 503 || res.status === 504) {
       gsvDownUntil = Date.now() + 60000;
       rlog('tts-upstream-' + res.status, 'silent 60s');
@@ -784,6 +800,7 @@ async function speakSegment(seg, signal) {
     }
     if (!res.ok) throw new Error('TTS HTTP ' + res.status);
     const blob = await res.blob();
+    touchTurnActivity();
     rlog('tts-ok', blob.size + 'B');
     speech.say(blob);
   } catch (e) {
@@ -794,6 +811,7 @@ async function speakSegment(seg, signal) {
   } finally {
     clearTimeout(timer);
     if (signal) signal.removeEventListener('abort', onAbort);
+    touchTurnActivity();
   }
 }
 async function speak(text, signal) {
@@ -829,18 +847,23 @@ async function submitRequest(text, image) {
   if (busy) return false;
   if (!unlocked) { speech.unlock(); unlocked = true; }
   busy = true;
+  turnSeq += 1;
+  turnAbortReason = '';
+  touchTurnActivity();
   turnAbort = new AbortController();
   const isAbort = (e) => e?.name === 'AbortError' || turnAbort?.signal.aborted;
-  await syncHistoryFromDisk(); // 磁盘是事实源：用户删/改历史文件先同步，再追加本轮
-  player.act('hop');
-  showBubble('…');
+  const userContent = image
+    ? [{ type: 'text', text: text || '（帮我看看这张图）' },
+       { type: 'image_url', image_url: { url: image } }]
+    : text;
   let replied = false;
   try {
-    const userContent = image
-      ? [{ type: 'text', text: text || '（帮我看看这张图）' },
-         { type: 'image_url', image_url: { url: image } }]
-      : text;
-    const reply = await askLLM(userContent, turnAbort.signal, await memoryRecall(text));
+    await syncHistoryFromDisk(); // 磁盘是事实源：用户删/改历史文件先同步，再追加本轮
+    player.act('hop');
+    showBubble('…');
+    const recalled = await memoryRecall(text);
+    touchTurnActivity();
+    const reply = await askLLM(userContent, turnAbort.signal, recalled);
     history.push({ role: 'assistant', content: reply });
     noteLoop(reply);
     if (lastExchange) lastExchange.hadSavedHistory = true;
@@ -856,11 +879,12 @@ async function submitRequest(text, image) {
     if (isAbort(e)) {
       // 用户打断：还没来得及说的那句话放回输入框
       if (!replied) {
-        showBubble('（已打断）');
+        showBubble(turnAbortReason === 'guard' ? '（上一轮响应超时，自动重连…）' : '（已打断）');
         setTimeout(() => { if (!busy) hideBubble(); }, 3000);
         const t = typeof userContent === 'string' ? userContent : (userContent.find?.((c) => c.type === 'text')?.text || '');
         if (t && !/^(你被唤醒了|现在是无限唤醒模式|（)/.test(t)) input.value = t;
       }
+      if (turnAbortReason === 'guard') queueInfiniteWake(3000);
       return false;
     }
     showBubble(String(e.message || e), true);
@@ -869,6 +893,7 @@ async function submitRequest(text, image) {
   } finally {
     busy = false;
     turnAbort = null;
+    touchTurnActivity();
     input.focus();
   }
 }
@@ -887,34 +912,41 @@ async function send() {
 // 手动唤醒：先查主卡 GPU 占用率（防打扰），通过则自动截屏 + 固定唤醒提示，让她自由行动。
 // 以后定时自动唤醒复用 wakeNow()，前置条件一致
 const WAKE_GPU_LIMIT = 40; // 主卡占用率上限（%），超过则跳过本次唤醒
+let wakeRunning = false;
 async function wakeNow(wakeText = '你被唤醒了，用户没有给你指示，自由行动吧') {
-  if (busy) return;
-  let util = null;
+  if (busy || wakeRunning) return;
+  wakeRunning = true;
   try {
-    const raw = window.petWindow ? await window.petWindow.gpuUtil() : await (await fetch('/api/gpuutil')).text();
-    util = parseInt(raw, 10);
-    if (!Number.isFinite(util)) util = null;
-  } catch {}
-  if (util !== null && util > WAKE_GPU_LIMIT) {
-    if (infiniteWake) { queueInfiniteWake(30000); return; } // 无限模式：显卡忙就等会儿再试，不刷屏
-    showBubble(`显卡正忙（${util}%），这次先不唤醒啦，稍后再叫我`);
-    setTimeout(() => { if (!busy) hideBubble(); }, 6000);
-    return;
+    let util = null;
+    try {
+      const raw = window.petWindow ? await window.petWindow.gpuUtil() : await (await fetch('/api/gpuutil')).text();
+      util = parseInt(raw, 10);
+      if (!Number.isFinite(util)) util = null;
+    } catch {}
+    if (util !== null && util > WAKE_GPU_LIMIT) {
+      if (infiniteWake) { queueInfiniteWake(30000); return; } // 无限模式：显卡忙就等会儿再试，不刷屏
+      showBubble(`显卡正忙（${util}%），这次先不唤醒啦，稍后再叫我`);
+      setTimeout(() => { if (!busy) hideBubble(); }, 6000);
+      return;
+    }
+    let b64 = null;
+    try {
+      b64 = window.petWindow
+        ? await window.petWindow.captureScreen()
+        : await (await fetch('/api/capture')).text();
+      if (b64 === 'null') b64 = null;
+    } catch {}
+    const userContent = [{ type: 'text', text: wakeText }];
+    if (b64) userContent.push({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b64 } });
+    await submitRequest(userContent);
+  } finally {
+    wakeRunning = false;
   }
-  let b64 = null;
-  try {
-    b64 = window.petWindow
-      ? await window.petWindow.captureScreen()
-      : await (await fetch('/api/capture')).text();
-    if (b64 === 'null') b64 = null;
-  } catch {}
-  const userContent = [{ type: 'text', text: wakeText }];
-  if (b64) userContent.push({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b64 } });
-  await submitRequest(userContent);
 }
 // 🔔 双语义：空闲 = 手动唤醒；忙碌 = 插话打断（立刻停语音、掐断生成，没说的话回到输入框）
 function interrupt() {
   if (!busy) return false;
+  turnAbortReason = 'user';
   turnAbort?.abort();
   speech.stop();
   return true;
@@ -989,15 +1021,15 @@ function noteLoop(reply) {
   prevReplyNorm = cur;
 }
 setInterval(() => { if (infiniteWake && !busy) queueInfiniteWake(1000); }, 60000);   // 循环万一因异常断了，兜底续上
-// busy 卡死兜底：某个 await（工具/请求）永远不返回时 finally 不会执行，busy 会永远为 true，
-// 唤醒循环和上面的兜底全都停摆（看门狗只看心跳，还会以为一切正常）。持续 5 分钟就强制中断并续上。
-let busySeenSince = 0;
+// busy 卡死兜底：某个 await（工具/请求）真的无进展卡住超过 5 分钟才强制中断并续上；
+// 以 lastTurnActivityTs 为准（流式吐字/调工具/TTS 均会刷新），避免连续多轮健康无限唤醒被误判为卡死！
 setInterval(() => {
-  if (!busy) { busySeenSince = 0; return; }
-  if (!busySeenSince) { busySeenSince = Date.now(); return; }
-  if (Date.now() - busySeenSince < 5 * 60000) return;
-  console.warn('[guard] busy 卡住超过 5 分钟，强制中断并释放');
-  busySeenSince = 0;
+  if (!busy) return;
+  if (!lastTurnActivityTs) { touchTurnActivity(); return; }
+  if (Date.now() - lastTurnActivityTs < 5 * 60000) return;
+  console.warn('[guard] 当前轮次无任何进展超过 5 分钟，强制中断并释放');
+  turnAbortReason = 'guard';
+  touchTurnActivity();
   try { turnAbort?.abort(); } catch {}
   try { speech.stop && speech.stop(); } catch {}
   busy = false;
@@ -1005,7 +1037,17 @@ setInterval(() => {
   setTimeout(() => { if (!busy) hideBubble(); }, 6000);
   if (infiniteWake) queueInfiniteWake(3000);
 }, 30000);
-setInterval(() => { try { window.petWindow && window.petWindow.wakeBeat && window.petWindow.wakeBeat({ infwake: !!infiniteWake, busy: !!busy, ctx: lastCtxTokens }); } catch {} }, 20000);
+setInterval(() => {
+  try {
+    window.petWindow && window.petWindow.wakeBeat && window.petWindow.wakeBeat({
+      infwake: !!infiniteWake,
+      busy: !!busy,
+      ctx: lastCtxTokens,
+      turnSeq,
+      lastActivityTs: lastTurnActivityTs,
+    });
+  } catch {}
+}, 20000);
 // ===== 语音录音 & SenseVoice 识别 =====
 let micStream = null;
 let micAudioCtx = null;
@@ -1179,6 +1221,9 @@ async function continueRequest() {
   }
   if (!unlocked) { speech.unlock(); unlocked = true; }
   busy = true;
+  turnSeq += 1;
+  turnAbortReason = '';
+  touchTurnActivity();
   turnAbort = new AbortController();
   const isAbort = (e) => e?.name === 'AbortError' || turnAbort?.signal.aborted;
   player.act('hop');
@@ -1239,9 +1284,10 @@ async function continueRequest() {
   } catch (e) {
     if (isAbort(e)) {
       if (!replied) {
-        showBubble('（已打断）');
+        showBubble(turnAbortReason === 'guard' ? '（上一轮响应超时，自动重连…）' : '（已打断）');
         setTimeout(() => { if (!busy) hideBubble(); }, 3000);
       }
+      if (turnAbortReason === 'guard') queueInfiniteWake(3000);
       return false;
     }
     showBubble('继续失败: ' + String(e.message || e), true);
@@ -1250,6 +1296,7 @@ async function continueRequest() {
   } finally {
     busy = false;
     turnAbort = null;
+    touchTurnActivity();
     input.focus();
   }
 }
