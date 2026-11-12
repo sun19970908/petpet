@@ -61,6 +61,48 @@ export function getMemoryInsertIndex(prunedMain = [], prunedInf = [], backTurns 
   return turnStarts[turnStarts.length - keepHistTurns];
 }
 
+// 组装 Orama 检索 query：带上最近若干轮上下文（而不仅是一句话），优先保留最新内容并限制长度
+export function buildMemoryQuery({
+  mainHistory = [],
+  infHistory = [],
+  isInfiniteWake = false,
+  userContent = '',
+  recentTurns = 5,
+  maxChars = 1200,
+} = {}) {
+  const currentText = textOf(userContent).trim();
+  const combined = isInfiniteWake
+    ? [
+        ...(Array.isArray(mainHistory) ? mainHistory.slice(-4) : []),
+        ...(Array.isArray(infHistory) ? infHistory.slice(-recentTurns) : []),
+      ]
+    : (Array.isArray(mainHistory) ? mainHistory.slice(-(recentTurns * 2)) : []);
+
+  const lines = [];
+  for (const m of combined) {
+    const t = textOf(m?.content).trim();
+    if (!t) continue;
+    const tag = m.role === 'assistant' ? '[DeepSeek娘]' : '[用户]';
+    lines.push(`${tag} ${t}`);
+  }
+  // 普通对话拼上最新用户输入；无限唤醒已有上下文时不混入固定唤醒提示词，避免稀释检索语义
+  if (currentText && (!isInfiniteWake || !lines.length)) {
+    lines.push(`[用户] ${currentText}`);
+  }
+
+  const kept = [];
+  let total = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let line = lines[i];
+    if (line.length > maxChars) line = line.slice(0, maxChars);
+    const nextTotal = total + line.length + (kept.length ? 1 : 0);
+    if (nextTotal > maxChars && kept.length > 0) break;
+    kept.unshift(line);
+    total = nextTotal;
+  }
+  return kept.join('\n').trim();
+}
+
 export function buildUserTurn(userContent, toolLedger = '') {
   const userText = textOf(userContent) + String(toolLedger || '');
   if (Array.isArray(userContent)) {

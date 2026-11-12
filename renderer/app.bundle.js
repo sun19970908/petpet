@@ -2285,6 +2285,41 @@ void main(){ o=texture(uTex,vUv); }`;
     if (turnStarts.length <= keepHistTurns) return 0;
     return turnStarts[turnStarts.length - keepHistTurns];
   }
+  function buildMemoryQuery({
+    mainHistory = [],
+    infHistory: infHistory2 = [],
+    isInfiniteWake = false,
+    userContent = "",
+    recentTurns = 5,
+    maxChars = 1200
+  } = {}) {
+    const currentText = textOf(userContent).trim();
+    const combined = isInfiniteWake ? [
+      ...Array.isArray(mainHistory) ? mainHistory.slice(-4) : [],
+      ...Array.isArray(infHistory2) ? infHistory2.slice(-recentTurns) : []
+    ] : Array.isArray(mainHistory) ? mainHistory.slice(-(recentTurns * 2)) : [];
+    const lines = [];
+    for (const m3 of combined) {
+      const t3 = textOf(m3?.content).trim();
+      if (!t3) continue;
+      const tag = m3.role === "assistant" ? "[DeepSeek\u5A18]" : "[\u7528\u6237]";
+      lines.push(`${tag} ${t3}`);
+    }
+    if (currentText && (!isInfiniteWake || !lines.length)) {
+      lines.push(`[\u7528\u6237] ${currentText}`);
+    }
+    const kept = [];
+    let total = 0;
+    for (let i3 = lines.length - 1; i3 >= 0; i3--) {
+      let line = lines[i3];
+      if (line.length > maxChars) line = line.slice(0, maxChars);
+      const nextTotal = total + line.length + (kept.length ? 1 : 0);
+      if (nextTotal > maxChars && kept.length > 0) break;
+      kept.unshift(line);
+      total = nextTotal;
+    }
+    return kept.join("\n").trim();
+  }
   function buildUserTurn(userContent, toolLedger = "") {
     const userText = textOf(userContent) + String(toolLedger || "");
     if (Array.isArray(userContent)) {
@@ -2540,16 +2575,17 @@ void main(){ o=texture(uTex,vUv); }`;
     } catch {
     }
   }
-  async function memoryRecall(query, limit = 5) {
+  async function memoryRecall(query, limit = 5, rawText = "") {
     try {
       const q3 = textOf(query).trim();
       if (!q3) return [];
+      const selfText = textOf(rawText).trim() || q3;
       const searchP = window.petWindow ? window.petWindow.memorySearch(q3, DEBUG_MODE ? "debug" : void 0, limit) : fetch("/api/memory-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q3, mode: DEBUG_MODE ? "debug" : void 0, limit }) }).then((res) => res.json());
       const r2 = await Promise.race([
         searchP,
         new Promise((resolve) => setTimeout(() => resolve({ hits: [] }), 8e3))
       ]);
-      return (r2 && r2.hits || []).filter((h3) => h3.text.trim() !== q3 && h3.text.trim() !== "[\u7528\u6237] " + q3);
+      return (r2 && r2.hits || []).filter((h3) => h3.text.trim() !== selfText && h3.text.trim() !== "[\u7528\u6237] " + selfText);
     } catch {
       return [];
     }
@@ -3168,7 +3204,13 @@ void main(){ o=texture(uTex,vUv); }`;
       if (isInf) await syncHistoryFromDisk(true);
       player.act("hop");
       showBubble("\u2026");
-      const recalled = await memoryRecall(text);
+      const memQuery = buildMemoryQuery({
+        mainHistory: history,
+        infHistory,
+        isInfiniteWake: isInf,
+        userContent
+      });
+      const recalled = await memoryRecall(memQuery, 5, text);
       touchTurnActivity();
       const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
       if (isInf) {

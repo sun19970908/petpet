@@ -1,7 +1,7 @@
 // DeepSeek 娘桌宠 - 渲染层：livliv player + 本地 Strata + GPT-SoVITS
 import { Player } from '@livliv-dev/player';
 import { createSpeech } from '@livliv-dev/player/voice';
-import { THINK_MODULES, INF_WAKE_TEXT, textOf, formatMemories, assemblePrompt } from './prompt-builder.js';
+import { THINK_MODULES, INF_WAKE_TEXT, textOf, formatMemories, buildMemoryQuery, assemblePrompt } from './prompt-builder.js';
 
 // 帧率封顶 30fps：桌宠动画（呼吸/眨眼/摇摆）足够流畅；60Hz 全速渲染会让 DWM 合成吃掉大量 GPU
 // 必须在 new Player() 之前装上——livliv 的渲染循环每帧经 window.requestAnimationFrame 排程
@@ -207,10 +207,11 @@ async function memoryAddFire(userContent, reply) {
     else await fetch('/api/memory-add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, mode: DEBUG_MODE ? 'debug' : undefined }) });
   } catch {}
 }
-async function memoryRecall(query, limit = 5) {
+async function memoryRecall(query, limit = 5, rawText = '') {
   try {
     const q = textOf(query).trim();
     if (!q) return [];
+    const selfText = textOf(rawText).trim() || q;
     const searchP = window.petWindow
       ? window.petWindow.memorySearch(q, DEBUG_MODE ? 'debug' : undefined, limit)
       : fetch('/api/memory-search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q, mode: DEBUG_MODE ? 'debug' : undefined, limit }) }).then((res) => res.json());
@@ -218,7 +219,7 @@ async function memoryRecall(query, limit = 5) {
       searchP,
       new Promise((resolve) => setTimeout(() => resolve({ hits: [] }), 8000)),
     ]);
-    return (r && r.hits || []).filter((h) => h.text.trim() !== q && h.text.trim() !== '[用户] ' + q);
+    return (r && r.hits || []).filter((h) => h.text.trim() !== selfText && h.text.trim() !== '[用户] ' + selfText);
   } catch { return []; }
 }
 // 工具调用台账：自动注入（她真实做过什么的唯一权威记录，防"没做却说做了"）
@@ -848,7 +849,13 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
     if (isInf) await syncHistoryFromDisk(true); // 无限唤醒阶段独立历史同步（跨截止点自动换新文件）
     player.act('hop');
     showBubble('…');
-    const recalled = await memoryRecall(text);
+    const memQuery = buildMemoryQuery({
+      mainHistory: history,
+      infHistory,
+      isInfiniteWake: isInf,
+      userContent,
+    });
+    const recalled = await memoryRecall(memQuery, 5, text);
     touchTurnActivity();
     const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
     if (isInf) {
