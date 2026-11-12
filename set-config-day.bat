@@ -5,7 +5,7 @@ cd /d "%~dp0"
 
 rem =======================================================
 rem  [白天配置卡片] 用记事本修改下方参数，保存后双击运行即可应用
-rem  (此脚本将自动改写 config.json，无需重启桌宠即时生效)
+rem  (此脚本只改写 config.json：不重启、也不启动桌宠)
 rem  =======================================================
 
 rem 1. 当前 LLM 档案名称 (对应 llm.config.json 中的 profile 名称，例如：硅基流动 或 strata)
@@ -21,8 +21,8 @@ rem 3. 语音闲置保持秒数 (仅在 auto 模式下有效，默认 120 秒)
 set "GSV_IDLE=120"
 
 rem 4. 是否同步开启看门狗守护进程：
-rem    on  = 开启看门狗 (若未运行则拉起保活)
-rem    off = 关闭看门狗 (立即杀掉运行中的看门狗残留)
+rem    on  = 记录开启（只写配置，不主动拉起，避免顺带启动桌宠）
+rem    off = 立即关闭运行中的看门狗
 set "WATCHDOG=off"
 
 rem =======================================================
@@ -42,9 +42,9 @@ if errorlevel 1 (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%~dp0config.json'; $c=Get-Content -Raw $p | ConvertFrom-Json; if('%LLM_PROFILE%') { $c.llmProfile='%LLM_PROFILE%' }; if('%TTS_MODE%') { $c.ttsMode='%TTS_MODE%' }; if('%GSV_IDLE%') { $c.gsvIdleSeconds=[int]'%GSV_IDLE%' }; $c.watchdog=('%WATCHDOG%' -eq 'on'); [IO.File]::WriteAllText($p, ($c | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false)); Write-Host '[OK] 已通过备用通道成功改写 config.json！'"
 )
 
-rem 看门狗按上面的 WATCHDOG 开关，由 apply-config.js 自动拉起或关闭
+rem 看门狗只在 WATCHDOG=off 时关闭；on 只写配置，下次启动桌宠时生效
 
 echo.
-echo 提示：已成功改写 config.json，桌宠无需重启即可即时生效。
+echo 提示：config.json 已改写。LLM/语音下一轮生效；看门狗开启需下次启动桌宠时生效。
 echo.
 pause
