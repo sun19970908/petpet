@@ -1,8 +1,8 @@
 // 连续唤醒（∞）状态机：开关持久化、自动排队续唤醒、上下文与文字死循环护栏
 // 只依赖注入进来的 wakeText / wakeNow / showBubble / isBusy，不直接碰全局状态
 
-const CTX_ABORT_TOKENS = 64000;
 const CTX_ABORT_COUNT = 3;
+const DEFAULT_CTX_LIMIT = 64000;
 const TITLE_ON = '连续唤醒开：她一停下来就再唤醒（点击关闭）';
 const TITLE_OFF = '连续唤醒：她一停下来就再唤醒（无限模式）';
 
@@ -27,7 +27,7 @@ function replySim(a, b) {
   return tot ? (2 * inter) / tot : 0;
 }
 
-export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, storage = window.localStorage }) {
+export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, storage = window.localStorage }) {
   let on = false;
   let timer = null;
   let lastCtxTokens = 0;
@@ -85,15 +85,16 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
     } catch {}
   }
 
-  // 中止条件：上下文多次接近/超过 64k → 停无限唤醒（避免在塞满的上下文里空转，烧一晚上）
+  // 中止条件：上下文多次接近/超过当前模型档案的 contextLength → 停无限唤醒（避免在塞满的上下文里空转，烧一晚上）
   function noteContext(pt) {
     pt = Number(pt);
     if (!Number.isFinite(pt) || pt <= 0) return;
     lastCtxTokens = pt;
-    if (pt >= CTX_ABORT_TOKENS) ctxOverCount += 1;
+    const limit = Number(getCtxLimit()) || DEFAULT_CTX_LIMIT;
+    if (pt >= limit) ctxOverCount += 1;
     if (ctxOverCount >= CTX_ABORT_COUNT && on) {
-      stop('上下文已经塞到 64k 好几次啦，我先停下无限唤醒，等主人回来～');
-      console.warn('[infwake] 停止无限唤醒：prompt_tokens 达 64k 第 ' + ctxOverCount + ' 次');
+      stop(`上下文已经塞到 ${Math.round(limit / 1000)}k 好几次啦，我先停下无限唤醒，等主人回来～`);
+      console.warn('[infwake] 停止无限唤醒：prompt_tokens 达 ' + limit + ' 第 ' + ctxOverCount + ' 次');
     }
   }
 

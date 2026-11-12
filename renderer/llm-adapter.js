@@ -34,6 +34,7 @@ export const DEFAULT_LLM_CONFIG = {
   model: 'strata-nothink',
   customPrompt: '',
   wakeGpuLimit: 40,
+  contextLength: 64000,
   requestDefaults: DEFAULT_REQUEST_DEFAULTS,
   capabilities: DEFAULT_CAPABILITIES,
   promptPolicy: DEFAULT_PROMPT_POLICY,
@@ -52,11 +53,20 @@ export function normalizeLlmConfig(raw) {
   const wakeGpuLimit = parseGpuLimit(
     src.wakeGpuLimit ?? src.wakeGpuThreshold ?? src.wake_gpu_limit ?? src.gpuLimit ?? policySrc.wakeGpuLimit
   ) ?? DEFAULT_LLM_CONFIG.wakeGpuLimit;
+  const parseCtx = (val) => {
+    if (val === null || val === undefined || val === '') return null;
+    const n = Number(val);
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.max(Math.round(n), 1024), 1048576) : null;
+  };
+  const contextLength = parseCtx(
+    src.contextLength ?? src.context_length ?? reqSrc.contextLength ?? reqSrc.context_length
+  ) ?? DEFAULT_LLM_CONFIG.contextLength;
   return {
     activeProfile: src.activeProfile || DEFAULT_LLM_CONFIG.activeProfile,
     model: src.model || DEFAULT_LLM_CONFIG.model,
     customPrompt: String(src.customPrompt ?? policySrc.customPrompt ?? DEFAULT_LLM_CONFIG.customPrompt),
     wakeGpuLimit,
+    contextLength,
     hasApiKey: Boolean(src.hasApiKey),
     requestDefaults: {
       ...DEFAULT_REQUEST_DEFAULTS,

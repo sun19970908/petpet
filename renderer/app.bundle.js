@@ -2609,6 +2609,7 @@ void main(){ o=texture(uTex,vUv); }`;
     model: "strata-nothink",
     customPrompt: "",
     wakeGpuLimit: 40,
+    contextLength: 64e3,
     requestDefaults: DEFAULT_REQUEST_DEFAULTS,
     capabilities: DEFAULT_CAPABILITIES,
     promptPolicy: DEFAULT_PROMPT_POLICY
@@ -2626,11 +2627,20 @@ void main(){ o=texture(uTex,vUv); }`;
     const wakeGpuLimit = parseGpuLimit(
       src.wakeGpuLimit ?? src.wakeGpuThreshold ?? src.wake_gpu_limit ?? src.gpuLimit ?? policySrc.wakeGpuLimit
     ) ?? DEFAULT_LLM_CONFIG.wakeGpuLimit;
+    const parseCtx = (val) => {
+      if (val === null || val === void 0 || val === "") return null;
+      const n4 = Number(val);
+      return Number.isFinite(n4) && n4 > 0 ? Math.min(Math.max(Math.round(n4), 1024), 1048576) : null;
+    };
+    const contextLength = parseCtx(
+      src.contextLength ?? src.context_length ?? reqSrc.contextLength ?? reqSrc.context_length
+    ) ?? DEFAULT_LLM_CONFIG.contextLength;
     return {
       activeProfile: src.activeProfile || DEFAULT_LLM_CONFIG.activeProfile,
       model: src.model || DEFAULT_LLM_CONFIG.model,
       customPrompt: String(src.customPrompt ?? policySrc.customPrompt ?? DEFAULT_LLM_CONFIG.customPrompt),
       wakeGpuLimit,
+      contextLength,
       hasApiKey: Boolean(src.hasApiKey),
       requestDefaults: {
         ...DEFAULT_REQUEST_DEFAULTS,
@@ -3787,8 +3797,8 @@ ${note}` : note };
   }
 
   // renderer/infinite-wake.js
-  var CTX_ABORT_TOKENS = 64e3;
   var CTX_ABORT_COUNT = 3;
+  var DEFAULT_CTX_LIMIT = 64e3;
   var TITLE_ON = "\u8FDE\u7EED\u5524\u9192\u5F00\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u70B9\u51FB\u5173\u95ED\uFF09";
   var TITLE_OFF = "\u8FDE\u7EED\u5524\u9192\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u65E0\u9650\u6A21\u5F0F\uFF09";
   function normReply(s3) {
@@ -3813,7 +3823,7 @@ ${note}` : note };
     for (const n4 of B3.values()) tot += n4;
     return tot ? 2 * inter / tot : 0;
   }
-  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, storage = window.localStorage }) {
+  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, storage = window.localStorage }) {
     let on = false;
     let timer = null;
     let lastCtxTokens = 0;
@@ -3880,10 +3890,11 @@ ${note}` : note };
       pt = Number(pt);
       if (!Number.isFinite(pt) || pt <= 0) return;
       lastCtxTokens = pt;
-      if (pt >= CTX_ABORT_TOKENS) ctxOverCount += 1;
+      const limit = Number(getCtxLimit()) || DEFAULT_CTX_LIMIT;
+      if (pt >= limit) ctxOverCount += 1;
       if (ctxOverCount >= CTX_ABORT_COUNT && on) {
-        stop("\u4E0A\u4E0B\u6587\u5DF2\u7ECF\u585E\u5230 64k \u597D\u51E0\u6B21\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
-        console.warn("[infwake] \u505C\u6B62\u65E0\u9650\u5524\u9192\uFF1Aprompt_tokens \u8FBE 64k \u7B2C " + ctxOverCount + " \u6B21");
+        stop(`\u4E0A\u4E0B\u6587\u5DF2\u7ECF\u585E\u5230 ${Math.round(limit / 1e3)}k \u597D\u51E0\u6B21\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E`);
+        console.warn("[infwake] \u505C\u6B62\u65E0\u9650\u5524\u9192\uFF1Aprompt_tokens \u8FBE " + limit + " \u7B2C " + ctxOverCount + " \u6B21");
       }
     }
     function noteLoop(reply, usedTools) {
@@ -4548,7 +4559,8 @@ ${note}` : note };
     wakeNow,
     showBubble,
     isBusy: () => busy,
-    wakeText: INF_WAKE_TEXT
+    wakeText: INF_WAKE_TEXT,
+    getCtxLimit: () => llmConfig?.contextLength
   });
   wake.startKeepalive(6e4);
   $3("infwake").addEventListener("click", () => wake.toggle());

@@ -648,6 +648,7 @@ const wake = createInfiniteWake({
   showBubble,
   isBusy: () => busy,
   wakeText: INF_WAKE_TEXT,
+  getCtxLimit: () => llmConfig?.contextLength,
 });
 wake.startKeepalive(60000);
 $('infwake').addEventListener('click', () => wake.toggle());

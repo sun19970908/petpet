@@ -7,6 +7,7 @@ const DEFAULT_PROFILE = {
   model: 'strata-nothink',
   customPrompt: '',
   wakeGpuLimit: 40,
+  contextLength: 65536,
   requestDefaults: {
     temperature: 0.8,
     max_tokens: 65536,
