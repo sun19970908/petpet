@@ -65,7 +65,7 @@ function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envThi
   function getServerConfig() {
     const fileCfg = loadLlmConfig(APP_ROOT);
     const appCfg = typeof getConfig === 'function' ? (getConfig() || {}) : {};
-    // 用文件里“显式写过”的 llmProfile 参与优先级判断，避免默认值把 llm.config.json 的 activeProfile 压掉
+    // 用文件里“显式写过”的 llmProfile 参与优先级判断，避免默认值把档案压掉；档案名只在 config.json
     const rawCfg = readJson(configPath(APP_ROOT), {});
     const profileName = resolveActiveProfile({
       config: rawCfg,
