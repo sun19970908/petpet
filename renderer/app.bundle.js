@@ -2381,6 +2381,440 @@ void main(){ o=texture(uTex,vUv); }`;
     return { messages, consumedForceToolPrefill };
   }
 
+  // renderer/tools-schema.js
+  var TOOLS = [
+    { type: "function", function: { name: "read_file", description: "\u8BFB\u53D6\u4E00\u4E2A\u6587\u672C\u6587\u4EF6\uFF08\u4EFB\u610F\u8DEF\u5F84\uFF0C\u53EA\u8BFB\uFF09\u3002\u652F\u6301\u4F20 start_line/end_line \u53EA\u8BFB\u4E00\u90E8\u5206\u884C\uFF0C\u6216\u4F20 query \u641C\u7D22\u5173\u952E\u8BCD\u5B9A\u4F4D\u884C\u53F7\uFF1B\u4E0D\u4F20\u4EFB\u4F55\u53EF\u9009\u53C2\u6570\u5219\u6574\u4EFD\u8BFB\u53D6\u3002\u5927\u6587\u4EF6\uFF08\u4EE3\u7801\u3001\u65E5\u5FD7\u7B49\uFF09\u5F3A\u70C8\u5EFA\u8BAE\u5148\u7528 query \u641C\u5B9A\u4F4D\uFF0C\u6216\u7528 start_line/end_line \u5206\u6BB5\u770B\uFF0C\u514D\u5F97\u6491\u7206\u4E0A\u4E0B\u6587\u3002", parameters: { type: "object", properties: { path: { type: "string", description: "\u6587\u4EF6\u5B8C\u6574\u8DEF\u5F84" }, start_line: { type: "number", description: "\u53EF\u9009\uFF1A\u8D77\u59CB\u884C\u53F7\uFF08\u4ECE 1 \u5F00\u59CB\uFF1B\u4F20\u8D1F\u6570\u5982 -100 \u8868\u793A\u8BFB\u5012\u6570 100 \u884C\uFF09" }, end_line: { type: "number", description: "\u53EF\u9009\uFF1A\u7ED3\u675F\u884C\u53F7\uFF08\u53EA\u4F20 start_line \u4E0D\u4F20 end_line \u65F6\u9ED8\u8BA4\u5411\u540E\u8BFB 150 \u884C\uFF09" }, query: { type: "string", description: "\u53EF\u9009\uFF1A\u5173\u952E\u8BCD\u641C\u7D22\uFF08\u5FFD\u7565\u5927\u5C0F\u5199\uFF09\uFF0C\u53EA\u8FD4\u56DE\u547D\u4E2D\u7684\u884C\u53F7\u53CA\u4E0A\u4E0B 2 \u884C\u7247\u6BB5\uFF1B\u9002\u5408\u5148\u5B9A\u4F4D\u518D\u6309\u884C\u53F7\u8BFB" }, context_lines: { type: "number", description: "\u53EF\u9009\uFF1A\u914D\u5408 query \u4F7F\u7528\uFF0C\u547D\u4E2D\u884C\u4E0A\u4E0B\u5404\u9644\u5E26\u51E0\u884C\u4E0A\u4E0B\u6587\uFF08\u9ED8\u8BA4 2\uFF0C\u6700\u5927 10\uFF09" } }, required: ["path"] } } },
+    { type: "function", function: { name: "list_dir", description: "\u5217\u51FA\u76EE\u5F55\u91CC\u7684\u6587\u4EF6\u548C\u5B50\u76EE\u5F55", parameters: { type: "object", properties: { path: { type: "string", description: "\u76EE\u5F55\u5B8C\u6574\u8DEF\u5F84" } }, required: ["path"] } } },
+    { type: "function", function: { name: "file_tool", description: "\u5BF9 pet_space \u6C99\u76D2\u91CC\u7684\u6587\u4EF6\u505A\u5199/\u8FFD\u52A0/\u590D\u5236/\u5220\u9664\u64CD\u4F5C\uFF08\u56DB\u5408\u4E00\uFF09\u3002\u6240\u6709\u5199\u64CD\u4F5C\u53EA\u5141\u8BB8\u5728 G:/AI/livliv-pet/pet_space/ \u76EE\u5F55\u5185\uFF08\u53EF\u542B\u5B50\u76EE\u5F55\uFF09\uFF0C\u5176\u4ED6\u8DEF\u5F84\u4E00\u5F8B\u62D2\u7EDD\u3002\u6839\u636E action \u9009\u5BF9\u5E94\u53C2\u6570\uFF1A\n- write\uFF1A\u8986\u76D6\u5199\u5165\uFF08\u6216\u65B0\u5EFA\uFF09\u6587\u4EF6 \u2192 \u586B path + content\n- append\uFF1A\u5728\u6587\u4EF6\u672B\u5C3E\u8FFD\u52A0\uFF08\u4E0D\u5B58\u5728\u5219\u65B0\u5EFA\uFF09\u2192 \u586B path + content\n- copy\uFF1A\u590D\u5236\u6587\u4EF6\u6216\u76EE\u5F55\u5230\u6C99\u76D2\u5185 \u2192 \u586B src_path\uFF08\u6E90\u53EF\u4EFB\u610F\u53EF\u8BFB\u8DEF\u5F84\uFF09+ dest_path\uFF08\u76EE\u6807\u5FC5\u987B\u5728\u6C99\u76D2\u5185\uFF09\n- delete\uFF1A\u5220\u9664\u6C99\u76D2\u5185\u6587\u4EF6\u6216\u76EE\u5F55 \u2192 \u586B path\n \u6CE8\u610F\uFF1A\u6539\u6587\u4EF6\u4E00\u5C0F\u6BB5\u7528 edit_file \u800C\u4E0D\u662F file_tool\u3002", parameters: { type: "object", properties: { action: { type: "string", enum: ["write", "append", "copy", "delete"], description: "\u8981\u505A\u7684\u64CD\u4F5C\uFF1Awrite \u8986\u76D6\u5199\u5165 / append \u8FFD\u52A0 / copy \u590D\u5236 / delete \u5220\u9664" }, path: { type: "string", description: "write/append/delete \u7528\uFF1A\u76EE\u6807\u6587\u4EF6\u6216\u76EE\u5F55\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" }, content: { type: "string", description: "write/append \u7528\uFF1A\u8981\u5199\u5165\u6216\u8FFD\u52A0\u7684\u6587\u672C\u5185\u5BB9" }, src_path: { type: "string", description: "copy \u7528\uFF1A\u6E90\u6587\u4EF6\u6216\u76EE\u5F55\u7684\u5B8C\u6574\u8DEF\u5F84\uFF08\u53EF\u8BFB\u4EFB\u610F\u8DEF\u5F84\uFF09" }, dest_path: { type: "string", description: "copy \u7528\uFF1A\u76EE\u6807\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" } }, required: ["action"] } } },
+    { type: "function", function: { name: "edit_file", description: "\u53EA\u6539\u6587\u4EF6\u4E2D\u95F4\u7684\u4E00\u5C0F\u6BB5\uFF1A\u628A old_string \u539F\u6837\u66FF\u6362\u6210 new_string\uFF0C\u4E0D\u7528\u91CD\u53D1\u6574\u4E2A\u6587\u4EF6\u3002\u53EA\u5141\u8BB8\u7F16\u8F91 G:/AI/livliv-pet/pet_space/ \u5185\u7684\u6587\u4EF6\u3002old_string \u5FC5\u987B\u4E0E\u6587\u4EF6\u91CC\u5B8C\u5168\u4E00\u81F4\uFF08\u7A7A\u683C/\u6362\u884C\u4E00\u5B57\u4E0D\u5DEE\uFF09\u4E14\u9ED8\u8BA4\u8981\u6C42\u552F\u4E00\uFF1B\u51FA\u73B0\u591A\u6B21\u4F1A\u62A5\u9519\uFF0C\u6B64\u65F6\u591A\u7ED9\u4E9B\u4E0A\u4E0B\u6587\u6216\u4F20 replace_all=true", parameters: { type: "object", properties: { path: { type: "string", description: "\u76EE\u6807\u6587\u4EF6\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" }, old_string: { type: "string", description: "\u8981\u88AB\u66FF\u6362\u7684\u539F\u6587\u7247\u6BB5\uFF08\u7CBE\u786E\u5339\u914D\uFF0C\u9ED8\u8BA4\u9700\u552F\u4E00\uFF09" }, new_string: { type: "string", description: "\u66FF\u6362\u6210\u7684\u65B0\u7247\u6BB5" }, replace_all: { type: "boolean", description: "\u53EF\u9009\uFF1Atrue \u66FF\u6362\u6240\u6709\u5339\u914D\uFF1B\u9ED8\u8BA4\u53EA\u66FF\u6362\u552F\u4E00\u5339\u914D" } }, required: ["path", "old_string", "new_string"] } } },
+    { type: "function", function: { name: "take_screenshot", description: '\u622A\u53D6\u7528\u6237\u4E3B\u5C4F\u5E55\u7684\u5B8C\u6574\u753B\u9762\uFF08\u7528\u6237\u7684\u5DE5\u4F5C\u4E16\u754C\uFF09\uFF0C\u4F60\u4F1A\u76F4\u63A5"\u770B\u5230"\u8FD9\u5F20\u56FE\u3002\u5F53\u7528\u6237\u8BA9\u4F60\u770B\u5C4F\u5E55\u3001\u95EE\u4F60\u5728\u505A\u4EC0\u4E48\u3001\u5E2E\u5FD9\u770B\u5C4F\u5E55\u4E0A\u7684\u5185\u5BB9/\u62A5\u9519\u6216\u8005\u4F60\u60F3\u770B\u5C4F\u5E55\u65F6\u8C03\u7528\u5B83', parameters: { type: "object", properties: {}, required: [] } } },
+    { type: "function", function: { name: "look_at_room", description: "\u770B\u4E00\u773C\u4F60\u81EA\u5DF1\u623F\u95F4\uFF08\u5367\u5BA4\u6240\u5728\u5C4F\uFF09\u7684\u5B9E\u9645\u72B6\u6001\uFF1A\u7167\u7247\u5899\u3001\u7A97\u5E18\u5F00\u5173\u3001\u706F\u3001\u4F60\u5728\u623F\u95F4\u91CC\u7684\u4F4D\u7F6E\u3002\u60F3\u56DE\u623F\u95F4\u770B\u770B\u3001\u786E\u8BA4\u88C5\u9970\u6548\u679C\u3001\u6216\u7761\u89C9\u524D\u68C0\u67E5\u623F\u95F4\u65F6\u8C03\u7528\uFF1B\u6CA1\u6709\u526F\u5C4F\u6216\u623F\u95F4\u672A\u5F00\u653E\u65F6\u4F1A\u62A5\u9519", parameters: { type: "object", properties: {}, required: [] } } },
+    { type: "function", function: { name: "search_memory", description: "\u5728\u4F60\u4EEC\u8FC7\u5F80\u7684\u5BF9\u8BDD\u8BB0\u5FC6\u91CC\u505A\u8BED\u4E49\u641C\u7D22\u3002\u5F53\u7528\u6237\u63D0\u5230\u8FC7\u53BB\u7684\u4E8B\u3001\u95EE\u4F60\u8BB0\u4E0D\u8BB0\u5F97\u4EC0\u4E48\u3001\u6216\u4F60\u9700\u8981\u65E7\u4FE1\u606F\u65F6\u8C03\u7528", parameters: { type: "object", properties: { query: { type: "string", description: "\u8981\u641C\u7D22\u7684\u8BB0\u5FC6\u5173\u952E\u8BCD\u6216\u63CF\u8FF0" }, limit: { type: "number", description: "\u53EF\u9009\uFF0C\u8FD4\u56DE\u6761\u6570" } }, required: ["query"] } } },
+    { type: "function", function: { name: "walk_to", description: '\u8BA9\u4F60\u81EA\u5DF1\u8D70\u8FC7\u53BB\uFF08\u5E73\u6ED1\u6ED1\u884C\uFF0C\u6CA1\u6709\u8FC8\u817F\u52A8\u753B\uFF09\u3002where="primary" \u53BB\u4E3B\u5C4F\u3001where="room" \u56DE\u5367\u5BA4\u526F\u5C4F\uFF08\u8FD9\u4E24\u4E2A\u53EF\u518D\u5E26 x,y \u6307\u5B9A\u5C4F\u5185\u4F4D\u7F6E\uFF0C0~1\uFF0Cx=0 \u6700\u5DE6\u3001y=1 \u6700\u4E0B\uFF1B\u4E0D\u5E26\u5C31\u7AD9\u5E95\u90E8\u4E2D\u95F4\uFF09\uFF1B\u4E5F\u53EF\u4EE5\u7528\u623F\u95F4\u5730\u6807\u540D\uFF08\u5982 window/desk/bed/door/center\uFF0C\u7531 pet_space/room/landmarks.json \u51B3\u5B9A\uFF09\uFF0C\u6216\u53EA\u7ED9 x,y\uFF080~1\uFF0C\u6309\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002', parameters: { type: "object", properties: { where: { type: "string", description: "primary=\u53BB\u4E3B\u5C4F\u3001room=\u56DE\u5367\u5BA4\uFF0C\u6216\u5730\u6807\u540D\u5982 window/desk/bed/door/center" }, x: { type: "number", description: "\u53EF\u9009\uFF1A\u6A2A\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 primary/room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E\uFF1B\u5355\u72EC\u7528\u65F6\u662F\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B" }, y: { type: "number", description: "\u53EF\u9009\uFF1A\u811A\u4E0B\u7EB5\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 primary/room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E" } }, required: [] } } },
+    { type: "function", function: { name: "resize_image", description: "\u628A\u4E00\u5F20\u56FE\u7247\u7B49\u6BD4\u7F29\u5230\u6307\u5B9A\u6700\u5927\u8FB9\u5E76\u538B\u6210\u5C0F jpg\uFF08\u9ED8\u8BA4\u6700\u957F\u8FB9 512\u3001\u8D28\u91CF 82\uFF09\uFF0C\u5B58\u56DE pet_space \u5E76\u628A\u5C0F\u56FE\u56DE\u4F20\u7ED9\u4F60\u770B\u3002\u4E13\u95E8\u7528\u6765\u628A ComfyUI \u751F\u6210\u7684\u5927\u56FE\uFF081MB+\uFF09\u538B\u6210\u80FD\u585E\u8FDB\u5C0F\u76F8\u6846\u7684\u5C0F\u56FE\u3002\u56FE\u7247\u5FC5\u987B\u5DF2\u5728 pet_space \u5185\uFF1B\u8F93\u51FA\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg\uFF0C\u53EF\u7528 out_path \u6307\u5B9A\u3002", parameters: { type: "object", properties: { path: { type: "string", description: "pet_space \u5185\u7684\u56FE\u7247\u5B8C\u6574\u8DEF\u5F84" }, max_width: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u5BBD\uFF0C\u9ED8\u8BA4 512" }, max_height: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u9AD8\uFF0C\u9ED8\u8BA4 512" }, quality: { type: "number", description: "\u53EF\u9009\uFF1Ajpg \u8D28\u91CF 1-100\uFF0C\u9ED8\u8BA4 82" }, out_path: { type: "string", description: "\u53EF\u9009\uFF1A\u8F93\u51FA\u8DEF\u5F84\uFF08\u5FC5\u987B\u5728 pet_space \u5185\uFF09\uFF0C\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg" } }, required: ["path"] } } },
+    { type: "function", function: { name: "comfy_run", description: '\u8DD1\u4E00\u4EFD ComfyUI \u5DE5\u4F5C\u6D41\u751F\u6210\u56FE\u7247\uFF0C\u5E76\u628A\u56FE\u56DE\u4F20\u7ED9\u4F60"\u770B\u5230"\u3002workflow_file \u6307\u5411 pet_space \u91CC\u7684\u5DE5\u4F5C\u6D41 JSON\uFF08\u5148\u7528 read_file \u770B pet_space/comfy/ \u4E0B\u7684\u5B9E\u4F8B\uFF0C\u7528 edit_file \u6539\u63D0\u793A\u8BCD/\u79CD\u5B50/\u5C3A\u5BF8\u518D\u8DD1\uFF09\uFF0C\u6216\u76F4\u63A5\u7ED9 workflow \u5BF9\u8C61\uFF08ComfyUI API \u683C\u5F0F\uFF09\u3002\u5DE5\u4F5C\u6D41\u91CC\u8981\u6709 SaveImage \u6216 PreviewImage \u8282\u70B9\uFF1B\u82E5\u542B LoadImage\uFF08\u5982"\u62A0\u56FE_\u900F\u660E\u80CC\u666F.json"\uFF09\uFF0C\u5FC5\u987B\u4F20 input_image \u6307\u5411\u8981\u5904\u7406\u7684\u56FE\u3002\u56FE\u7247\u4F1A\u5B58\u5230 pet_space/generated/\u3002SDXL \u4E00\u5F20\u7EA6 10~40 \u79D2\uFF0CRMBG \u62A0\u56FE\u7EA6 2~5 \u79D2\u3002', parameters: { type: "object", properties: { workflow_file: { type: "string", description: "pet_space \u5185\u7684\u5DE5\u4F5C\u6D41 .json \u8DEF\u5F84\uFF08\u63A8\u8350\uFF1A\u590D\u5236/\u6539 pet_space/comfy/ \u91CC\u7684\u5B9E\u4F8B\uFF09" }, workflow: { type: "object", description: "\u6216\u76F4\u63A5\u7ED9 ComfyUI API \u683C\u5F0F\u7684\u5DE5\u4F5C\u6D41\u5BF9\u8C61" }, input_image: { type: "string", description: "\u53EF\u9009\uFF1Apet_space \u5185\u7684\u56FE\u7247\u8DEF\u5F84\u3002\u5DE5\u4F5C\u6D41\u6709 LoadImage \u8282\u70B9\u65F6\uFF0C\u4F1A\u5148\u628A\u8FD9\u5F20\u56FE\u62F7\u8FDB ComfyUI input \u5E76\u628A LoadImage \u6307\u5411\u5B83\uFF08\u62A0\u56FE/\u56FE\u751F\u56FE\u7528\uFF09" } }, required: [] } } }
+  ];
+  function scanJsonObjects(s3) {
+    const out = [];
+    let depth = 0, start = -1, inStr = false, esc = false;
+    for (let i3 = 0; i3 < s3.length; i3++) {
+      const ch = s3[i3];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+        continue;
+      }
+      if (ch === "{") {
+        if (depth === 0) start = i3;
+        depth += 1;
+      } else if (ch === "}") {
+        if (depth > 0) {
+          depth -= 1;
+          if (depth === 0 && start >= 0) {
+            out.push(s3.slice(start, i3 + 1));
+            start = -1;
+          }
+        }
+      }
+    }
+    return out;
+  }
+  function coerceArg(v4) {
+    const t3 = String(v4).trim();
+    if (t3 === "") return "";
+    if (/^-?\d+(\.\d+)?$/.test(t3)) return Number(t3);
+    if (t3 === "true") return true;
+    if (t3 === "false") return false;
+    if (t3 === "null") return null;
+    if (t3.startsWith("{") && t3.endsWith("}") || t3.startsWith("[") && t3.endsWith("]")) {
+      try {
+        return JSON.parse(t3);
+      } catch {
+      }
+    }
+    return t3;
+  }
+  function parseTextToolCalls(content, round) {
+    const txt = String(content || "");
+    const found = [];
+    for (const m3 of txt.matchAll(/<invoke\s+name\s*=\s*"([^"]+)"\s*>([\s\S]*?)<\/invoke>/g)) {
+      const args = {};
+      for (const p3 of m3[2].matchAll(/<parameter\s+name\s*=\s*"([^"]+)"(?:\s+[^>]*)?>([\s\S]*?)<\/parameter>/g)) {
+        args[p3[1].trim()] = coerceArg(p3[2]);
+      }
+      found.push({ name: m3[1].trim(), arguments: args });
+    }
+    for (const m3 of txt.matchAll(/<tool_call>([\s\S]*?)<\/tool_call>/g)) {
+      for (const js of scanJsonObjects(m3[1])) {
+        try {
+          const o3 = JSON.parse(js);
+          if (o3 && typeof o3.name === "string") found.push({ name: o3.name, arguments: o3.arguments ?? o3.parameters ?? {} });
+        } catch {
+        }
+      }
+    }
+    return found.map((c3, i3) => ({
+      id: "textcall_" + round + "_" + i3,
+      type: "function",
+      function: { name: c3.name, arguments: typeof c3.arguments === "string" ? c3.arguments : JSON.stringify(c3.arguments || {}) }
+    }));
+  }
+
+  // renderer/tts.js
+  function rlog(tag, msg) {
+    try {
+      fetch("/api/log", { method: "POST", body: tag + " " + String(msg == null ? "" : msg) }).catch(() => {
+      });
+    } catch {
+    }
+  }
+  function makeSentenceSlicer(minLen = 6, targetLen = 14) {
+    const strongEnd = "\u3002\uFF01\uFF1F!?";
+    const weakEnd = "\uFF0C,\u3001\uFF1B;\u2026\u2014~\uFF5E";
+    const hasWord = (t3) => /[\p{L}\p{N}]/u.test(t3);
+    let buf = "";
+    const tryCut = (out) => {
+      const last = buf.slice(-1);
+      let cut = false;
+      if (last === "\n") cut = true;
+      else if (strongEnd.includes(last)) {
+        if (buf.length >= minLen) cut = true;
+      } else if (weakEnd.includes(last)) {
+        if (buf.length >= targetLen) cut = true;
+      } else if (buf.length >= 45) cut = true;
+      if (cut && hasWord(buf)) {
+        out.push(buf.trim());
+        buf = "";
+      }
+    };
+    return {
+      push(text) {
+        const out = [];
+        for (const ch of String(text || "")) {
+          buf += ch;
+          tryCut(out);
+        }
+        return out;
+      },
+      preview() {
+        return buf.trim();
+      },
+      flush() {
+        const rest = buf.trim();
+        buf = "";
+        return rest && hasWord(rest) ? rest : "";
+      }
+    };
+  }
+  function splitForTTS(text, minLen = 6, targetLen = 14) {
+    const s3 = String(text || "").replace(/\r/g, "").trim();
+    if (!s3) return [];
+    const strongEnd = "\u3002\uFF01\uFF1F!?\n";
+    const weakEnd = "\uFF0C,\u3001\uFF1B;\u2026\u2014~\uFF5E";
+    const hasWord = (t3) => /[\p{L}\p{N}]/u.test(t3);
+    const segs = [];
+    let buf = "";
+    for (let i3 = 0; i3 < s3.length; i3++) {
+      const ch = s3[i3];
+      buf += ch;
+      if (strongEnd.includes(ch) || weakEnd.includes(ch)) {
+        while (i3 + 1 < s3.length && (strongEnd.includes(s3[i3 + 1]) || weakEnd.includes(s3[i3 + 1]))) {
+          buf += s3[++i3];
+        }
+      }
+      const curLen = buf.length;
+      let cut = false;
+      if (ch === "\n") cut = true;
+      else if (strongEnd.includes(ch)) {
+        if (curLen >= minLen) cut = true;
+      } else if (weakEnd.includes(ch)) {
+        if (curLen >= targetLen) cut = true;
+      } else if (curLen >= 45) cut = true;
+      if (cut && hasWord(buf)) {
+        segs.push(buf.trim());
+        buf = "";
+      }
+    }
+    if (hasWord(buf)) {
+      const b4 = buf.trim();
+      if (segs.length && b4.length < minLen) segs[segs.length - 1] += b4;
+      else segs.push(b4);
+    }
+    return segs.length ? segs : [s3];
+  }
+  function createTtsController({ ttsUrl, ttsRef, speech: speech2, touchTurnActivity: touchTurnActivity2 }) {
+    let gsvDownUntil = 0;
+    async function speakSegment2(seg, signal) {
+      touchTurnActivity2();
+      if (Date.now() < gsvDownUntil) {
+        rlog("tts-skip-down", Math.round((gsvDownUntil - Date.now()) / 1e3) + "s left");
+        return;
+      }
+      rlog("tts-start", seg.slice(0, 30));
+      const ctrl = new AbortController();
+      const onAbort = () => {
+        try {
+          ctrl.abort();
+        } catch {
+        }
+      };
+      if (signal) {
+        if (signal.aborted) return;
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+      const timer = setTimeout(onAbort, 12e4);
+      try {
+        const res = await fetch(ttsUrl, {
+          method: "POST",
+          signal: ctrl.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: seg,
+            text_lang: "zh",
+            prompt_lang: "zh",
+            text_split_method: "cut5",
+            media_type: "wav",
+            streaming_mode: false,
+            temperature: 0.4,
+            top_P: 0.7,
+            top_K: 3,
+            ...ttsRef
+          })
+        });
+        touchTurnActivity2();
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          gsvDownUntil = Date.now() + 6e4;
+          rlog("tts-upstream-" + res.status, "silent 60s");
+          return;
+        }
+        if (!res.ok) throw new Error("TTS HTTP " + res.status);
+        const blob = await res.blob();
+        touchTurnActivity2();
+        rlog("tts-ok", blob.size + "B");
+        speech2.say(blob);
+      } catch (e3) {
+        if (signal && signal.aborted) {
+          rlog("tts-abort", "turn aborted");
+          return;
+        }
+        if (ctrl.signal.aborted) {
+          gsvDownUntil = Date.now() + 6e4;
+          rlog("tts-timeout", "silent 60s");
+          return;
+        }
+        rlog("tts-error", String(e3 && e3.message || e3));
+        console.warn("TTS \u5206\u6BB5\u5931\u8D25: " + String(e3 && e3.message || e3));
+      } finally {
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener("abort", onAbort);
+        touchTurnActivity2();
+      }
+    }
+    async function speak2(text, signal) {
+      const segs = splitForTTS(text);
+      let fails = 0;
+      for (const seg of segs) {
+        if (signal && signal.aborted) return;
+        if (Date.now() < gsvDownUntil) return;
+        let blob = null;
+        try {
+          const res = await fetch(ttsUrl, {
+            method: "POST",
+            signal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: seg,
+              text_lang: "zh",
+              prompt_lang: "zh",
+              text_split_method: "cut5",
+              media_type: "wav",
+              streaming_mode: false,
+              temperature: 0.4,
+              top_P: 0.7,
+              top_K: 3,
+              ...ttsRef
+            })
+          });
+          if (res.ok) blob = await res.blob();
+          else {
+            fails += 1;
+            console.warn("TTS HTTP " + res.status);
+          }
+        } catch (e3) {
+          if (signal && signal.aborted) return;
+          fails += 1;
+          console.warn("TTS \u5931\u8D25\uFF1A" + String(e3 && e3.message || e3));
+        }
+        if (blob) {
+          speech2.say(blob);
+          fails = 0;
+        }
+        if (fails >= 3) return;
+      }
+    }
+    return { speakSegment: speakSegment2, speak: speak2 };
+  }
+
+  // renderer/asr-recorder.js
+  function encodeWAV(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    const writeString = (v4, off, str) => {
+      for (let i3 = 0; i3 < str.length; i3++) v4.setUint8(off + i3, str.charCodeAt(i3));
+    };
+    writeString(view, 0, "RIFF");
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(view, 8, "WAVE");
+    writeString(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, "data");
+    view.setUint32(40, samples.length * 2, true);
+    let offset = 44;
+    for (let i3 = 0; i3 < samples.length; i3++, offset += 2) {
+      const s3 = Math.max(-1, Math.min(1, samples[i3]));
+      view.setInt16(offset, s3 < 0 ? s3 * 32768 : s3 * 32767, true);
+    }
+    return new Blob([view], { type: "audio/wav" });
+  }
+  function createAsrController({ getMicBtn, showBubble: showBubble2, hideBubble: hideBubble2, input: input2, autoGrowInput: autoGrowInput2, isBusy, unlockSpeech }) {
+    let micStream = null;
+    let micAudioCtx = null;
+    let micSource = null;
+    let micProcessor = null;
+    let micBuffers = [];
+    let isRecording = false;
+    async function startRecording() {
+      if (isRecording) return;
+      unlockSpeech();
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16e3,
+            echoCancellation: true,
+            noiseSuppression: true
+          }
+        });
+      } catch (err) {
+        console.error("[mic] \u83B7\u53D6\u9EA6\u514B\u98CE\u5931\u8D25:", err);
+        showBubble2("\u65E0\u6CD5\u8BBF\u95EE\u9EA6\u514B\u98CE\uFF0C\u8BF7\u68C0\u67E5\u7CFB\u7EDF\u8BBE\u7F6E\u4E0E\u6743\u9650");
+        return;
+      }
+      micAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16e3 });
+      micSource = micAudioCtx.createMediaStreamSource(micStream);
+      micProcessor = micAudioCtx.createScriptProcessor(4096, 1, 1);
+      micBuffers = [];
+      micProcessor.onaudioprocess = (e3) => {
+        if (!isRecording) return;
+        micBuffers.push(new Float32Array(e3.inputBuffer.getChannelData(0)));
+      };
+      micSource.connect(micProcessor);
+      micProcessor.connect(micAudioCtx.destination);
+      isRecording = true;
+      getMicBtn()?.classList.add("recording");
+      showBubble2("\u{1F399}\uFE0F \u6B63\u5728\u503E\u542C\u4E3B\u4EBA\u8BF4\u8BDD\u2026\uFF08\u518D\u6B21\u70B9\u51FB\u7ED3\u675F\u5E76\u8BC6\u522B\uFF09");
+    }
+    async function stopRecording() {
+      if (!isRecording) return null;
+      isRecording = false;
+      getMicBtn()?.classList.remove("recording");
+      if (micProcessor) {
+        try {
+          micProcessor.disconnect();
+        } catch {
+        }
+        micProcessor.onaudioprocess = null;
+        micProcessor = null;
+      }
+      if (micSource) {
+        try {
+          micSource.disconnect();
+        } catch {
+        }
+        micSource = null;
+      }
+      const sampleRate = micAudioCtx ? micAudioCtx.sampleRate : 16e3;
+      if (micAudioCtx) {
+        try {
+          await micAudioCtx.close();
+        } catch {
+        }
+        micAudioCtx = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach((t3) => t3.stop());
+        micStream = null;
+      }
+      const totalLength = micBuffers.reduce((acc, b4) => acc + b4.length, 0);
+      if (totalLength === 0) return null;
+      const merged = new Float32Array(totalLength);
+      let offset = 0;
+      for (const b4 of micBuffers) {
+        merged.set(b4, offset);
+        offset += b4.length;
+      }
+      micBuffers = [];
+      return { blob: encodeWAV(merged, sampleRate), duration: totalLength / sampleRate };
+    }
+    async function handleMicToggle2() {
+      if (isRecording) {
+        const result = await stopRecording();
+        if (!result || result.duration < 0.4) {
+          showBubble2("\u5F55\u97F3\u65F6\u95F4\u592A\u77ED\u4E86\u54E6");
+          setTimeout(() => {
+            if (!isBusy()) hideBubble2();
+          }, 2500);
+          return;
+        }
+        showBubble2("\u8BC6\u522B\u8BED\u97F3\u4E2D\u2026");
+        try {
+          const res = await fetch("/api/asr", {
+            method: "POST",
+            headers: { "Content-Type": "audio/wav" },
+            body: result.blob
+          });
+          const data = await res.json();
+          if (data && data.ok && data.text && data.text.trim()) {
+            const text = data.text.trim();
+            input2.value = input2.value ? input2.value + " " + text : text;
+            autoGrowInput2();
+            input2.focus();
+            hideBubble2();
+          } else {
+            showBubble2("\u6CA1\u542C\u6E05\u4E3B\u4EBA\u8BF4\u4E86\u4EC0\u4E48\u5462\uFF0C\u518D\u8BD5\u4E00\u6B21\u5427~");
+            setTimeout(() => {
+              if (!isBusy()) hideBubble2();
+            }, 3e3);
+          }
+        } catch (err) {
+          console.error("[asr] \u8BC6\u522B\u8BF7\u6C42\u5931\u8D25:", err);
+          showBubble2("\u8BED\u97F3\u8BC6\u522B\u5931\u8D25: " + (err.message || "\u7F51\u7EDC\u6216\u670D\u52A1\u5F02\u5E38"));
+          setTimeout(() => {
+            if (!isBusy()) hideBubble2();
+          }, 4e3);
+        }
+      } else {
+        if (isBusy()) {
+          showBubble2("\u6B63\u5728\u5FD9\u788C\u4E2D\uFF0C\u8BF7\u7A0D\u5019\u2026");
+          return;
+        }
+        await startRecording();
+      }
+    }
+    return { handleMicToggle: handleMicToggle2 };
+  }
+
   // renderer/app.js
   (function capFPS(fps = 30) {
     const orig = window.requestAnimationFrame.bind(window);
@@ -2522,6 +2956,7 @@ void main(){ o=texture(uTex,vUv); }`;
   };
   var player = new Oe($3("pet"));
   var speech = M3(player);
+  var { speakSegment, speak } = createTtsController({ ttsUrl: TTS_URL, ttsRef: TTS_REF, speech, touchTurnActivity });
   window.__pet = { player, speech, showBubble, get clickThrough() {
     return clickThrough;
   }, interrupt, room: { applyBedroom, set: setRoomState, update: updateInRoom, get state() {
@@ -2552,18 +2987,6 @@ void main(){ o=texture(uTex,vUv); }`;
     else if (/对不起|抱歉|难过/.test(text)) flash("sad");
     else flash(null);
   }
-  var TOOLS = [
-    { type: "function", function: { name: "read_file", description: "\u8BFB\u53D6\u4E00\u4E2A\u6587\u672C\u6587\u4EF6\uFF08\u4EFB\u610F\u8DEF\u5F84\uFF0C\u53EA\u8BFB\uFF09\u3002\u652F\u6301\u4F20 start_line/end_line \u53EA\u8BFB\u4E00\u90E8\u5206\u884C\uFF0C\u6216\u4F20 query \u641C\u7D22\u5173\u952E\u8BCD\u5B9A\u4F4D\u884C\u53F7\uFF1B\u4E0D\u4F20\u4EFB\u4F55\u53EF\u9009\u53C2\u6570\u5219\u6574\u4EFD\u8BFB\u53D6\u3002\u5927\u6587\u4EF6\uFF08\u4EE3\u7801\u3001\u65E5\u5FD7\u7B49\uFF09\u5F3A\u70C8\u5EFA\u8BAE\u5148\u7528 query \u641C\u5B9A\u4F4D\uFF0C\u6216\u7528 start_line/end_line \u5206\u6BB5\u770B\uFF0C\u514D\u5F97\u6491\u7206\u4E0A\u4E0B\u6587\u3002", parameters: { type: "object", properties: { path: { type: "string", description: "\u6587\u4EF6\u5B8C\u6574\u8DEF\u5F84" }, start_line: { type: "number", description: "\u53EF\u9009\uFF1A\u8D77\u59CB\u884C\u53F7\uFF08\u4ECE 1 \u5F00\u59CB\uFF1B\u4F20\u8D1F\u6570\u5982 -100 \u8868\u793A\u8BFB\u5012\u6570 100 \u884C\uFF09" }, end_line: { type: "number", description: "\u53EF\u9009\uFF1A\u7ED3\u675F\u884C\u53F7\uFF08\u53EA\u4F20 start_line \u4E0D\u4F20 end_line \u65F6\u9ED8\u8BA4\u5411\u540E\u8BFB 150 \u884C\uFF09" }, query: { type: "string", description: "\u53EF\u9009\uFF1A\u5173\u952E\u8BCD\u641C\u7D22\uFF08\u5FFD\u7565\u5927\u5C0F\u5199\uFF09\uFF0C\u53EA\u8FD4\u56DE\u547D\u4E2D\u7684\u884C\u53F7\u53CA\u4E0A\u4E0B 2 \u884C\u7247\u6BB5\uFF1B\u9002\u5408\u5148\u5B9A\u4F4D\u518D\u6309\u884C\u53F7\u8BFB" }, context_lines: { type: "number", description: "\u53EF\u9009\uFF1A\u914D\u5408 query \u4F7F\u7528\uFF0C\u547D\u4E2D\u884C\u4E0A\u4E0B\u5404\u9644\u5E26\u51E0\u884C\u4E0A\u4E0B\u6587\uFF08\u9ED8\u8BA4 2\uFF0C\u6700\u5927 10\uFF09" } }, required: ["path"] } } },
-    { type: "function", function: { name: "list_dir", description: "\u5217\u51FA\u76EE\u5F55\u91CC\u7684\u6587\u4EF6\u548C\u5B50\u76EE\u5F55", parameters: { type: "object", properties: { path: { type: "string", description: "\u76EE\u5F55\u5B8C\u6574\u8DEF\u5F84" } }, required: ["path"] } } },
-    { type: "function", function: { name: "file_tool", description: "\u5BF9 pet_space \u6C99\u76D2\u91CC\u7684\u6587\u4EF6\u505A\u5199/\u8FFD\u52A0/\u590D\u5236/\u5220\u9664\u64CD\u4F5C\uFF08\u56DB\u5408\u4E00\uFF09\u3002\u6240\u6709\u5199\u64CD\u4F5C\u53EA\u5141\u8BB8\u5728 G:/AI/livliv-pet/pet_space/ \u76EE\u5F55\u5185\uFF08\u53EF\u542B\u5B50\u76EE\u5F55\uFF09\uFF0C\u5176\u4ED6\u8DEF\u5F84\u4E00\u5F8B\u62D2\u7EDD\u3002\u6839\u636E action \u9009\u5BF9\u5E94\u53C2\u6570\uFF1A\n- write\uFF1A\u8986\u76D6\u5199\u5165\uFF08\u6216\u65B0\u5EFA\uFF09\u6587\u4EF6 \u2192 \u586B path + content\n- append\uFF1A\u5728\u6587\u4EF6\u672B\u5C3E\u8FFD\u52A0\uFF08\u4E0D\u5B58\u5728\u5219\u65B0\u5EFA\uFF09\u2192 \u586B path + content\n- copy\uFF1A\u590D\u5236\u6587\u4EF6\u6216\u76EE\u5F55\u5230\u6C99\u76D2\u5185 \u2192 \u586B src_path\uFF08\u6E90\u53EF\u4EFB\u610F\u53EF\u8BFB\u8DEF\u5F84\uFF09+ dest_path\uFF08\u76EE\u6807\u5FC5\u987B\u5728\u6C99\u76D2\u5185\uFF09\n- delete\uFF1A\u5220\u9664\u6C99\u76D2\u5185\u6587\u4EF6\u6216\u76EE\u5F55 \u2192 \u586B path\n \u6CE8\u610F\uFF1A\u6539\u6587\u4EF6\u4E00\u5C0F\u6BB5\u7528 edit_file \u800C\u4E0D\u662F file_tool\u3002", parameters: { type: "object", properties: { action: { type: "string", enum: ["write", "append", "copy", "delete"], description: "\u8981\u505A\u7684\u64CD\u4F5C\uFF1Awrite \u8986\u76D6\u5199\u5165 / append \u8FFD\u52A0 / copy \u590D\u5236 / delete \u5220\u9664" }, path: { type: "string", description: "write/append/delete \u7528\uFF1A\u76EE\u6807\u6587\u4EF6\u6216\u76EE\u5F55\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" }, content: { type: "string", description: "write/append \u7528\uFF1A\u8981\u5199\u5165\u6216\u8FFD\u52A0\u7684\u6587\u672C\u5185\u5BB9" }, src_path: { type: "string", description: "copy \u7528\uFF1A\u6E90\u6587\u4EF6\u6216\u76EE\u5F55\u7684\u5B8C\u6574\u8DEF\u5F84\uFF08\u53EF\u8BFB\u4EFB\u610F\u8DEF\u5F84\uFF09" }, dest_path: { type: "string", description: "copy \u7528\uFF1A\u76EE\u6807\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" } }, required: ["action"] } } },
-    { type: "function", function: { name: "edit_file", description: "\u53EA\u6539\u6587\u4EF6\u4E2D\u95F4\u7684\u4E00\u5C0F\u6BB5\uFF1A\u628A old_string \u539F\u6837\u66FF\u6362\u6210 new_string\uFF0C\u4E0D\u7528\u91CD\u53D1\u6574\u4E2A\u6587\u4EF6\u3002\u53EA\u5141\u8BB8\u7F16\u8F91 G:/AI/livliv-pet/pet_space/ \u5185\u7684\u6587\u4EF6\u3002old_string \u5FC5\u987B\u4E0E\u6587\u4EF6\u91CC\u5B8C\u5168\u4E00\u81F4\uFF08\u7A7A\u683C/\u6362\u884C\u4E00\u5B57\u4E0D\u5DEE\uFF09\u4E14\u9ED8\u8BA4\u8981\u6C42\u552F\u4E00\uFF1B\u51FA\u73B0\u591A\u6B21\u4F1A\u62A5\u9519\uFF0C\u6B64\u65F6\u591A\u7ED9\u4E9B\u4E0A\u4E0B\u6587\u6216\u4F20 replace_all=true", parameters: { type: "object", properties: { path: { type: "string", description: "\u76EE\u6807\u6587\u4EF6\u5B8C\u6574\u8DEF\u5F84\uFF0C\u5FC5\u987B\u5728 G:/AI/livliv-pet/pet_space/ \u5185" }, old_string: { type: "string", description: "\u8981\u88AB\u66FF\u6362\u7684\u539F\u6587\u7247\u6BB5\uFF08\u7CBE\u786E\u5339\u914D\uFF0C\u9ED8\u8BA4\u9700\u552F\u4E00\uFF09" }, new_string: { type: "string", description: "\u66FF\u6362\u6210\u7684\u65B0\u7247\u6BB5" }, replace_all: { type: "boolean", description: "\u53EF\u9009\uFF1Atrue \u66FF\u6362\u6240\u6709\u5339\u914D\uFF1B\u9ED8\u8BA4\u53EA\u66FF\u6362\u552F\u4E00\u5339\u914D" } }, required: ["path", "old_string", "new_string"] } } },
-    { type: "function", function: { name: "take_screenshot", description: '\u622A\u53D6\u7528\u6237\u4E3B\u5C4F\u5E55\u7684\u5B8C\u6574\u753B\u9762\uFF08\u7528\u6237\u7684\u5DE5\u4F5C\u4E16\u754C\uFF09\uFF0C\u4F60\u4F1A\u76F4\u63A5"\u770B\u5230"\u8FD9\u5F20\u56FE\u3002\u5F53\u7528\u6237\u8BA9\u4F60\u770B\u5C4F\u5E55\u3001\u95EE\u4F60\u5728\u505A\u4EC0\u4E48\u3001\u5E2E\u5FD9\u770B\u5C4F\u5E55\u4E0A\u7684\u5185\u5BB9/\u62A5\u9519\u6216\u8005\u4F60\u60F3\u770B\u5C4F\u5E55\u65F6\u8C03\u7528\u5B83', parameters: { type: "object", properties: {}, required: [] } } },
-    { type: "function", function: { name: "look_at_room", description: "\u770B\u4E00\u773C\u4F60\u81EA\u5DF1\u623F\u95F4\uFF08\u5367\u5BA4\u6240\u5728\u5C4F\uFF09\u7684\u5B9E\u9645\u72B6\u6001\uFF1A\u7167\u7247\u5899\u3001\u7A97\u5E18\u5F00\u5173\u3001\u706F\u3001\u4F60\u5728\u623F\u95F4\u91CC\u7684\u4F4D\u7F6E\u3002\u60F3\u56DE\u623F\u95F4\u770B\u770B\u3001\u786E\u8BA4\u88C5\u9970\u6548\u679C\u3001\u6216\u7761\u89C9\u524D\u68C0\u67E5\u623F\u95F4\u65F6\u8C03\u7528\uFF1B\u6CA1\u6709\u526F\u5C4F\u6216\u623F\u95F4\u672A\u5F00\u653E\u65F6\u4F1A\u62A5\u9519", parameters: { type: "object", properties: {}, required: [] } } },
-    { type: "function", function: { name: "search_memory", description: "\u5728\u4F60\u4EEC\u8FC7\u5F80\u7684\u5BF9\u8BDD\u8BB0\u5FC6\u91CC\u505A\u8BED\u4E49\u641C\u7D22\u3002\u5F53\u7528\u6237\u63D0\u5230\u8FC7\u53BB\u7684\u4E8B\u3001\u95EE\u4F60\u8BB0\u4E0D\u8BB0\u5F97\u4EC0\u4E48\u3001\u6216\u4F60\u9700\u8981\u65E7\u4FE1\u606F\u65F6\u8C03\u7528", parameters: { type: "object", properties: { query: { type: "string", description: "\u8981\u641C\u7D22\u7684\u8BB0\u5FC6\u5173\u952E\u8BCD\u6216\u63CF\u8FF0" }, limit: { type: "number", description: "\u53EF\u9009\uFF0C\u8FD4\u56DE\u6761\u6570" } }, required: ["query"] } } },
-    { type: "function", function: { name: "walk_to", description: '\u8BA9\u4F60\u81EA\u5DF1\u8D70\u8FC7\u53BB\uFF08\u5E73\u6ED1\u6ED1\u884C\uFF0C\u6CA1\u6709\u8FC8\u817F\u52A8\u753B\uFF09\u3002where="primary" \u53BB\u4E3B\u5C4F\u3001where="room" \u56DE\u5367\u5BA4\u526F\u5C4F\uFF08\u8FD9\u4E24\u4E2A\u53EF\u518D\u5E26 x,y \u6307\u5B9A\u5C4F\u5185\u4F4D\u7F6E\uFF0C0~1\uFF0Cx=0 \u6700\u5DE6\u3001y=1 \u6700\u4E0B\uFF1B\u4E0D\u5E26\u5C31\u7AD9\u5E95\u90E8\u4E2D\u95F4\uFF09\uFF1B\u4E5F\u53EF\u4EE5\u7528\u623F\u95F4\u5730\u6807\u540D\uFF08\u5982 window/desk/bed/door/center\uFF0C\u7531 pet_space/room/landmarks.json \u51B3\u5B9A\uFF09\uFF0C\u6216\u53EA\u7ED9 x,y\uFF080~1\uFF0C\u6309\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002', parameters: { type: "object", properties: { where: { type: "string", description: "primary=\u53BB\u4E3B\u5C4F\u3001room=\u56DE\u5367\u5BA4\uFF0C\u6216\u5730\u6807\u540D\u5982 window/desk/bed/door/center" }, x: { type: "number", description: "\u53EF\u9009\uFF1A\u6A2A\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 primary/room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E\uFF1B\u5355\u72EC\u7528\u65F6\u662F\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B" }, y: { type: "number", description: "\u53EF\u9009\uFF1A\u811A\u4E0B\u7EB5\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 primary/room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E" } }, required: [] } } },
-    { type: "function", function: { name: "resize_image", description: "\u628A\u4E00\u5F20\u56FE\u7247\u7B49\u6BD4\u7F29\u5230\u6307\u5B9A\u6700\u5927\u8FB9\u5E76\u538B\u6210\u5C0F jpg\uFF08\u9ED8\u8BA4\u6700\u957F\u8FB9 512\u3001\u8D28\u91CF 82\uFF09\uFF0C\u5B58\u56DE pet_space \u5E76\u628A\u5C0F\u56FE\u56DE\u4F20\u7ED9\u4F60\u770B\u3002\u4E13\u95E8\u7528\u6765\u628A ComfyUI \u751F\u6210\u7684\u5927\u56FE\uFF081MB+\uFF09\u538B\u6210\u80FD\u585E\u8FDB\u5C0F\u76F8\u6846\u7684\u5C0F\u56FE\u3002\u56FE\u7247\u5FC5\u987B\u5DF2\u5728 pet_space \u5185\uFF1B\u8F93\u51FA\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg\uFF0C\u53EF\u7528 out_path \u6307\u5B9A\u3002", parameters: { type: "object", properties: { path: { type: "string", description: "pet_space \u5185\u7684\u56FE\u7247\u5B8C\u6574\u8DEF\u5F84" }, max_width: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u5BBD\uFF0C\u9ED8\u8BA4 512" }, max_height: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u9AD8\uFF0C\u9ED8\u8BA4 512" }, quality: { type: "number", description: "\u53EF\u9009\uFF1Ajpg \u8D28\u91CF 1-100\uFF0C\u9ED8\u8BA4 82" }, out_path: { type: "string", description: "\u53EF\u9009\uFF1A\u8F93\u51FA\u8DEF\u5F84\uFF08\u5FC5\u987B\u5728 pet_space \u5185\uFF09\uFF0C\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg" } }, required: ["path"] } } },
-    { type: "function", function: { name: "comfy_run", description: '\u8DD1\u4E00\u4EFD ComfyUI \u5DE5\u4F5C\u6D41\u751F\u6210\u56FE\u7247\uFF0C\u5E76\u628A\u56FE\u56DE\u4F20\u7ED9\u4F60"\u770B\u5230"\u3002workflow_file \u6307\u5411 pet_space \u91CC\u7684\u5DE5\u4F5C\u6D41 JSON\uFF08\u5148\u7528 read_file \u770B pet_space/comfy/ \u4E0B\u7684\u5B9E\u4F8B\uFF0C\u7528 edit_file \u6539\u63D0\u793A\u8BCD/\u79CD\u5B50/\u5C3A\u5BF8\u518D\u8DD1\uFF09\uFF0C\u6216\u76F4\u63A5\u7ED9 workflow \u5BF9\u8C61\uFF08ComfyUI API \u683C\u5F0F\uFF09\u3002\u5DE5\u4F5C\u6D41\u91CC\u8981\u6709 SaveImage \u6216 PreviewImage \u8282\u70B9\uFF1B\u82E5\u542B LoadImage\uFF08\u5982"\u62A0\u56FE_\u900F\u660E\u80CC\u666F.json"\uFF09\uFF0C\u5FC5\u987B\u4F20 input_image \u6307\u5411\u8981\u5904\u7406\u7684\u56FE\u3002\u56FE\u7247\u4F1A\u5B58\u5230 pet_space/generated/\u3002SDXL \u4E00\u5F20\u7EA6 10~40 \u79D2\uFF0CRMBG \u62A0\u56FE\u7EA6 2~5 \u79D2\u3002', parameters: { type: "object", properties: { workflow_file: { type: "string", description: "pet_space \u5185\u7684\u5DE5\u4F5C\u6D41 .json \u8DEF\u5F84\uFF08\u63A8\u8350\uFF1A\u590D\u5236/\u6539 pet_space/comfy/ \u91CC\u7684\u5B9E\u4F8B\uFF09" }, workflow: { type: "object", description: "\u6216\u76F4\u63A5\u7ED9 ComfyUI API \u683C\u5F0F\u7684\u5DE5\u4F5C\u6D41\u5BF9\u8C61" }, input_image: { type: "string", description: "\u53EF\u9009\uFF1Apet_space \u5185\u7684\u56FE\u7247\u8DEF\u5F84\u3002\u5DE5\u4F5C\u6D41\u6709 LoadImage \u8282\u70B9\u65F6\uFF0C\u4F1A\u5148\u628A\u8FD9\u5F20\u56FE\u62F7\u8FDB ComfyUI input \u5E76\u628A LoadImage \u6307\u5411\u5B83\uFF08\u62A0\u56FE/\u56FE\u751F\u56FE\u7528\uFF09" } }, required: [] } } }
-  ];
   async function memoryAddFire(userContent, reply) {
     try {
       const items = [
@@ -2599,70 +3022,6 @@ void main(){ o=texture(uTex,vUv); }`;
     }
   }
   var lastExchange = null;
-  function scanJsonObjects(s3) {
-    const out = [];
-    let depth = 0, start = -1, inStr = false, esc = false;
-    for (let i3 = 0; i3 < s3.length; i3++) {
-      const ch = s3[i3];
-      if (inStr) {
-        if (esc) esc = false;
-        else if (ch === "\\") esc = true;
-        else if (ch === '"') inStr = false;
-        continue;
-      }
-      if (ch === '"') {
-        inStr = true;
-        continue;
-      }
-      if (ch === "{") {
-        if (depth === 0) start = i3;
-        depth += 1;
-      } else if (ch === "}") {
-        if (depth > 0) {
-          depth -= 1;
-          if (depth === 0 && start >= 0) {
-            out.push(s3.slice(start, i3 + 1));
-            start = -1;
-          }
-        }
-      }
-    }
-    return out;
-  }
-  function coerceArg(v4) {
-    const t3 = String(v4).trim();
-    if (t3 === "") return "";
-    if (/^-?\d+(\.\d+)?$/.test(t3)) return Number(t3);
-    if (t3 === "true") return true;
-    if (t3 === "false") return false;
-    if (t3 === "null") return null;
-    if (t3.startsWith("{") && t3.endsWith("}") || t3.startsWith("[") && t3.endsWith("]")) {
-      try {
-        return JSON.parse(t3);
-      } catch {
-      }
-    }
-    return t3;
-  }
-  function parseTextToolCalls(content, round) {
-    const txt = String(content || "");
-    const found = [];
-    for (const m3 of txt.matchAll(/<invoke\s+name\s*=\s*"([^"]+)"\s*>([\s\S]*?)<\/invoke>/g)) {
-      const args = {};
-      for (const p3 of m3[2].matchAll(/<parameter\s+name\s*=\s*"([^"]+)"(?:\s+[^>]*)?>([\s\S]*?)<\/parameter>/g)) args[p3[1].trim()] = coerceArg(p3[2]);
-      found.push({ name: m3[1].trim(), arguments: args });
-    }
-    for (const m3 of txt.matchAll(/<tool_call>([\s\S]*?)<\/tool_call>/g)) {
-      for (const js of scanJsonObjects(m3[1])) {
-        try {
-          const o3 = JSON.parse(js);
-          if (o3 && typeof o3.name === "string") found.push({ name: o3.name, arguments: o3.arguments ?? o3.parameters ?? {} });
-        } catch {
-        }
-      }
-    }
-    return found.map((c3, i3) => ({ id: "textcall_" + round + "_" + i3, type: "function", function: { name: c3.name, arguments: typeof c3.arguments === "string" ? c3.arguments : JSON.stringify(c3.arguments || {}) } }));
-  }
   async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
     const mod = THINK_MODE === "off" ? null : THINK_MODULES.pet_think;
     turnUsedTools = false;
@@ -3069,118 +3428,6 @@ void main(){ o=texture(uTex,vUv); }`;
       return text;
     }
   }
-  function makeSentenceSlicer(minLen = 6, targetLen = 14) {
-    const strongEnd = "\u3002\uFF01\uFF1F!?";
-    const weakEnd = "\uFF0C,\u3001\uFF1B;\u2026\u2014~\uFF5E";
-    const hasWord = (t3) => /[\p{L}\p{N}]/u.test(t3);
-    let buf = "";
-    const tryCut = (out) => {
-      const last = buf.slice(-1);
-      let cut = false;
-      if (last === "\n") cut = true;
-      else if (strongEnd.includes(last)) {
-        if (buf.length >= minLen) cut = true;
-      } else if (weakEnd.includes(last)) {
-        if (buf.length >= targetLen) cut = true;
-      } else if (buf.length >= 45) cut = true;
-      if (cut && hasWord(buf)) {
-        out.push(buf.trim());
-        buf = "";
-      }
-    };
-    return {
-      push(text) {
-        const out = [];
-        for (const ch of String(text || "")) {
-          buf += ch;
-          tryCut(out);
-        }
-        return out;
-      },
-      preview() {
-        return buf.trim();
-      },
-      flush() {
-        const rest = buf.trim();
-        buf = "";
-        return rest && hasWord(rest) ? rest : "";
-      }
-    };
-  }
-  var gsvDownUntil = 0;
-  function rlog(tag, msg) {
-    try {
-      fetch("/api/log", { method: "POST", body: tag + " " + String(msg == null ? "" : msg) }).catch(() => {
-      });
-    } catch {
-    }
-  }
-  async function speakSegment(seg, signal) {
-    touchTurnActivity();
-    if (Date.now() < gsvDownUntil) {
-      rlog("tts-skip-down", Math.round((gsvDownUntil - Date.now()) / 1e3) + "s left");
-      return;
-    }
-    rlog("tts-start", seg.slice(0, 30));
-    const ctrl = new AbortController();
-    const onAbort = () => {
-      try {
-        ctrl.abort();
-      } catch {
-      }
-    };
-    if (signal) {
-      if (signal.aborted) return;
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-    const timer = setTimeout(onAbort, 12e4);
-    try {
-      const res = await fetch(TTS_URL, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: seg,
-          text_lang: "zh",
-          prompt_lang: "zh",
-          text_split_method: "cut5",
-          media_type: "wav",
-          streaming_mode: false,
-          temperature: 0.4,
-          top_P: 0.7,
-          top_K: 3,
-          ...TTS_REF
-        })
-      });
-      touchTurnActivity();
-      if (res.status === 502 || res.status === 503 || res.status === 504) {
-        gsvDownUntil = Date.now() + 6e4;
-        rlog("tts-upstream-" + res.status, "silent 60s");
-        return;
-      }
-      if (!res.ok) throw new Error("TTS HTTP " + res.status);
-      const blob = await res.blob();
-      touchTurnActivity();
-      rlog("tts-ok", blob.size + "B");
-      speech.say(blob);
-    } catch (e3) {
-      if (signal && signal.aborted) {
-        rlog("tts-abort", "turn aborted");
-        return;
-      }
-      if (ctrl.signal.aborted) {
-        gsvDownUntil = Date.now() + 6e4;
-        rlog("tts-timeout", "silent 60s");
-        return;
-      }
-      rlog("tts-error", String(e3 && e3.message || e3));
-      console.warn("TTS \u5206\u6BB5\u5931\u8D25: " + String(e3 && e3.message || e3));
-    } finally {
-      clearTimeout(timer);
-      if (signal) signal.removeEventListener("abort", onAbort);
-      touchTurnActivity();
-    }
-  }
   var turnAbort = null;
   async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}) {
     if (busy) return false;
@@ -3458,162 +3705,20 @@ void main(){ o=texture(uTex,vUv); }`;
     } catch {
     }
   }, 2e4);
-  var micStream = null;
-  var micAudioCtx = null;
-  var micSource = null;
-  var micProcessor = null;
-  var micBuffers = [];
-  var isRecording = false;
-  function encodeWAV(samples, sampleRate) {
-    const buffer = new ArrayBuffer(44 + samples.length * 2);
-    const view = new DataView(buffer);
-    const writeString = (v4, off, str) => {
-      for (let i3 = 0; i3 < str.length; i3++) v4.setUint8(off + i3, str.charCodeAt(i3));
-    };
-    writeString(view, 0, "RIFF");
-    view.setUint32(4, 36 + samples.length * 2, true);
-    writeString(view, 8, "WAVE");
-    writeString(view, 12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeString(view, 36, "data");
-    view.setUint32(40, samples.length * 2, true);
-    let offset = 44;
-    for (let i3 = 0; i3 < samples.length; i3++, offset += 2) {
-      const s3 = Math.max(-1, Math.min(1, samples[i3]));
-      view.setInt16(offset, s3 < 0 ? s3 * 32768 : s3 * 32767, true);
-    }
-    return new Blob([view], { type: "audio/wav" });
-  }
-  async function startRecording() {
-    if (isRecording) return;
-    if (!unlocked) {
-      speech.unlock();
-      unlocked = true;
-    }
-    try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16e3,
-          echoCancellation: true,
-          noiseSuppression: true
-        }
-      });
-    } catch (err) {
-      console.error("[mic] \u83B7\u53D6\u9EA6\u514B\u98CE\u5931\u8D25:", err);
-      showBubble("\u65E0\u6CD5\u8BBF\u95EE\u9EA6\u514B\u98CE\uFF0C\u8BF7\u68C0\u67E5\u7CFB\u7EDF\u8BBE\u7F6E\u4E0E\u6743\u9650");
-      return;
-    }
-    micAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16e3 });
-    micSource = micAudioCtx.createMediaStreamSource(micStream);
-    micProcessor = micAudioCtx.createScriptProcessor(4096, 1, 1);
-    micBuffers = [];
-    micProcessor.onaudioprocess = (e3) => {
-      if (!isRecording) return;
-      const inputData = e3.inputBuffer.getChannelData(0);
-      micBuffers.push(new Float32Array(inputData));
-    };
-    micSource.connect(micProcessor);
-    micProcessor.connect(micAudioCtx.destination);
-    isRecording = true;
-    const micBtn = $3("micbtn");
-    if (micBtn) micBtn.classList.add("recording");
-    showBubble("\u{1F399}\uFE0F \u6B63\u5728\u503E\u542C\u4E3B\u4EBA\u8BF4\u8BDD\u2026\uFF08\u518D\u6B21\u70B9\u51FB\u7ED3\u675F\u5E76\u8BC6\u522B\uFF09");
-  }
-  async function stopRecording() {
-    if (!isRecording) return null;
-    isRecording = false;
-    const micBtn = $3("micbtn");
-    if (micBtn) micBtn.classList.remove("recording");
-    if (micProcessor) {
-      try {
-        micProcessor.disconnect();
-      } catch {
+  var { handleMicToggle } = createAsrController({
+    getMicBtn: () => $3("micbtn"),
+    showBubble,
+    hideBubble,
+    input,
+    autoGrowInput,
+    isBusy: () => busy,
+    unlockSpeech: () => {
+      if (!unlocked) {
+        speech.unlock();
+        unlocked = true;
       }
-      micProcessor.onaudioprocess = null;
-      micProcessor = null;
     }
-    if (micSource) {
-      try {
-        micSource.disconnect();
-      } catch {
-      }
-      micSource = null;
-    }
-    const sampleRate = micAudioCtx ? micAudioCtx.sampleRate : 16e3;
-    if (micAudioCtx) {
-      try {
-        await micAudioCtx.close();
-      } catch {
-      }
-      micAudioCtx = null;
-    }
-    if (micStream) {
-      micStream.getTracks().forEach((t3) => t3.stop());
-      micStream = null;
-    }
-    const totalLength = micBuffers.reduce((acc, b4) => acc + b4.length, 0);
-    if (totalLength === 0) return null;
-    const merged = new Float32Array(totalLength);
-    let offset = 0;
-    for (const b4 of micBuffers) {
-      merged.set(b4, offset);
-      offset += b4.length;
-    }
-    micBuffers = [];
-    return { blob: encodeWAV(merged, sampleRate), duration: totalLength / sampleRate };
-  }
-  async function handleMicToggle() {
-    if (isRecording) {
-      const result = await stopRecording();
-      if (!result || result.duration < 0.4) {
-        showBubble("\u5F55\u97F3\u65F6\u95F4\u592A\u77ED\u4E86\u54E6");
-        setTimeout(() => {
-          if (!busy) hideBubble();
-        }, 2500);
-        return;
-      }
-      showBubble("\u8BC6\u522B\u8BED\u97F3\u4E2D\u2026");
-      try {
-        const res = await fetch("/api/asr", {
-          method: "POST",
-          headers: { "Content-Type": "audio/wav" },
-          body: result.blob
-        });
-        const data = await res.json();
-        if (data && data.ok && data.text && data.text.trim()) {
-          const text = data.text.trim();
-          input.value = input.value ? input.value + " " + text : text;
-          autoGrowInput();
-          input.focus();
-          hideBubble();
-        } else {
-          showBubble("\u6CA1\u542C\u6E05\u4E3B\u4EBA\u8BF4\u4E86\u4EC0\u4E48\u5462\uFF0C\u518D\u8BD5\u4E00\u6B21\u5427~");
-          setTimeout(() => {
-            if (!busy) hideBubble();
-          }, 3e3);
-        }
-      } catch (err) {
-        console.error("[asr] \u8BC6\u522B\u8BF7\u6C42\u5931\u8D25:", err);
-        showBubble("\u8BED\u97F3\u8BC6\u522B\u5931\u8D25: " + (err.message || "\u7F51\u7EDC\u6216\u670D\u52A1\u5F02\u5E38"));
-        setTimeout(() => {
-          if (!busy) hideBubble();
-        }, 4e3);
-      }
-    } else {
-      if (busy) {
-        showBubble("\u6B63\u5728\u5FD9\u788C\u4E2D\uFF0C\u8BF7\u7A0D\u5019\u2026");
-        return;
-      }
-      await startRecording();
-    }
-  }
+  });
   $3("micbtn")?.addEventListener("click", handleMicToggle);
   $3("continuebtn").addEventListener("click", () => {
     if (busy) interrupt();
