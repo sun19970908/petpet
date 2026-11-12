@@ -1,11 +1,14 @@
 // DeepSeek 娘桌宠 - 渲染层：livliv player + 本地 Strata + GPT-SoVITS
 import { Player } from '@livliv-dev/player';
 import { createSpeech } from '@livliv-dev/player/voice';
-import { THINK_MODULES, INF_WAKE_TEXT, textOf, formatMemories, buildMemoryQuery, assemblePrompt } from './prompt-builder.js';
+import { THINK_MODULES, INF_WAKE_TEXT, textOf, buildMemoryQuery, assemblePrompt } from './prompt-builder.js';
 import { buildChatPayload, getPrefillState, normalizeLlmConfig } from './llm-adapter.js';
 import { TOOLS, parseTextToolCalls } from './tools-schema.js';
 import { makeSentenceSlicer, rlog, createTtsController } from './tts.js';
 import { createAsrController } from './asr-recorder.js';
+import { stripThink, createContentFilter } from './stream-filter.js';
+import { createPetTools } from './pet-tools.js';
+import { createMemoryClient } from './memory-client.js';
 
 // 帧率封顶 30fps：桌宠动画（呼吸/眨眼/摇摆）足够流畅；60Hz 全速渲染会让 DWM 合成吃掉大量 GPU
 // 必须在 new Player() 之前装上——livliv 的渲染循环每帧经 window.requestAnimationFrame 排程
@@ -196,42 +199,18 @@ function react(text) {
 
 // 工具列表与文本解析已抽至 renderer/tools-schema.js
 
-// ===== 语义记忆：相关回忆注入 + search_memory 工具 =====
-async function memoryAddFire(userContent, reply) {
-  // 每轮结束后把本轮两条写入语义索引（失败不影响聊天）
-  try {
-    const items = [
-      { text: '[用户] ' + textOf(userContent), role: 'user', kind: 'chat', ts: Date.now() },
-      { text: '[DeepSeek娘] ' + reply, role: 'assistant', kind: 'chat', ts: Date.now() + 1 },
-    ];
-    if (window.petWindow) await window.petWindow.memoryAdd(items, DEBUG_MODE ? 'debug' : undefined);
-    else await fetch('/api/memory-add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, mode: DEBUG_MODE ? 'debug' : undefined }) });
-  } catch {}
-}
-async function memoryRecall(query, limit = 5, rawText = '') {
-  try {
-    const q = textOf(query).trim();
-    if (!q) return [];
-    const selfText = textOf(rawText).trim() || q;
-    const searchP = window.petWindow
-      ? window.petWindow.memorySearch(q, DEBUG_MODE ? 'debug' : undefined, limit)
-      : fetch('/api/memory-search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q, mode: DEBUG_MODE ? 'debug' : undefined, limit }) }).then((res) => res.json());
-    const r = await Promise.race([
-      searchP,
-      new Promise((resolve) => setTimeout(() => resolve({ hits: [] }), 8000)),
-    ]);
-    return (r && r.hits || []).filter((h) => h.text.trim() !== selfText && h.text.trim() !== '[用户] ' + selfText);
-  } catch { return []; }
-}
-// 工具调用台账：自动注入（她真实做过什么的唯一权威记录，防"没做却说做了"）
-async function getToolLedger() {
-  try {
-    const lines = window.petWindow
-      ? await window.petWindow.fstoolTail(10)
-      : await (await fetch('/api/fstool-tail?n=10')).json();
-    return lines.length ? '\n\n【工具调用台账】（你最近 10 次真实的工具操作记录，引用时以此为准）\n' + lines.map((l) => '- ' + l).join('\n') : '';
-  } catch { return ''; }
-}
+// ===== 语义记忆：相关回忆注入 + search_memory 工具（实现见 memory-client.js） =====
+const memory = createMemoryClient({ debugMode: DEBUG_MODE });
+// 桌宠专用工具（search_memory / walk_to）：屏幕与坐标信息用取值器注入，实现见 pet-tools.js
+const petTools = createPetTools({
+  ROLE,
+  getDisplayInfo: () => displayInfo,
+  isBedroomMode: () => bedroomMode,
+  displayCssRect,
+  walkToCss,
+  walkToFraction,
+  memoryRecall: memory.recall,
+});
 
 let lastExchange = null; // 记录最近一次底层请求与响应（供“继续”按钮使用）
 
@@ -244,7 +223,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     bodyMsgs = continueBaseMsgs.slice();
   } else {
     // 台账 + 尾部思考/工具策略由 llmConfig 驱动；主历史只读，无限唤醒拼 mainHistory + infHistory
-    const ledger = await getToolLedger();
+    const ledger = await memory.ledger();
     const { systemPrompt, persona } = await getSystemParts();
     const assembled = assemblePrompt({
       systemPrompt,
@@ -263,39 +242,8 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     if (assembled.consumedForceToolPrefill) forceToolPrefill = false;
     forceRequiredTool = Boolean(assembled.forceRequiredTool);
   }
-  // 剥离思考标签：cfm 模式下引擎只返回续写部分——可能没有开头标签只有结尾 </think>，
-  // 两种形态都要兜住：成对块整体删；无开头时删到第一个结尾标签为止（剩下全是思考残段）
-  const stripThink = (s) => {
-    let t = String(s || '')
-      .replace(/<(pet_)?think>[\s\S]*?<\/\1think>\s*/g, ''); // 成对块
-    const m = t.match(/<\/(?:pet_)?think>/);
-    if (m) t = t.slice(m.index + m[0].length); // 续写形态：掐到结尾标签
-    return t.trim();
-  };
   // ===== 流式主循环：SSE 解析 + 思维链静默状态机 + 成句即说 =====
-  // 思考块（pet_think/think）内容全程静默丢弃，只有闭合后的正文按句边界实时送 TTS；
-  // 原生 tool_call delta 按片段累积，文本 <tool_call>/<invoke> 块拦截不 TTS；
-  // 每轮开始重置切句器与思考状态（cfm 时流从思考块内部开始）。
-  const TAG_RES = /<\/?(?:pet_think|think|tool_call|invoke)>/;
-  const CLOSE_THINK_RE = /<\/(?:pet_think|think)>/;
-  const OPEN_THINK_RE = /<(?:pet_think|think)>/;
-  const CLOSE_TOOL_RE = /<\/(?:tool_call|invoke)>/;
-  function partialTagLen(s) {
-    for (let len = Math.min(s.length, 12); len > 0; len--) {
-      const tail = s.slice(-len);
-      if (['<pet_think>', '</pet_think>', '<think>', '</think>', '<tool_call>', '</tool_call>', '<invoke>', '</invoke>'].some((tag) => tag.startsWith(tail))) return len;
-    }
-    return 0;
-  }
-  // 思考/工具态里找闭合标签时，同样要扣住"半个标签"：闭合标签被 delta 切断时（'</pet_' + 'think>'），
-  // 若直接吞掉前半截，闭合标签就永远匹配不上，后面的正文会整段被当成思考丢掉（"只显示不发声"的根因）
-  function partialCloseLen(s, tags) {
-    for (let len = Math.min(s.length, 12); len > 0; len--) {
-      const tail = s.slice(-len);
-      if (tags.some((tag) => tag.startsWith(tail))) return len;
-    }
-    return 0;
-  }
+  // 标签剥离与增量状态机已抽至 stream-filter.js；这里只负责请求、工具轮与历史落盘
   let noTools = false;
   let lastSig = null;
   let repeatCount = 0;
@@ -317,7 +265,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     rlog('tts-dispatch', seg.slice(0, 40));
     ttsChain = ttsChain.then(() => speakSegment(seg, signal)).catch(() => {});
   };
-  let lastBubbleTs = 0;
   for (let round = 0; ; round++) {
     touchTurnActivity();
     const slicer = makeSentenceSlicer();
@@ -343,61 +290,22 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let sse = '';
-    let rawContent = '';
     let rawReasoning = '';
-    let inThink = startInThink;   // 由预填充推断：续写起点是否停在未闭合的思考块里
-    let inTool = startInTool;     // 由预填充推断：续写起点是否停在未闭合的 tool_call/invoke 块里
-    let processed = 0;          // rawContent 已处理光标
     let finish = null, usage = null;
     const nativeCalls = new Map();
     let replyText = '';
     let lastBubbleTs = 0;
-    const feedReplyDelta = (t) => {
-      if (!t) return;
-      replyText += t;
-      for (const seg of slicer.push(t)) dispatchTTS(seg);
-      const now = Date.now();
-      if (now - lastBubbleTs > 300) { lastBubbleTs = now; showBubble(slicer.preview() || replyText.slice(-140)); }
-    };
-    // 内容增量状态机：inThink 丢弃思考；inTool 留给 parseTextToolCalls；其余正文成句即说。
-    // 标签可能被 delta 切断（如 '</pet_' + 'think>'）——partialTagLen 扣住尾部半个标签等下一个 delta。
-    const processRaw = () => {
-      for (;;) {
-        const rest = rawContent.slice(processed);
-        if (!rest) return;
-        if (inThink) {
-          const m = rest.match(CLOSE_THINK_RE);
-          if (!m) {
-            processed = rawContent.length - partialCloseLen(rest, ['</pet_think>', '</think>']);
-            return;
-          }
-          processed += m.index + m[0].length;
-          inThink = false;
-        } else if (inTool) {
-          const m = rest.match(CLOSE_TOOL_RE);
-          if (!m) {
-            processed = rawContent.length - partialCloseLen(rest, ['</tool_call>', '</invoke>']);
-            return;
-          }
-          processed += m.index + m[0].length;
-          inTool = false;
-        } else {
-          const m = rest.match(TAG_RES);
-          const hold = partialTagLen(rest);
-          if (m && m.index < rest.length - hold) {
-            feedReplyDelta(rest.slice(0, m.index));
-            processed += m.index;
-            if (m[0] === '<pet_think>' || m[0] === '<think>') { inThink = true; processed += m[0].length; }
-            else if (m[0] === '<tool_call>' || m[0] === '<invoke>') { inTool = true; processed += m[0].length; }
-            else { processed += m[0].length; }   // 正文态里的孤立关闭标签（如 cfm 后多吐的 </pet_think>）：直接丢弃
-          } else {
-            feedReplyDelta(rest.slice(0, rest.length - hold));
-            processed += rest.length - hold;
-            return;   // 剩余是可能被切断的标签前缀，等下一个 delta
-          }
-        }
-      }
-    };
+    // 内容增量状态机见 stream-filter.js：思考块静默丢弃，正文成句即说
+    const filter = createContentFilter({
+      startInThink,
+      startInTool,
+      onText: (t) => {
+        replyText += t;
+        for (const seg of slicer.push(t)) dispatchTTS(seg);
+        const now = Date.now();
+        if (now - lastBubbleTs > 300) { lastBubbleTs = now; showBubble(slicer.preview() || replyText.slice(-140)); }
+      },
+    });
     while (true) {
       const rd = await reader.read();
       if (rd.done) break;
@@ -417,7 +325,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         if (ch0.finish_reason) finish = ch0.finish_reason;
         const d = ch0.delta || {};
         if (Array.isArray(d.tool_calls)) {
-          inTool = true;
+          filter.markTool();
           for (const tc of d.tool_calls) {
             const idx = tc.index ?? 0;
             const cur = nativeCalls.get(idx) || { id: '', type: 'function', function: { name: '', arguments: '' } };
@@ -428,7 +336,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
           }
         }
         if (typeof d.reasoning_content === 'string' && d.reasoning_content) { rawReasoning += d.reasoning_content; }
-        if (typeof d.content === 'string' && d.content) { rawContent += d.content; processRaw(); }
+        if (typeof d.content === 'string' && d.content) { filter.feed(d.content); }
       }
     }
     noteContext(usage && usage.prompt_tokens);
@@ -439,7 +347,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       if (tail) dispatchTTS(tail);
     }
     // ===== 组装等价非流形状 → 完全复用现有护栏与工具执行 =====
-    const content = rawContent;
+    const content = filter.content;
     let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v) : null;
     if (!toolCalls && content && llmConfig.promptPolicy.parseTextToolCalls !== false) {
       const parsed = parseTextToolCalls(content, round);
@@ -477,62 +385,11 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         }
         showBubble(round === 0 ? '看屏幕中…' : '继续翻…');
         if (call.function?.name === 'search_memory') {
-          const r = await memoryRecall(parsed.query || '', parsed.limit || 8);
-          bodyMsgs.push({
-            role: 'tool', tool_call_id: call.id,
-            content: r.length ? r.map((h) => `[${new Date(h.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}] ${h.text}`).join('\n---\n') : '（没有找到相关记忆）',
-          });
+          bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: await petTools.searchMemory(parsed) });
           continue;
         }
         if (call.function?.name === 'walk_to') {
-          let result;
-          try {
-            const where = String(parsed.where || '').toLowerCase();
-            const special = ['primary', '主屏', 'main', 'room', 'bedroom', '卧室'].includes(where);
-            let fx = parsed.x, fy = parsed.y;
-            const said = parsed.where ? '「' + parsed.where + '」' : '(' + fx + ',' + fy + ')';
-            if (!special && (fx == null || fy == null)) {
-              let lm = null;
-              try { lm = await (await fetch('/pet_space/room/landmarks.json?t=' + Date.now(), { cache: 'no-store' })).json(); } catch {}
-              if (!lm || !lm[where] || typeof lm[where].x !== 'number') {
-                result = '找不到地标 "' + (parsed.where || '') + '"：pet_space/room/landmarks.json 里没有它。现有地标：' + (lm ? Object.keys(lm).filter((k) => k[0] !== '_').join('、') : '(文件读不到)') + '。' + (ROLE === 'pet' ? '也可以用 where="primary" 去主屏、where="room" 回卧室。' : '换背景后请把坐标写进这份文件。');
-              } else { fx = lm[where].x; fy = lm[where].y; }
-            }
-            if (result == null) {
-              if (ROLE === 'pet') {
-                const pri = (displayInfo || []).find((d) => d.isPrimary);
-                const bed = (displayInfo || []).find((d) => !d.isPrimary);
-                if (where === 'primary' || where === '主屏' || where === 'main') {
-                  const r = displayCssRect(pri);
-                  const px = typeof fx === 'number' ? Math.max(0, Math.min(1, fx)) : 0.5;
-                  const py = typeof fy === 'number' ? Math.max(0, Math.min(1, fy)) : 0.9;
-                  if (!r) result = '拿不到主屏位置，稍后再试。';
-                  else { await walkToCss(r.x + r.w * px, r.y + r.h * py); result = '走到主屏' + (typeof fx === 'number' || typeof fy === 'number' ? '（' + px + ',' + py + '）' : '底部中间') + '啦'; }
-                } else if (where === 'room' || where === 'bedroom' || where === '卧室') {
-                  const r = displayCssRect(bed);
-                  const px = typeof fx === 'number' ? Math.max(0, Math.min(1, fx)) : 0.5;
-                  const py = typeof fy === 'number' ? Math.max(0, Math.min(1, fy)) : 0.78;
-                  if (!r) result = '拿不到卧室位置，稍后再试。';
-                  else { await walkToCss(r.x + r.w * px, r.y + r.h * py); result = '回卧室' + (typeof fx === 'number' || typeof fy === 'number' ? '（' + px + ',' + py + '）' : '啦'); }
-                } else if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) {
-                  result = '坐标要是 0~1 的比例（x 横向、y 纵向，脚下位置）。';
-                } else {
-                  const r = displayCssRect(bed);
-                  if (r) await walkToCss(r.x + fx * r.w, r.y + fy * r.h);
-                  else await walkToFraction(fx, fy);
-                  result = '走到 ' + said + ' 啦';
-                }
-              } else if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) {
-                result = '坐标要是 0~1 的比例（x 横向、y 纵向，脚下位置）。';
-              } else if (!bedroomMode) {
-                result = '你不在卧室（副屏）里，先让主人把你拖回副屏卧室再走。';
-              } else {
-                await walkToFraction(fx, fy);
-                result = '走到 ' + said + ' 啦';
-              }
-            }
-          } catch (e) { result = '移动失败: ' + String((e && e.message) || e); }
-          bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: result });
+          bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: await petTools.walkTo(parsed) });
           continue;
         }
         touchTurnActivity();
@@ -674,7 +531,7 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
       isInfiniteWake: isInf,
       userContent,
     });
-    const recalled = await memoryRecall(memQuery, 5, text);
+    const recalled = await memory.recall(memQuery, 5, text);
     touchTurnActivity();
     const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
     if (isInf) {
@@ -692,7 +549,7 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
     replied = true;
     react(reply);
     // 流式阶段已成句即说（dispatchTTS），不再重复整段 speak
-    if (!isInf) memoryAddFire(userContent, reply); // 无限唤醒不再进 memory.orama
+    if (!isInf) memory.add(userContent, reply); // 无限唤醒不再进 memory.orama
     queueInfiniteWake();
     return true;
   } catch (e) {
@@ -974,7 +831,7 @@ async function continueRequest() {
     replied = true;
     react(newReply);
     // 流式阶段已成句即说（dispatchTTS），不再重复整段 speak
-    if (!isInf) memoryAddFire(userContent, fullReply);
+    if (!isInf) memory.add(userContent, fullReply);
     queueInfiniteWake();
     return true;
   } catch (e) {

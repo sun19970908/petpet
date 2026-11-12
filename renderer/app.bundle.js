@@ -3579,6 +3579,213 @@ ${note}` : note };
     return { handleMicToggle: handleMicToggle2 };
   }
 
+  // renderer/stream-filter.js
+  var TAG_RE = /<\/?(?:pet_think|think|tool_call|invoke)>/;
+  var CLOSE_THINK_RE = /<\/(?:pet_think|think)>/;
+  var CLOSE_TOOL_RE = /<\/(?:tool_call|invoke)>/;
+  var THINK_TAGS = ["<pet_think>", "</pet_think>", "<think>", "</think>"];
+  var TOOL_TAGS = ["<tool_call>", "</tool_call>", "<invoke>", "</invoke>"];
+  var ALL_TAGS = THINK_TAGS.concat(TOOL_TAGS);
+  function partialTagLen(s3, tags = ALL_TAGS) {
+    for (let len = Math.min(s3.length, 12); len > 0; len--) {
+      const tail = s3.slice(-len);
+      if (tags.some((tag) => tag.startsWith(tail))) return len;
+    }
+    return 0;
+  }
+  function stripThink(s3) {
+    let t5 = String(s3 || "").replace(/<(pet_)?think>[\s\S]*?<\/\1think>\s*/g, "");
+    const m3 = t5.match(/<\/(?:pet_)?think>/);
+    if (m3) t5 = t5.slice(m3.index + m3[0].length);
+    return t5.trim();
+  }
+  function createContentFilter({ startInThink = false, startInTool = false, onText = () => {
+  } } = {}) {
+    let inThink = Boolean(startInThink);
+    let inTool = Boolean(startInTool);
+    let raw = "";
+    let processed = 0;
+    function process() {
+      for (; ; ) {
+        const rest = raw.slice(processed);
+        if (!rest) return;
+        if (inThink) {
+          const m3 = rest.match(CLOSE_THINK_RE);
+          if (!m3) {
+            processed = raw.length - partialTagLen(rest, ["</pet_think>", "</think>"]);
+            return;
+          }
+          processed += m3.index + m3[0].length;
+          inThink = false;
+        } else if (inTool) {
+          const m3 = rest.match(CLOSE_TOOL_RE);
+          if (!m3) {
+            processed = raw.length - partialTagLen(rest, ["</tool_call>", "</invoke>"]);
+            return;
+          }
+          processed += m3.index + m3[0].length;
+          inTool = false;
+        } else {
+          const m3 = rest.match(TAG_RE);
+          const hold = partialTagLen(rest);
+          if (m3 && m3.index < rest.length - hold) {
+            const body = rest.slice(0, m3.index);
+            if (body) onText(body);
+            processed += m3.index;
+            if (m3[0] === "<pet_think>" || m3[0] === "<think>") {
+              inThink = true;
+              processed += m3[0].length;
+            } else if (m3[0] === "<tool_call>" || m3[0] === "<invoke>") {
+              inTool = true;
+              processed += m3[0].length;
+            } else {
+              processed += m3[0].length;
+            }
+          } else {
+            const body = rest.slice(0, rest.length - hold);
+            if (body) onText(body);
+            processed += rest.length - hold;
+            return;
+          }
+        }
+      }
+    }
+    return {
+      feed(delta) {
+        if (!delta) return;
+        raw += delta;
+        process();
+      },
+      markTool() {
+        inTool = true;
+      },
+      get content() {
+        return raw;
+      },
+      get inThink() {
+        return inThink;
+      },
+      get inTool() {
+        return inTool;
+      }
+    };
+  }
+
+  // renderer/pet-tools.js
+  var WALK_SPECIAL = ["primary", "\u4E3B\u5C4F", "main", "room", "bedroom", "\u5367\u5BA4"];
+  function createPetTools({ ROLE: ROLE2, getDisplayInfo, isBedroomMode, displayCssRect: displayCssRect2, walkToCss: walkToCss2, walkToFraction: walkToFraction2, memoryRecall }) {
+    async function searchMemory(parsed = {}) {
+      const r3 = await memoryRecall(parsed.query || "", parsed.limit || 8);
+      return r3.length ? r3.map((h3) => `[${new Date(h3.ts).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}] ${h3.text}`).join("\n---\n") : "\uFF08\u6CA1\u6709\u627E\u5230\u76F8\u5173\u8BB0\u5FC6\uFF09";
+    }
+    async function walkTo(parsed = {}) {
+      let result;
+      try {
+        const where = String(parsed.where || "").toLowerCase();
+        const special = WALK_SPECIAL.includes(where);
+        let fx = parsed.x, fy = parsed.y;
+        const said = parsed.where ? "\u300C" + parsed.where + "\u300D" : "(" + fx + "," + fy + ")";
+        if (!special && (fx == null || fy == null)) {
+          let lm = null;
+          try {
+            lm = await (await fetch("/pet_space/room/landmarks.json?t=" + Date.now(), { cache: "no-store" })).json();
+          } catch {
+          }
+          if (!lm || !lm[where] || typeof lm[where].x !== "number") {
+            result = '\u627E\u4E0D\u5230\u5730\u6807 "' + (parsed.where || "") + '"\uFF1Apet_space/room/landmarks.json \u91CC\u6CA1\u6709\u5B83\u3002\u73B0\u6709\u5730\u6807\uFF1A' + (lm ? Object.keys(lm).filter((k3) => k3[0] !== "_").join("\u3001") : "(\u6587\u4EF6\u8BFB\u4E0D\u5230)") + "\u3002" + (ROLE2 === "pet" ? '\u4E5F\u53EF\u4EE5\u7528 where="primary" \u53BB\u4E3B\u5C4F\u3001where="room" \u56DE\u5367\u5BA4\u3002' : "\u6362\u80CC\u666F\u540E\u8BF7\u628A\u5750\u6807\u5199\u8FDB\u8FD9\u4EFD\u6587\u4EF6\u3002");
+          } else {
+            fx = lm[where].x;
+            fy = lm[where].y;
+          }
+        }
+        if (result == null) {
+          if (ROLE2 === "pet") {
+            const displays = getDisplayInfo() || [];
+            const pri = displays.find((d2) => d2.isPrimary);
+            const bed = displays.find((d2) => !d2.isPrimary);
+            if (where === "primary" || where === "\u4E3B\u5C4F" || where === "main") {
+              const r3 = displayCssRect2(pri);
+              const px = typeof fx === "number" ? Math.max(0, Math.min(1, fx)) : 0.5;
+              const py = typeof fy === "number" ? Math.max(0, Math.min(1, fy)) : 0.9;
+              if (!r3) result = "\u62FF\u4E0D\u5230\u4E3B\u5C4F\u4F4D\u7F6E\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002";
+              else {
+                await walkToCss2(r3.x + r3.w * px, r3.y + r3.h * py);
+                result = "\u8D70\u5230\u4E3B\u5C4F" + (typeof fx === "number" || typeof fy === "number" ? "\uFF08" + px + "," + py + "\uFF09" : "\u5E95\u90E8\u4E2D\u95F4") + "\u5566";
+              }
+            } else if (where === "room" || where === "bedroom" || where === "\u5367\u5BA4") {
+              const r3 = displayCssRect2(bed);
+              const px = typeof fx === "number" ? Math.max(0, Math.min(1, fx)) : 0.5;
+              const py = typeof fy === "number" ? Math.max(0, Math.min(1, fy)) : 0.78;
+              if (!r3) result = "\u62FF\u4E0D\u5230\u5367\u5BA4\u4F4D\u7F6E\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002";
+              else {
+                await walkToCss2(r3.x + r3.w * px, r3.y + r3.h * py);
+                result = "\u56DE\u5367\u5BA4" + (typeof fx === "number" || typeof fy === "number" ? "\uFF08" + px + "," + py + "\uFF09" : "\u5566");
+              }
+            } else if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) {
+              result = "\u5750\u6807\u8981\u662F 0~1 \u7684\u6BD4\u4F8B\uFF08x \u6A2A\u5411\u3001y \u7EB5\u5411\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002";
+            } else {
+              const r3 = displayCssRect2(bed);
+              if (r3) await walkToCss2(r3.x + fx * r3.w, r3.y + fy * r3.h);
+              else await walkToFraction2(fx, fy);
+              result = "\u8D70\u5230 " + said + " \u5566";
+            }
+          } else if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) {
+            result = "\u5750\u6807\u8981\u662F 0~1 \u7684\u6BD4\u4F8B\uFF08x \u6A2A\u5411\u3001y \u7EB5\u5411\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002";
+          } else if (!isBedroomMode()) {
+            result = "\u4F60\u4E0D\u5728\u5367\u5BA4\uFF08\u526F\u5C4F\uFF09\u91CC\uFF0C\u5148\u8BA9\u4E3B\u4EBA\u628A\u4F60\u62D6\u56DE\u526F\u5C4F\u5367\u5BA4\u518D\u8D70\u3002";
+          } else {
+            await walkToFraction2(fx, fy);
+            result = "\u8D70\u5230 " + said + " \u5566";
+          }
+        }
+      } catch (e3) {
+        result = "\u79FB\u52A8\u5931\u8D25: " + String(e3 && e3.message || e3);
+      }
+      return result;
+    }
+    return { searchMemory, walkTo };
+  }
+
+  // renderer/memory-client.js
+  function createMemoryClient({ debugMode = false } = {}) {
+    const mode = () => debugMode ? "debug" : void 0;
+    async function add(userContent, reply) {
+      try {
+        const items = [
+          { text: "[\u7528\u6237] " + textOf(userContent), role: "user", kind: "chat", ts: Date.now() },
+          { text: "[DeepSeek\u5A18] " + reply, role: "assistant", kind: "chat", ts: Date.now() + 1 }
+        ];
+        if (window.petWindow) await window.petWindow.memoryAdd(items, mode());
+        else await fetch("/api/memory-add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, mode: mode() }) });
+      } catch {
+      }
+    }
+    async function recall(query, limit = 5, rawText = "") {
+      try {
+        const q3 = textOf(query).trim();
+        if (!q3) return [];
+        const selfText = textOf(rawText).trim() || q3;
+        const searchP = window.petWindow ? window.petWindow.memorySearch(q3, mode(), limit) : fetch("/api/memory-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q3, mode: mode(), limit }) }).then((res) => res.json());
+        const r3 = await Promise.race([
+          searchP,
+          new Promise((resolve) => setTimeout(() => resolve({ hits: [] }), 8e3))
+        ]);
+        return (r3 && r3.hits || []).filter((h3) => h3.text.trim() !== selfText && h3.text.trim() !== "[\u7528\u6237] " + selfText);
+      } catch {
+        return [];
+      }
+    }
+    async function ledger() {
+      try {
+        const lines = window.petWindow ? await window.petWindow.fstoolTail(10) : await (await fetch("/api/fstool-tail?n=10")).json();
+        return lines.length ? "\n\n\u3010\u5DE5\u5177\u8C03\u7528\u53F0\u8D26\u3011\uFF08\u4F60\u6700\u8FD1 10 \u6B21\u771F\u5B9E\u7684\u5DE5\u5177\u64CD\u4F5C\u8BB0\u5F55\uFF0C\u5F15\u7528\u65F6\u4EE5\u6B64\u4E3A\u51C6\uFF09\n" + lines.map((l3) => "- " + l3).join("\n") : "";
+      } catch {
+        return "";
+      }
+    }
+    return { add, recall, ledger };
+  }
+
   // renderer/app.js
   (function capFPS(fps = 30) {
     const orig = window.requestAnimationFrame.bind(window);
@@ -3756,40 +3963,16 @@ ${note}` : note };
     else if (/对不起|抱歉|难过/.test(text)) flash("sad");
     else flash(null);
   }
-  async function memoryAddFire(userContent, reply) {
-    try {
-      const items = [
-        { text: "[\u7528\u6237] " + textOf(userContent), role: "user", kind: "chat", ts: Date.now() },
-        { text: "[DeepSeek\u5A18] " + reply, role: "assistant", kind: "chat", ts: Date.now() + 1 }
-      ];
-      if (window.petWindow) await window.petWindow.memoryAdd(items, DEBUG_MODE ? "debug" : void 0);
-      else await fetch("/api/memory-add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, mode: DEBUG_MODE ? "debug" : void 0 }) });
-    } catch {
-    }
-  }
-  async function memoryRecall(query, limit = 5, rawText = "") {
-    try {
-      const q3 = textOf(query).trim();
-      if (!q3) return [];
-      const selfText = textOf(rawText).trim() || q3;
-      const searchP = window.petWindow ? window.petWindow.memorySearch(q3, DEBUG_MODE ? "debug" : void 0, limit) : fetch("/api/memory-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q3, mode: DEBUG_MODE ? "debug" : void 0, limit }) }).then((res) => res.json());
-      const r3 = await Promise.race([
-        searchP,
-        new Promise((resolve) => setTimeout(() => resolve({ hits: [] }), 8e3))
-      ]);
-      return (r3 && r3.hits || []).filter((h3) => h3.text.trim() !== selfText && h3.text.trim() !== "[\u7528\u6237] " + selfText);
-    } catch {
-      return [];
-    }
-  }
-  async function getToolLedger() {
-    try {
-      const lines = window.petWindow ? await window.petWindow.fstoolTail(10) : await (await fetch("/api/fstool-tail?n=10")).json();
-      return lines.length ? "\n\n\u3010\u5DE5\u5177\u8C03\u7528\u53F0\u8D26\u3011\uFF08\u4F60\u6700\u8FD1 10 \u6B21\u771F\u5B9E\u7684\u5DE5\u5177\u64CD\u4F5C\u8BB0\u5F55\uFF0C\u5F15\u7528\u65F6\u4EE5\u6B64\u4E3A\u51C6\uFF09\n" + lines.map((l3) => "- " + l3).join("\n") : "";
-    } catch {
-      return "";
-    }
-  }
+  var memory = createMemoryClient({ debugMode: DEBUG_MODE });
+  var petTools = createPetTools({
+    ROLE,
+    getDisplayInfo: () => displayInfo,
+    isBedroomMode: () => bedroomMode,
+    displayCssRect,
+    walkToCss,
+    walkToFraction,
+    memoryRecall: memory.recall
+  });
   var lastExchange = null;
   async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
     await refreshRuntimeConfig();
@@ -3799,7 +3982,7 @@ ${note}` : note };
     if (continueBaseMsgs) {
       bodyMsgs = continueBaseMsgs.slice();
     } else {
-      const ledger = await getToolLedger();
+      const ledger = await memory.ledger();
       const { systemPrompt, persona } = await getSystemParts();
       const assembled = assemblePrompt({
         systemPrompt,
@@ -3817,30 +4000,6 @@ ${note}` : note };
       bodyMsgs = assembled.messages;
       if (assembled.consumedForceToolPrefill) forceToolPrefill = false;
       forceRequiredTool = Boolean(assembled.forceRequiredTool);
-    }
-    const stripThink = (s3) => {
-      let t5 = String(s3 || "").replace(/<(pet_)?think>[\s\S]*?<\/\1think>\s*/g, "");
-      const m3 = t5.match(/<\/(?:pet_)?think>/);
-      if (m3) t5 = t5.slice(m3.index + m3[0].length);
-      return t5.trim();
-    };
-    const TAG_RES = /<\/?(?:pet_think|think|tool_call|invoke)>/;
-    const CLOSE_THINK_RE = /<\/(?:pet_think|think)>/;
-    const OPEN_THINK_RE = /<(?:pet_think|think)>/;
-    const CLOSE_TOOL_RE = /<\/(?:tool_call|invoke)>/;
-    function partialTagLen(s3) {
-      for (let len = Math.min(s3.length, 12); len > 0; len--) {
-        const tail = s3.slice(-len);
-        if (["<pet_think>", "</pet_think>", "<think>", "</think>", "<tool_call>", "</tool_call>", "<invoke>", "</invoke>"].some((tag) => tag.startsWith(tail))) return len;
-      }
-      return 0;
-    }
-    function partialCloseLen(s3, tags) {
-      for (let len = Math.min(s3.length, 12); len > 0; len--) {
-        const tail = s3.slice(-len);
-        if (tags.some((tag) => tag.startsWith(tail))) return len;
-      }
-      return 0;
     }
     let noTools = false;
     let lastSig = null;
@@ -3864,7 +4023,6 @@ ${note}` : note };
       ttsChain = ttsChain.then(() => speakSegment(seg, signal)).catch(() => {
       });
     };
-    let lastBubbleTs = 0;
     for (let round = 0; ; round++) {
       touchTurnActivity();
       const slicer = makeSentenceSlicer();
@@ -3889,68 +4047,24 @@ ${note}` : note };
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let sse = "";
-      let rawContent = "";
       let rawReasoning = "";
-      let inThink = startInThink;
-      let inTool = startInTool;
-      let processed = 0;
       let finish = null, usage = null;
       const nativeCalls = /* @__PURE__ */ new Map();
       let replyText = "";
-      let lastBubbleTs2 = 0;
-      const feedReplyDelta = (t5) => {
-        if (!t5) return;
-        replyText += t5;
-        for (const seg of slicer.push(t5)) dispatchTTS(seg);
-        const now = Date.now();
-        if (now - lastBubbleTs2 > 300) {
-          lastBubbleTs2 = now;
-          showBubble(slicer.preview() || replyText.slice(-140));
-        }
-      };
-      const processRaw = () => {
-        for (; ; ) {
-          const rest2 = rawContent.slice(processed);
-          if (!rest2) return;
-          if (inThink) {
-            const m3 = rest2.match(CLOSE_THINK_RE);
-            if (!m3) {
-              processed = rawContent.length - partialCloseLen(rest2, ["</pet_think>", "</think>"]);
-              return;
-            }
-            processed += m3.index + m3[0].length;
-            inThink = false;
-          } else if (inTool) {
-            const m3 = rest2.match(CLOSE_TOOL_RE);
-            if (!m3) {
-              processed = rawContent.length - partialCloseLen(rest2, ["</tool_call>", "</invoke>"]);
-              return;
-            }
-            processed += m3.index + m3[0].length;
-            inTool = false;
-          } else {
-            const m3 = rest2.match(TAG_RES);
-            const hold = partialTagLen(rest2);
-            if (m3 && m3.index < rest2.length - hold) {
-              feedReplyDelta(rest2.slice(0, m3.index));
-              processed += m3.index;
-              if (m3[0] === "<pet_think>" || m3[0] === "<think>") {
-                inThink = true;
-                processed += m3[0].length;
-              } else if (m3[0] === "<tool_call>" || m3[0] === "<invoke>") {
-                inTool = true;
-                processed += m3[0].length;
-              } else {
-                processed += m3[0].length;
-              }
-            } else {
-              feedReplyDelta(rest2.slice(0, rest2.length - hold));
-              processed += rest2.length - hold;
-              return;
-            }
+      let lastBubbleTs = 0;
+      const filter = createContentFilter({
+        startInThink,
+        startInTool,
+        onText: (t5) => {
+          replyText += t5;
+          for (const seg of slicer.push(t5)) dispatchTTS(seg);
+          const now = Date.now();
+          if (now - lastBubbleTs > 300) {
+            lastBubbleTs = now;
+            showBubble(slicer.preview() || replyText.slice(-140));
           }
         }
-      };
+      });
       while (true) {
         const rd = await reader.read();
         if (rd.done) break;
@@ -3975,7 +4089,7 @@ ${note}` : note };
           if (ch0.finish_reason) finish = ch0.finish_reason;
           const d2 = ch0.delta || {};
           if (Array.isArray(d2.tool_calls)) {
-            inTool = true;
+            filter.markTool();
             for (const tc of d2.tool_calls) {
               const idx = tc.index ?? 0;
               const cur = nativeCalls.get(idx) || { id: "", type: "function", function: { name: "", arguments: "" } };
@@ -3989,8 +4103,7 @@ ${note}` : note };
             rawReasoning += d2.reasoning_content;
           }
           if (typeof d2.content === "string" && d2.content) {
-            rawContent += d2.content;
-            processRaw();
+            filter.feed(d2.content);
           }
         }
       }
@@ -3999,7 +4112,7 @@ ${note}` : note };
         const tail = slicer.flush();
         if (tail) dispatchTTS(tail);
       }
-      const content = rawContent;
+      const content = filter.content;
       let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a4, b3) => a4[0] - b3[0]).map(([, v3]) => v3) : null;
       if (!toolCalls && content && llmConfig.promptPolicy.parseTextToolCalls !== false) {
         const parsed = parseTextToolCalls(content, round);
@@ -4040,77 +4153,11 @@ ${note}` : note };
           }
           showBubble(round === 0 ? "\u770B\u5C4F\u5E55\u4E2D\u2026" : "\u7EE7\u7EED\u7FFB\u2026");
           if (call.function?.name === "search_memory") {
-            const r3 = await memoryRecall(parsed.query || "", parsed.limit || 8);
-            bodyMsgs.push({
-              role: "tool",
-              tool_call_id: call.id,
-              content: r3.length ? r3.map((h3) => `[${new Date(h3.ts).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}] ${h3.text}`).join("\n---\n") : "\uFF08\u6CA1\u6709\u627E\u5230\u76F8\u5173\u8BB0\u5FC6\uFF09"
-            });
+            bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: await petTools.searchMemory(parsed) });
             continue;
           }
           if (call.function?.name === "walk_to") {
-            let result;
-            try {
-              const where = String(parsed.where || "").toLowerCase();
-              const special = ["primary", "\u4E3B\u5C4F", "main", "room", "bedroom", "\u5367\u5BA4"].includes(where);
-              let fx = parsed.x, fy = parsed.y;
-              const said = parsed.where ? "\u300C" + parsed.where + "\u300D" : "(" + fx + "," + fy + ")";
-              if (!special && (fx == null || fy == null)) {
-                let lm = null;
-                try {
-                  lm = await (await fetch("/pet_space/room/landmarks.json?t=" + Date.now(), { cache: "no-store" })).json();
-                } catch {
-                }
-                if (!lm || !lm[where] || typeof lm[where].x !== "number") {
-                  result = '\u627E\u4E0D\u5230\u5730\u6807 "' + (parsed.where || "") + '"\uFF1Apet_space/room/landmarks.json \u91CC\u6CA1\u6709\u5B83\u3002\u73B0\u6709\u5730\u6807\uFF1A' + (lm ? Object.keys(lm).filter((k3) => k3[0] !== "_").join("\u3001") : "(\u6587\u4EF6\u8BFB\u4E0D\u5230)") + "\u3002" + (ROLE === "pet" ? '\u4E5F\u53EF\u4EE5\u7528 where="primary" \u53BB\u4E3B\u5C4F\u3001where="room" \u56DE\u5367\u5BA4\u3002' : "\u6362\u80CC\u666F\u540E\u8BF7\u628A\u5750\u6807\u5199\u8FDB\u8FD9\u4EFD\u6587\u4EF6\u3002");
-                } else {
-                  fx = lm[where].x;
-                  fy = lm[where].y;
-                }
-              }
-              if (result == null) {
-                if (ROLE === "pet") {
-                  const pri = (displayInfo || []).find((d2) => d2.isPrimary);
-                  const bed = (displayInfo || []).find((d2) => !d2.isPrimary);
-                  if (where === "primary" || where === "\u4E3B\u5C4F" || where === "main") {
-                    const r3 = displayCssRect(pri);
-                    const px = typeof fx === "number" ? Math.max(0, Math.min(1, fx)) : 0.5;
-                    const py = typeof fy === "number" ? Math.max(0, Math.min(1, fy)) : 0.9;
-                    if (!r3) result = "\u62FF\u4E0D\u5230\u4E3B\u5C4F\u4F4D\u7F6E\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002";
-                    else {
-                      await walkToCss(r3.x + r3.w * px, r3.y + r3.h * py);
-                      result = "\u8D70\u5230\u4E3B\u5C4F" + (typeof fx === "number" || typeof fy === "number" ? "\uFF08" + px + "," + py + "\uFF09" : "\u5E95\u90E8\u4E2D\u95F4") + "\u5566";
-                    }
-                  } else if (where === "room" || where === "bedroom" || where === "\u5367\u5BA4") {
-                    const r3 = displayCssRect(bed);
-                    const px = typeof fx === "number" ? Math.max(0, Math.min(1, fx)) : 0.5;
-                    const py = typeof fy === "number" ? Math.max(0, Math.min(1, fy)) : 0.78;
-                    if (!r3) result = "\u62FF\u4E0D\u5230\u5367\u5BA4\u4F4D\u7F6E\uFF0C\u7A0D\u540E\u518D\u8BD5\u3002";
-                    else {
-                      await walkToCss(r3.x + r3.w * px, r3.y + r3.h * py);
-                      result = "\u56DE\u5367\u5BA4" + (typeof fx === "number" || typeof fy === "number" ? "\uFF08" + px + "," + py + "\uFF09" : "\u5566");
-                    }
-                  } else if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) {
-                    result = "\u5750\u6807\u8981\u662F 0~1 \u7684\u6BD4\u4F8B\uFF08x \u6A2A\u5411\u3001y \u7EB5\u5411\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002";
-                  } else {
-                    const r3 = displayCssRect(bed);
-                    if (r3) await walkToCss(r3.x + fx * r3.w, r3.y + fy * r3.h);
-                    else await walkToFraction(fx, fy);
-                    result = "\u8D70\u5230 " + said + " \u5566";
-                  }
-                } else if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) {
-                  result = "\u5750\u6807\u8981\u662F 0~1 \u7684\u6BD4\u4F8B\uFF08x \u6A2A\u5411\u3001y \u7EB5\u5411\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002";
-                } else if (!bedroomMode) {
-                  result = "\u4F60\u4E0D\u5728\u5367\u5BA4\uFF08\u526F\u5C4F\uFF09\u91CC\uFF0C\u5148\u8BA9\u4E3B\u4EBA\u628A\u4F60\u62D6\u56DE\u526F\u5C4F\u5367\u5BA4\u518D\u8D70\u3002";
-                } else {
-                  await walkToFraction(fx, fy);
-                  result = "\u8D70\u5230 " + said + " \u5566";
-                }
-              }
-            } catch (e3) {
-              result = "\u79FB\u52A8\u5931\u8D25: " + String(e3 && e3.message || e3);
-            }
-            bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: result });
+            bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: await petTools.walkTo(parsed) });
             continue;
           }
           touchTurnActivity();
@@ -4243,7 +4290,7 @@ ${note}` : note };
         isInfiniteWake: isInf,
         userContent
       });
-      const recalled = await memoryRecall(memQuery, 5, text);
+      const recalled = await memory.recall(memQuery, 5, text);
       touchTurnActivity();
       const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
       if (isInf) {
@@ -4260,7 +4307,7 @@ ${note}` : note };
       showBubble(reply);
       replied = true;
       react(reply);
-      if (!isInf) memoryAddFire(userContent, reply);
+      if (!isInf) memory.add(userContent, reply);
       queueInfiniteWake();
       return true;
     } catch (e3) {
@@ -4584,7 +4631,7 @@ ${note}` : note };
       showBubble(fullReply);
       replied = true;
       react(newReply);
-      if (!isInf) memoryAddFire(userContent, fullReply);
+      if (!isInf) memory.add(userContent, fullReply);
       queueInfiniteWake();
       return true;
     } catch (e3) {
