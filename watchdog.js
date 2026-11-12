@@ -11,6 +11,11 @@ const STATE = path.join(ROOT, 'pet_space', '.wake-state.json');
 const LOG = path.join(ROOT, 'logs', 'watchdog.log');
 const PIDFILE = path.join(ROOT, 'logs', 'watchdog.pid');
 const PETBAT = path.join(ROOT, 'start-pet.bat');
+const WATCHDOG_GSV_MODE = (
+  process.argv.slice(2).find((a) => ['auto', 'always', 'on', 'never', 'off'].includes(a.toLowerCase())) ||
+  process.env.PET_GSV_MODE ||
+  'off'
+).toLowerCase();
 
 function log(m) {
   const s = new Date().toISOString() + ' ' + m;
@@ -69,9 +74,17 @@ function launchPet(why) {
   if (Date.now() - lastLaunch < 45000) return; // 冷却：避免上一轮刚拉起尚未就绪又叠着拉一次
   if (!canRestart()) { log('需要重启但 1 小时内已 5 次，暂缓（防连环崩）：' + why); return; }
   restarts.push(Date.now()); lastLaunch = Date.now();
-  log('重启宠物 start-pet.bat（原因：' + why + '）');
-  try { const p = spawn('cmd', ['/c', PETBAT], { detached: true, stdio: 'ignore', windowsHide: true, cwd: ROOT }); p.unref(); }
-  catch (e) { log('重启失败：' + (e && e.message)); }
+  log(`重启宠物 start-pet.bat ${WATCHDOG_GSV_MODE}（原因：${why}）`);
+  try {
+    const p = spawn('cmd', ['/c', PETBAT, WATCHDOG_GSV_MODE], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      cwd: ROOT,
+      env: { ...process.env, PET_GSV_MODE: WATCHDOG_GSV_MODE },
+    });
+    p.unref();
+  } catch (e) { log('重启失败：' + (e && e.message)); }
 }
 function killPet() {
   const pid = petPid();
@@ -144,6 +157,6 @@ function tick() {
     }
   });
 }
-log('看门狗启动 pid=' + process.pid);
+log(`看门狗启动 pid=${process.pid}, gsv=${WATCHDOG_GSV_MODE}`);
 tick();
 setInterval(tick, 30000);
