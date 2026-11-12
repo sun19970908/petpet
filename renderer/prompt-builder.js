@@ -35,8 +35,9 @@ export function pruneHistoryMessages(messages) {
     : m);
 }
 
-export function buildSystemMessage({ systemPrompt = '', persona = '', extraSections = [] } = {}) {
+export function buildSystemMessage({ systemPrompt = '', customPrompt = '', persona = '', extraSections = [] } = {}) {
   const parts = [String(systemPrompt || '').trim()];
+  if (customPrompt && String(customPrompt).trim()) parts.push(String(customPrompt).trim());
   if (persona && String(persona).trim()) parts.push(String(persona).trim());
   if (Array.isArray(extraSections)) {
     for (const sec of extraSections) {
@@ -179,6 +180,7 @@ export function buildTailMessages({
 
 export function assemblePrompt({
   systemPrompt = '',
+  customPrompt,
   persona = '',
   memories = [],
   memoryBackTurns = 5,
@@ -210,9 +212,10 @@ export function assemblePrompt({
     isInfiniteWake,
   });
 
-  // system 保持纯静态（不含动态召回记忆），最大化复用首段 KV 缓存
+  // system 保持纯静态（不含动态召回记忆），customPrompt 紧贴系统提示词下边、人设档案前边
   const systemMsg = buildSystemMessage({
     systemPrompt,
+    customPrompt: customPrompt ?? cfg.customPrompt,
     persona,
     extraSections: extraSystemSections,
   });

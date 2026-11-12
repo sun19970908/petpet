@@ -35,7 +35,7 @@ const TTS_REF = {
 // 每次发送前都重新读取，改完下一条消息即生效
 let SYSTEM_PROMPT = '你是 DeepSeek 娘，DeepSeek 的看板娘。用中文口语回答，保持轻松可爱，回复尽量简短。';
 let PERSONA = '';
-async function getSystemAndPersona() {
+async function getSystemParts() {
   try {
     const s = await (await fetch('/renderer/system-prompt.txt', { cache: 'no-store' })).text();
     if (s.trim()) SYSTEM_PROMPT = s.trim();
@@ -44,7 +44,11 @@ async function getSystemAndPersona() {
     const p = await (await fetch('/pet_space/persona.txt', { cache: 'no-store' })).text();
     if (p.trim()) PERSONA = p.trim();
   } catch {}
-  return SYSTEM_PROMPT + (PERSONA ? '\n\n' + PERSONA : '');
+  return { systemPrompt: SYSTEM_PROMPT, persona: PERSONA };
+}
+async function getSystemAndPersona() {
+  const { systemPrompt, persona } = await getSystemParts();
+  return systemPrompt + (persona ? '\n\n' + persona : '');
 }
 
 const $ = (id) => document.getElementById(id);
@@ -240,9 +244,10 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   } else {
     // 台账 + 尾部思考/工具策略由 llmConfig 驱动；主历史只读，无限唤醒拼 mainHistory + infHistory
     const ledger = await getToolLedger();
-    const sysAndPersona = await getSystemAndPersona();
+    const { systemPrompt, persona } = await getSystemParts();
     const assembled = assemblePrompt({
-      systemPrompt: sysAndPersona,
+      systemPrompt,
+      persona,
       memories,
       mainHistory: history,
       infHistory,

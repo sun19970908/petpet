@@ -32,6 +32,7 @@ export const DEFAULT_REQUEST_DEFAULTS = {
 export const DEFAULT_LLM_CONFIG = {
   activeProfile: 'strata',
   model: 'strata-nothink',
+  customPrompt: '',
   requestDefaults: DEFAULT_REQUEST_DEFAULTS,
   capabilities: DEFAULT_CAPABILITIES,
   promptPolicy: DEFAULT_PROMPT_POLICY,
@@ -45,6 +46,7 @@ export function normalizeLlmConfig(raw) {
   return {
     activeProfile: src.activeProfile || DEFAULT_LLM_CONFIG.activeProfile,
     model: src.model || DEFAULT_LLM_CONFIG.model,
+    customPrompt: String(src.customPrompt ?? policySrc.customPrompt ?? DEFAULT_LLM_CONFIG.customPrompt),
     hasApiKey: Boolean(src.hasApiKey),
     requestDefaults: {
       ...DEFAULT_REQUEST_DEFAULTS,

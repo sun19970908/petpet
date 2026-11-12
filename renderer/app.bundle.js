@@ -2263,6 +2263,7 @@ void main(){ o=texture(uTex,vUv); }`;
   var DEFAULT_LLM_CONFIG = {
     activeProfile: "strata",
     model: "strata-nothink",
+    customPrompt: "",
     requestDefaults: DEFAULT_REQUEST_DEFAULTS,
     capabilities: DEFAULT_CAPABILITIES,
     promptPolicy: DEFAULT_PROMPT_POLICY
@@ -2275,6 +2276,7 @@ void main(){ o=texture(uTex,vUv); }`;
     return {
       activeProfile: src.activeProfile || DEFAULT_LLM_CONFIG.activeProfile,
       model: src.model || DEFAULT_LLM_CONFIG.model,
+      customPrompt: String(src.customPrompt ?? policySrc.customPrompt ?? DEFAULT_LLM_CONFIG.customPrompt),
       hasApiKey: Boolean(src.hasApiKey),
       requestDefaults: {
         ...DEFAULT_REQUEST_DEFAULTS,
@@ -2387,8 +2389,9 @@ ${note}` : note };
     if (!Array.isArray(messages)) return [];
     return messages.map((m3) => Array.isArray(m3?.content) ? { role: m3.role, content: "[\u56FE\u7247] " + textOf(m3.content) } : m3);
   }
-  function buildSystemMessage({ systemPrompt = "", persona = "", extraSections = [] } = {}) {
+  function buildSystemMessage({ systemPrompt = "", customPrompt = "", persona = "", extraSections = [] } = {}) {
     const parts = [String(systemPrompt || "").trim()];
+    if (customPrompt && String(customPrompt).trim()) parts.push(String(customPrompt).trim());
     if (persona && String(persona).trim()) parts.push(String(persona).trim());
     if (Array.isArray(extraSections)) {
       for (const sec of extraSections) {
@@ -2516,6 +2519,7 @@ ${note}` : note };
   }
   function assemblePrompt({
     systemPrompt = "",
+    customPrompt,
     persona = "",
     memories = [],
     memoryBackTurns = 5,
@@ -2547,6 +2551,7 @@ ${note}` : note };
     });
     const systemMsg = buildSystemMessage({
       systemPrompt,
+      customPrompt: customPrompt ?? cfg.customPrompt,
       persona,
       extraSections: extraSystemSections
     });
@@ -3030,7 +3035,7 @@ ${note}` : note };
   };
   var SYSTEM_PROMPT = "\u4F60\u662F DeepSeek \u5A18\uFF0CDeepSeek \u7684\u770B\u677F\u5A18\u3002\u7528\u4E2D\u6587\u53E3\u8BED\u56DE\u7B54\uFF0C\u4FDD\u6301\u8F7B\u677E\u53EF\u7231\uFF0C\u56DE\u590D\u5C3D\u91CF\u7B80\u77ED\u3002";
   var PERSONA = "";
-  async function getSystemAndPersona() {
+  async function getSystemParts() {
     try {
       const s3 = await (await fetch("/renderer/system-prompt.txt", { cache: "no-store" })).text();
       if (s3.trim()) SYSTEM_PROMPT = s3.trim();
@@ -3041,7 +3046,7 @@ ${note}` : note };
       if (p3.trim()) PERSONA = p3.trim();
     } catch {
     }
-    return SYSTEM_PROMPT + (PERSONA ? "\n\n" + PERSONA : "");
+    return { systemPrompt: SYSTEM_PROMPT, persona: PERSONA };
   }
   var $3 = (id) => document.getElementById(id);
   var bubble = $3("bubble");
@@ -3229,9 +3234,10 @@ ${note}` : note };
       bodyMsgs = continueBaseMsgs.slice();
     } else {
       const ledger = await getToolLedger();
-      const sysAndPersona = await getSystemAndPersona();
+      const { systemPrompt, persona } = await getSystemParts();
       const assembled = assemblePrompt({
-        systemPrompt: sysAndPersona,
+        systemPrompt,
+        persona,
         memories,
         mainHistory: history,
         infHistory,

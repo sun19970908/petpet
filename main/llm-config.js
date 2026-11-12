@@ -6,6 +6,7 @@ const DEFAULT_PROFILE = {
   baseUrl: 'http://127.0.0.1:11435/v1/chat/completions',
   apiKey: '',
   model: 'strata-nothink',
+  customPrompt: '',
   requestDefaults: {
     temperature: 0.8,
     max_tokens: 65536,
@@ -101,6 +102,7 @@ function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envThi
 
     return {
       ...merged,
+      customPrompt: String(merged.customPrompt ?? merged.promptPolicy?.customPrompt ?? ''),
       activeProfile: profileName,
       apiKey,
       baseUrl,
