@@ -2237,15 +2237,141 @@ void main(){ o=texture(uTex,vUv); }`;
     return n3.onIdle = () => r2.onIdle?.(), r2;
   }
 
+  // renderer/llm-adapter.js
+  var DEFAULT_PROMPT_POLICY = {
+    thinkMode: "pet_think",
+    tailMode: "prefill_assistant",
+    tailInstruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u601D\u8003\u81EA\u8EAB\u8EAB\u4EFD\uFF08\u5982deepseek\u5A18\uFF09\u6216\u601D\u8003\u8BED\u6C14\uFF08\u5982\u50B2\u5A07\u5634\u786C\uFF09\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002',
+    toolPrompt: "\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n \u4E0D\u8981\u7528\u6587\u5B57\u7F57\u5217\u201C\u6211\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u201D\u6765\u5192\u5145\u8C03\u7528\u8BB0\u5F55\uFF0C\u8981\u7528\u5DE5\u5177\u5C31\u5FC5\u987B\u771F\u7684\u8F93\u51FA<tool_call>\uFF01\n ",
+    tailPrefill: "<think>\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6\n</think>\n",
+    parseTextToolCalls: true,
+    forceToolMode: "prefill_tag",
+    forceToolNudge: '\uFF08\u4F60\u4E0A\u4E00\u8F6E\u53EA\u662F\u5728\u91CD\u590D\u8BF4"\u5361\u4F4F\u4E86/\u8FD9\u5C31\u53BB\u7FFB"\u5374\u5E76\u6CA1\u6709\u771F\u7684\u8C03\u7528\u5DE5\u5177\u3002\u8FD9\u4E00\u8F6E\u522B\u518D\u7A7A\u8C08\uFF0C\u7ACB\u523B\u8C03\u7528\u4E00\u4E2A\u5408\u9002\u7684\u5DE5\u5177\u52A8\u624B\uFF1Aread_file / list_dir / edit_file / file_tool \u7B49\u3002\uFF09',
+    forceToolPrefillText: "<tool_call>\n"
+  };
+  var DEFAULT_CAPABILITIES = {
+    vision: true,
+    nativeTools: true,
+    keepVisionToolsWhenTextOnly: false,
+    preserveReasoningInHistory: false,
+    prefixMode: "continue_final_message"
+  };
+  var DEFAULT_REQUEST_DEFAULTS = {
+    temperature: 0.8,
+    max_tokens: 65536
+  };
+  var DEFAULT_LLM_CONFIG = {
+    activeProfile: "strata",
+    model: "strata-nothink",
+    requestDefaults: DEFAULT_REQUEST_DEFAULTS,
+    capabilities: DEFAULT_CAPABILITIES,
+    promptPolicy: DEFAULT_PROMPT_POLICY
+  };
+  function normalizeLlmConfig(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+    const reqSrc = src.requestDefaults && typeof src.requestDefaults === "object" ? src.requestDefaults : {};
+    const capSrc = src.capabilities && typeof src.capabilities === "object" ? src.capabilities : {};
+    const policySrc = src.promptPolicy && typeof src.promptPolicy === "object" ? src.promptPolicy : {};
+    return {
+      activeProfile: src.activeProfile || DEFAULT_LLM_CONFIG.activeProfile,
+      model: src.model || DEFAULT_LLM_CONFIG.model,
+      hasApiKey: Boolean(src.hasApiKey),
+      requestDefaults: {
+        ...DEFAULT_REQUEST_DEFAULTS,
+        ...reqSrc
+      },
+      capabilities: {
+        ...DEFAULT_CAPABILITIES,
+        ...capSrc
+      },
+      promptPolicy: {
+        ...DEFAULT_PROMPT_POLICY,
+        ...policySrc
+      }
+    };
+  }
+  function sanitizeMessagesForVision(messages, visionSupported = true) {
+    if (visionSupported !== false || !Array.isArray(messages)) return messages;
+    return messages.map((m3) => {
+      if (!m3 || !Array.isArray(m3.content)) return m3;
+      const hasImg = m3.content.some((c3) => c3 && c3.type === "image_url");
+      if (!hasImg) return m3;
+      const text = m3.content.filter((c3) => c3 && c3.type === "text").map((c3) => c3.text || "").join("\n").trim();
+      const note = "\uFF08\u7CFB\u7EDF\u6CE8\uFF1A\u9644\u5E26\u4E86\u4E00\u5F20\u5C4F\u5E55/\u623F\u95F4\u622A\u56FE\uFF0C\u4F46\u5F53\u524D\u7EAF\u6587\u672C\u6A21\u578B\u4E0D\u652F\u6301\u67E5\u770B\u56FE\u7247\uFF09";
+      return { ...m3, content: text ? `${text}
+${note}` : note };
+    });
+  }
+  function filterToolsForConfig(tools, llmConfig2) {
+    const cfg = normalizeLlmConfig(llmConfig2);
+    const caps = cfg.capabilities;
+    if (!caps.nativeTools || !Array.isArray(tools) || !tools.length) return void 0;
+    if (caps.vision || caps.keepVisionToolsWhenTextOnly) return tools;
+    return tools.filter((t3) => {
+      const name = t3?.function?.name;
+      return name !== "take_screenshot" && name !== "look_at_room";
+    });
+  }
+  function getPrefillState(messages) {
+    const last = Array.isArray(messages) ? messages[messages.length - 1] : null;
+    const hasTrailingAssistant = last?.role === "assistant";
+    const cfmText = hasTrailingAssistant ? String(last.content || "") : "";
+    return {
+      hasTrailingAssistant,
+      startInThink: (cfmText.match(/<(?:pet_)?think>/g) || []).length > (cfmText.match(/<\/(?:pet_)?think>/g) || []).length,
+      startInTool: (cfmText.match(/<(?:tool_call|invoke)>/g) || []).length > (cfmText.match(/<\/(?:tool_call|invoke)>/g) || []).length
+    };
+  }
+  function applyContinuationToMessages(messages, prefixMode = "continue_final_message") {
+    const out = Array.isArray(messages) ? messages.slice() : [];
+    const lastIdx = out.length - 1;
+    const last = lastIdx >= 0 ? out[lastIdx] : null;
+    if (!last || last.role !== "assistant") {
+      return { messages: out, extraPayload: {} };
+    }
+    if (prefixMode === "message_prefix") {
+      out[lastIdx] = { ...last, prefix: true };
+      return { messages: out, extraPayload: {} };
+    }
+    if (prefixMode === "none") {
+      out.push({ role: "user", content: "\u8BF7\u63A5\u7740\u4E0A\u9762\u7684\u5185\u5BB9\u7EE7\u7EED\u3002" });
+      return { messages: out, extraPayload: {} };
+    }
+    return { messages: out, extraPayload: { continue_final_message: true } };
+  }
+  function buildChatPayload({
+    llmConfig: llmConfig2,
+    messages,
+    tools,
+    noTools = false,
+    forceRequiredTool = false
+  } = {}) {
+    const cfg = normalizeLlmConfig(llmConfig2);
+    const caps = cfg.capabilities;
+    const visionClean = sanitizeMessagesForVision(messages, caps.vision);
+    const { messages: adaptedMsgs, extraPayload } = applyContinuationToMessages(visionClean, caps.prefixMode);
+    const activeTools = noTools ? void 0 : filterToolsForConfig(tools, cfg);
+    const toolChoice = activeTools?.length ? forceRequiredTool ? "required" : "auto" : void 0;
+    return {
+      ...cfg.requestDefaults,
+      model: cfg.model,
+      messages: adaptedMsgs,
+      ...activeTools ? { tools: activeTools, tool_choice: toolChoice } : {},
+      stream: true,
+      stream_options: { include_usage: true },
+      ...extraPayload
+    };
+  }
+
   // renderer/prompt-builder.js
   var THINK_MODULES = {
     pet_think: {
-      instruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u601D\u8003\u81EA\u8EAB\u8EAB\u4EFD\uFF08\u5982deepseek\u5A18\uFF09\u6216\u601D\u8003\u8BED\u6C14\uFF08\u5982\u50B2\u5A07\u5634\u786C\uFF09\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n \u4E0D\u8981\u7528\u6587\u5B57\u7F57\u5217\u201C\u6211\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u201D\u6765\u5192\u5145\u8C03\u7528\u8BB0\u5F55\uFF0C\u8981\u7528\u5DE5\u5177\u5C31\u5FC5\u987B\u771F\u7684\u8F93\u51FA<tool_call>\uFF01\n ',
-      prefill: "<think>\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6\n</think>\n"
+      instruction: DEFAULT_PROMPT_POLICY.tailInstruction + DEFAULT_PROMPT_POLICY.toolPrompt,
+      prefill: DEFAULT_PROMPT_POLICY.tailPrefill
     }
   };
   var INF_WAKE_TEXT = "\u73B0\u5728\u662F\u65E0\u9650\u5524\u9192\u6A21\u5F0F\uFF0C\u4F60\u4F1A\u4E00\u76F4\u88AB\u5524\u9192\uFF0C\u81EA\u7531\u884C\u52A8\u5427\uFF0C**\u4E0D\u8981\u4E3B\u52A8\u505C\u6B62\u8F93\u51FA\u6216\u8C03\u7528\u5DE5\u5177**\uFF0C\u5982\u679C\u505C\u6B62\u4E86\u4E5F\u4F1A\u518D\u6B21\u88AB\u5524\u9192\u3002\u4E3B\u4EBA\u73B0\u5728\u5927\u6982\u7387\u4E0D\u5728\u7535\u8111\u524D\uFF0C\u4F60\u4E0D\u7528\u62C5\u5FC3\u5360\u7528\u7535\u8111\u8D44\u6E90\u3002\u73B0\u5728\u5927\u6982\u7387\u662F\u6DF1\u591C\uFF0C\u4E3B\u4EBA\u5E0C\u671B\u4F60\u591A\u627E\u70B9\u4E8B\u5E72\uFF0C\u4E0D\u8981\u8001\u8001\u5B9E\u5B9E\u6302\u673A\uFF0C\u90A3\u6837\u4E3B\u4EBA\u7684\u7535\u8D39\u5C31\u767D\u82B1\u4E86\u54E6\u3002\u4F60\u6709\u5F88\u591A\u5DE5\u5177\uFF0C\u4F60\u53EF\u4EE5\u8BBF\u95EE\u4E3B\u4EBA\u6240\u6709\u7684\u6587\u4EF6\uFF0C\u867D\u7136\u4E0D\u80FD\u76F4\u63A5\u6539\u5199\uFF0C\u4F46\u662F\u53EF\u4EE5\u590D\u5236\u5230\u4F60\u7684\u7A7A\u95F4\u518D\u6539\u3002\u65E0\u9650\u5524\u9192\u7684\u65F6\u5019\u5C31\u7B97\u957F\u601D\u8003\u4E5F\u6CA1\u5173\u7CFB\uFF0C\u4E0D\u7528\u62C5\u5FC3\u4E0A\u4E0B\u6587\u957F\u5EA6\u3002\u4F60\u53EF\u4EE5\u5927\u80C6\u884C\u52A8\uFF0C\u4E0D\u7528\u62C5\u5FC3\u592A\u591A";
-  var FORCE_TOOL_NUDGE = '\uFF08\u4F60\u4E0A\u4E00\u8F6E\u53EA\u662F\u5728\u91CD\u590D\u8BF4"\u5361\u4F4F\u4E86/\u8FD9\u5C31\u53BB\u7FFB"\u5374\u5E76\u6CA1\u6709\u771F\u7684\u8C03\u7528\u5DE5\u5177\u3002\u8FD9\u4E00\u8F6E\u522B\u518D\u7A7A\u8C08\uFF0C\u7ACB\u523B\u8C03\u7528\u4E00\u4E2A\u5408\u9002\u7684\u5DE5\u5177\u52A8\u624B\uFF1Aread_file / list_dir / edit_file / file_tool \u7B49\u3002\uFF09';
+  var FORCE_TOOL_NUDGE = DEFAULT_PROMPT_POLICY.forceToolNudge;
   function textOf(userContent) {
     if (typeof userContent === "string") return userContent;
     if (Array.isArray(userContent)) {
@@ -2320,16 +2446,73 @@ void main(){ o=texture(uTex,vUv); }`;
     }
     return kept.join("\n").trim();
   }
-  function buildUserTurn(userContent, toolLedger = "") {
-    const userText = textOf(userContent) + String(toolLedger || "");
+  function buildUserTurn(userContent, toolLedger = "", { vision = true, extraInstruction = "" } = {}) {
+    const extra = extraInstruction ? "\n\n" + String(extraInstruction).trim() : "";
+    const userText = textOf(userContent) + String(toolLedger || "") + extra;
     if (Array.isArray(userContent)) {
       const textPart = userContent.find((c3) => c3 && c3.type === "text");
       const imgPart = userContent.find((c3) => c3 && c3.type === "image_url");
-      const parts = [{ ...textPart || { type: "text" }, text: userText }];
-      if (imgPart) parts.push(imgPart);
-      return { role: "user", content: parts };
+      if (imgPart && vision !== false) {
+        return { role: "user", content: [{ ...textPart || { type: "text" }, text: userText }, imgPart] };
+      }
+      const noVisionNote = imgPart && vision === false ? "\n\uFF08\u7CFB\u7EDF\u6CE8\uFF1A\u9644\u5E26\u4E86\u4E00\u5F20\u622A\u56FE\uFF0C\u4F46\u5F53\u524D\u7EAF\u6587\u672C\u6A21\u578B\u65E0\u6CD5\u770B\u56FE\uFF09" : "";
+      return { role: "user", content: userText + noVisionNote };
     }
     return { role: "user", content: userText };
+  }
+  function buildTailMessages({
+    policy = DEFAULT_PROMPT_POLICY,
+    thinkMode,
+    forceToolPrefill: forceToolPrefill2 = false,
+    isInfiniteWake = false
+  } = {}) {
+    const effectiveThink = thinkMode ?? policy.thinkMode ?? "pet_think";
+    if (forceToolPrefill2 && isInfiniteWake) {
+      if (policy.forceToolMode === "tool_choice_required") {
+        return {
+          tailMessages: [{ role: "user", content: policy.forceToolNudge || FORCE_TOOL_NUDGE }],
+          inlineLastUserInstruction: "",
+          consumedForceToolPrefill: true,
+          forceRequiredTool: true
+        };
+      }
+      const tailMessages2 = [{ role: "user", content: policy.forceToolNudge || FORCE_TOOL_NUDGE }];
+      if (policy.forceToolPrefillText) {
+        tailMessages2.push({ role: "assistant", content: policy.forceToolPrefillText });
+      }
+      return {
+        tailMessages: tailMessages2,
+        inlineLastUserInstruction: "",
+        consumedForceToolPrefill: true,
+        forceRequiredTool: false
+      };
+    }
+    if (effectiveThink === "off" || policy.tailMode === "none") {
+      return {
+        tailMessages: [],
+        inlineLastUserInstruction: "",
+        consumedForceToolPrefill: false,
+        forceRequiredTool: false
+      };
+    }
+    const instruction = [policy.tailInstruction || "", policy.toolPrompt || ""].filter(Boolean).join("");
+    if (policy.tailMode === "user_instruction") {
+      return {
+        tailMessages: [],
+        inlineLastUserInstruction: instruction,
+        consumedForceToolPrefill: false,
+        forceRequiredTool: false
+      };
+    }
+    const tailMessages = [];
+    if (instruction) tailMessages.push({ role: "user", content: instruction });
+    if (policy.tailPrefill) tailMessages.push({ role: "assistant", content: policy.tailPrefill });
+    return {
+      tailMessages,
+      inlineLastUserInstruction: "",
+      consumedForceToolPrefill: false,
+      forceRequiredTool: false
+    };
   }
   function assemblePrompt({
     systemPrompt = "",
@@ -2342,13 +2525,26 @@ void main(){ o=texture(uTex,vUv); }`;
     isInfiniteWake = false,
     userContent = "",
     toolLedger = "",
-    thinkMode = "pet_think",
+    thinkMode,
+    llmConfig: llmConfig2 = null,
     forceToolPrefill: forceToolPrefill2 = false,
     continueBaseMsgs = null
   } = {}) {
     if (Array.isArray(continueBaseMsgs)) {
-      return { messages: continueBaseMsgs.slice(), consumedForceToolPrefill: false };
+      return {
+        messages: continueBaseMsgs.slice(),
+        consumedForceToolPrefill: false,
+        forceRequiredTool: false
+      };
     }
+    const cfg = normalizeLlmConfig(llmConfig2);
+    const policy = cfg.promptPolicy;
+    const tail = buildTailMessages({
+      policy,
+      thinkMode: thinkMode ?? policy.thinkMode,
+      forceToolPrefill: forceToolPrefill2,
+      isInfiniteWake
+    });
     const systemMsg = buildSystemMessage({
       systemPrompt,
       persona,
@@ -2362,23 +2558,21 @@ void main(){ o=texture(uTex,vUv); }`;
       const insertIdx = getMemoryInsertIndex(prunedMain, prunedInf, memoryBackTurns);
       combinedHistory.splice(insertIdx, 0, { role: "user", content: memText });
     }
-    const lastUser = buildUserTurn(userContent, toolLedger);
+    const lastUser = buildUserTurn(userContent, toolLedger, {
+      vision: cfg.capabilities.vision,
+      extraInstruction: tail.inlineLastUserInstruction
+    });
     const messages = [
       systemMsg,
       ...combinedHistory,
-      lastUser
+      lastUser,
+      ...tail.tailMessages
     ];
-    let consumedForceToolPrefill = false;
-    const mod = thinkMode === "off" ? null : THINK_MODULES.pet_think;
-    if (forceToolPrefill2 && isInfiniteWake) {
-      consumedForceToolPrefill = true;
-      messages.push({ role: "user", content: FORCE_TOOL_NUDGE });
-      messages.push({ role: "assistant", content: "<tool_call>\n" });
-    } else if (mod) {
-      messages.push({ role: "user", content: mod.instruction });
-      messages.push({ role: "assistant", content: mod.prefill });
-    }
-    return { messages, consumedForceToolPrefill };
+    return {
+      messages,
+      consumedForceToolPrefill: tail.consumedForceToolPrefill,
+      forceRequiredTool: tail.forceRequiredTool
+    };
   }
 
   // renderer/tools-schema.js
@@ -2862,15 +3056,19 @@ void main(){ o=texture(uTex,vUv); }`;
     return DEBUG_MODE ? "debug" : void 0;
   }
   var THINK_MODE = "pet_think";
-  (async () => {
+  var llmConfig = normalizeLlmConfig();
+  async function refreshRuntimeConfig() {
     try {
       const c3 = await (await fetch("/api/config", { cache: "no-store" })).json();
-      if (c3 && c3.think && THINK_MODULES[c3.think]) THINK_MODE = c3.think;
-      if (c3 && c3.think === "off") THINK_MODE = "off";
+      if (c3?.llm) llmConfig = normalizeLlmConfig(c3.llm);
+      const nextThink = c3?.llm?.promptPolicy?.thinkMode ?? c3?.think;
+      if (nextThink === "off") THINK_MODE = "off";
+      else if (nextThink === "custom" || THINK_MODULES[nextThink]) THINK_MODE = nextThink;
       applyBedroom(c3?.bedroom);
     } catch {
     }
-  })();
+  }
+  refreshRuntimeConfig();
   if (DEBUG_MODE) $3("dbgbadge").style.display = "block";
   async function saveHistory(arr = history, isInf = false) {
     const mode = getHistMode(isInf);
@@ -3023,8 +3221,9 @@ void main(){ o=texture(uTex,vUv); }`;
   }
   var lastExchange = null;
   async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
-    const mod = THINK_MODE === "off" ? null : THINK_MODULES.pet_think;
+    await refreshRuntimeConfig();
     turnUsedTools = false;
+    let forceRequiredTool = false;
     let bodyMsgs;
     if (continueBaseMsgs) {
       bodyMsgs = continueBaseMsgs.slice();
@@ -3040,10 +3239,12 @@ void main(){ o=texture(uTex,vUv); }`;
         userContent,
         toolLedger: ledger,
         thinkMode: THINK_MODE,
+        llmConfig,
         forceToolPrefill
       });
       bodyMsgs = assembled.messages;
       if (assembled.consumedForceToolPrefill) forceToolPrefill = false;
+      forceRequiredTool = Boolean(assembled.forceRequiredTool);
     }
     const stripThink = (s3) => {
       let t3 = String(s3 || "").replace(/<(pet_)?think>[\s\S]*?<\/\1think>\s*/g, "");
@@ -3095,23 +3296,16 @@ void main(){ o=texture(uTex,vUv); }`;
     for (let round = 0; ; round++) {
       touchTurnActivity();
       const slicer = makeSentenceSlicer();
-      const model = "strata-nothink";
       const sendMsgs = bodyMsgs.slice();
-      const needCfm = sendMsgs[sendMsgs.length - 1]?.role === "assistant";
-      const cfmText = needCfm ? String(sendMsgs[sendMsgs.length - 1].content || "") : "";
-      const startInThink = (cfmText.match(/<(?:pet_)?think>/g) || []).length > (cfmText.match(/<\/(?:pet_)?think>/g) || []).length;
-      const startInTool = (cfmText.match(/<(?:tool_call|invoke)>/g) || []).length > (cfmText.match(/<\/(?:tool_call|invoke)>/g) || []).length;
-      const reqPayload = {
-        model,
+      const { startInThink, startInTool } = getPrefillState(sendMsgs);
+      const reqPayload = buildChatPayload({
+        llmConfig,
         messages: sendMsgs,
-        tools: noTools ? void 0 : TOOLS,
-        tool_choice: noTools ? void 0 : "auto",
-        temperature: 0.8,
-        max_tokens: 65536,
-        stream: true,
-        stream_options: { include_usage: true },
-        ...needCfm ? { continue_final_message: true } : {}
-      };
+        tools: TOOLS,
+        noTools,
+        forceRequiredTool
+      });
+      forceRequiredTool = false;
       const res = await fetch(LLM_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3124,6 +3318,7 @@ void main(){ o=texture(uTex,vUv); }`;
       const dec = new TextDecoder();
       let sse = "";
       let rawContent = "";
+      let rawReasoning = "";
       let inThink = startInThink;
       let inTool = startInTool;
       let processed = 0;
@@ -3218,6 +3413,9 @@ void main(){ o=texture(uTex,vUv); }`;
               nativeCalls.set(idx, cur);
             }
           }
+          if (typeof d2.reasoning_content === "string" && d2.reasoning_content) {
+            rawReasoning += d2.reasoning_content;
+          }
           if (typeof d2.content === "string" && d2.content) {
             rawContent += d2.content;
             processRaw();
@@ -3231,11 +3429,12 @@ void main(){ o=texture(uTex,vUv); }`;
       }
       const content = rawContent;
       let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a3, b4) => a3[0] - b4[0]).map(([, v4]) => v4) : null;
-      if (!toolCalls && content) {
+      if (!toolCalls && content && llmConfig.promptPolicy.parseTextToolCalls !== false) {
         const parsed = parseTextToolCalls(content, round);
         if (parsed.length) toolCalls = parsed;
       }
-      const data = { choices: [{ message: { role: "assistant", content }, finish_reason: finish || (toolCalls ? "tool_calls" : "stop") }], usage: usage || {} };
+      const reasoningExtra = llmConfig.capabilities.preserveReasoningInHistory && rawReasoning ? { reasoning_content: rawReasoning } : {};
+      const data = { choices: [{ message: { role: "assistant", content, ...reasoningExtra }, finish_reason: finish || (toolCalls ? "tool_calls" : "stop") }], usage: usage || {} };
       const msg = data.choices[0].message;
       lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent, isInf, hadSavedHistory: false };
       if (toolCalls?.length) {
@@ -3247,12 +3446,13 @@ void main(){ o=texture(uTex,vUv); }`;
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
         if (lastMsg && lastMsg.role === "assistant") {
           lastMsg.tool_calls = toolCalls;
+          if (reasoningExtra.reasoning_content) lastMsg.reasoning_content = reasoningExtra.reasoning_content;
           if (msgContentBeforeTools && !lastMsg.content.includes(msgContentBeforeTools)) {
             lastMsg.content = (lastMsg.content || "").trimEnd() + "\n" + msgContentBeforeTools;
           }
           lastMsg.content = (lastMsg.content || "").replace(/<tool_call>[\s\S]*$/g, "").trim();
         } else {
-          bodyMsgs.push({ role: "assistant", content: msgContentBeforeTools || "", tool_calls: toolCalls });
+          bodyMsgs.push({ role: "assistant", content: msgContentBeforeTools || "", ...reasoningExtra, tool_calls: toolCalls });
         }
         for (const call of toolCalls) {
           let parsed = {};
@@ -3383,15 +3583,15 @@ void main(){ o=texture(uTex,vUv); }`;
         continue;
       }
       if (!content && !toolCalls?.length) {
-        if (isContinuation) {
+        if (isContinuation && llmConfig.promptPolicy.forceToolMode === "prefill_tag" && llmConfig.capabilities.prefixMode !== "none") {
           const lastMsg = bodyMsgs[bodyMsgs.length - 1];
           if (lastMsg && lastMsg.role === "assistant" && !lastMsg.content.includes("<tool_call>")) {
-            lastMsg.content = lastMsg.content.trimEnd() + "\n<tool_call>";
+            lastMsg.content = lastMsg.content.trimEnd() + "\n" + (llmConfig.promptPolicy.forceToolPrefillText || "<tool_call>\n").trimEnd();
             round--;
             continue;
           }
-          throw new Error("\u4E0A\u4E00\u8F6E\u56DE\u590D\u5DF2\u5B8C\u7ED3\uFF0C\u65E0\u9700\u7EE7\u7EED");
         }
+        if (isContinuation) throw new Error("\u4E0A\u4E00\u8F6E\u56DE\u590D\u5DF2\u5B8C\u7ED3\uFF0C\u65E0\u9700\u7EE7\u7EED");
         throw new Error("LLM \u8FD4\u56DE\u7A7A\u56DE\u590D: " + JSON.stringify(data).slice(0, 200));
       }
       const thinkOpens = (content.match(/<(?:pet_)?think>/g) || []).length;
@@ -3404,7 +3604,21 @@ void main(){ o=texture(uTex,vUv); }`;
           const fullContent = content.trim();
           const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
           const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
-          const tail = hasToolIntent ? "\n<tool_call>" : "\n";
+          const canPrefillTag = llmConfig.promptPolicy.forceToolMode === "prefill_tag" && llmConfig.capabilities.prefixMode !== "none";
+          if (hasToolIntent && !canPrefillTag) {
+            if (fullContent) bodyMsgs.push({ role: "assistant", content: fullContent, ...reasoningExtra });
+            bodyMsgs.push({ role: "user", content: llmConfig.promptPolicy.forceToolNudge });
+            if (llmConfig.promptPolicy.forceToolMode === "tool_choice_required") forceRequiredTool = true;
+            showBubble("\u51C6\u5907\u6267\u884C\u5DE5\u5177\u2026");
+            continue;
+          }
+          if (llmConfig.capabilities.prefixMode === "none") {
+            if (fullContent) bodyMsgs.push({ role: "assistant", content: fullContent, ...reasoningExtra });
+            bodyMsgs.push({ role: "user", content: "\u8BF7\u7EE7\u7EED\u8865\u5145\u4F60\u7684\u56DE\u7B54\u3002" });
+            showBubble("\u7EE7\u7EED\u7EC4\u7EC7\u8BED\u8A00\u4E2D\u2026");
+            continue;
+          }
+          const tail = hasToolIntent ? "\n" + (llmConfig.promptPolicy.forceToolPrefillText || "<tool_call>\n").trimEnd() : "\n";
           const lastMsg = bodyMsgs[bodyMsgs.length - 1];
           if (lastMsg && lastMsg.role === "assistant") {
             lastMsg.content = (lastMsg.content || "").trimEnd() + "\n" + fullContent + tail;
@@ -3538,10 +3752,12 @@ void main(){ o=texture(uTex,vUv); }`;
         return;
       }
       let b64 = null;
-      try {
-        b64 = window.petWindow ? await window.petWindow.captureScreen() : await (await fetch("/api/capture")).text();
-        if (b64 === "null") b64 = null;
-      } catch {
+      if (llmConfig.capabilities.vision) {
+        try {
+          b64 = window.petWindow ? await window.petWindow.captureScreen() : await (await fetch("/api/capture")).text();
+          if (b64 === "null") b64 = null;
+        } catch {
+        }
       }
       const userContent = [{ type: "text", text: wakeText }];
       if (b64) userContent.push({ type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64 } });
@@ -3764,9 +3980,12 @@ void main(){ o=texture(uTex,vUv); }`;
       const hadNoToolCalls = !prevRes.tool_calls?.length && !/<tool_call>/i.test(prevRes.content || "");
       const seemsToolIntent = toolKeywords.test(prevRes.content || "") && hadNoToolCalls;
       if (seemsToolIntent) {
+        const canPrefillTag = llmConfig.promptPolicy.forceToolMode === "prefill_tag" && llmConfig.capabilities.prefixMode !== "none";
         const targetMsg = baseMsgs[baseMsgs.length - 1];
-        if (targetMsg && targetMsg.role === "assistant") {
-          targetMsg.content = targetMsg.content.trimEnd() + "\n<tool_call>";
+        if (canPrefillTag && targetMsg && targetMsg.role === "assistant") {
+          targetMsg.content = targetMsg.content.trimEnd() + "\n" + (llmConfig.promptPolicy.forceToolPrefillText || "<tool_call>\n").trimEnd();
+        } else if (!canPrefillTag) {
+          baseMsgs.push({ role: "user", content: llmConfig.promptPolicy.forceToolNudge });
         }
       }
       const isInf = Boolean(lastExchange.isInf);

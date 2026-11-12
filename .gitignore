@@ -23,6 +23,7 @@ player-ref/
 
 # Sensitive local configuration
 config.json
+llm.config.json
 .env
 .env.*
 

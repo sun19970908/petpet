@@ -242,9 +242,15 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
   const DUMP_DIR = path.join(APP_ROOT, 'logs', 'tts-dump');
   let dumpSeq = 0;
 
+  function onLlmActivity() {
+    touchGsvActivity();
+    if (GSV_MODE === 'auto') {
+      ensureGSV().catch((e) => console.error('[gsv] 预热启动异常:', e.message));
+    }
+  }
+
   function handleApi(req, res) {
     const routes = {
-      '/api/llm': { host: '127.0.0.1', port: 11435, path: '/v1/chat/completions' },
       '/api/tts': { host: '127.0.0.1', port: 9880, path: '/tts' },
       '/api/asr': { host: '127.0.0.1', port: 9882, path: '/asr' },
     };
@@ -274,15 +280,10 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
       res.writeHead(404); res.end('unknown api'); return;
     }
 
-    const isLlm = target.port === 11435;
     const isTts = target.port === 9880;
     const isAsr = target.port === 9882;
 
-    if (isLlm || isTts) touchGsvActivity();
-
-    if (isLlm && GSV_MODE === 'auto') {
-      ensureGSV().catch((e) => console.error('[gsv] 预热启动异常:', e.message));
-    }
+    if (isTts) touchGsvActivity();
 
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
@@ -418,7 +419,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
     });
   }
 
-  return { ensureGSV, stopGSV, ensureASR, stopASR, touchGsvActivity, handleApi };
+  return { ensureGSV, stopGSV, ensureASR, stopASR, touchGsvActivity, onLlmActivity, handleApi };
 }
 
 module.exports = { createVoiceAndApi };

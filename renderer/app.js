@@ -2,6 +2,7 @@
 import { Player } from '@livliv-dev/player';
 import { createSpeech } from '@livliv-dev/player/voice';
 import { THINK_MODULES, INF_WAKE_TEXT, textOf, formatMemories, buildMemoryQuery, assemblePrompt } from './prompt-builder.js';
+import { buildChatPayload, getPrefillState, normalizeLlmConfig } from './llm-adapter.js';
 import { TOOLS, parseTextToolCalls } from './tools-schema.js';
 import { makeSentenceSlicer, rlog, createTtsController } from './tts.js';
 import { createAsrController } from './asr-recorder.js';
@@ -20,8 +21,7 @@ import { createAsrController } from './asr-recorder.js';
 
 window.__bundleVersion = 'v3-enter';
 
-const LLM_URL = '/api/llm'; // 主进程转发到反代 11435
-const LLM_MODEL = 'strata-nothink';
+const LLM_URL = '/api/llm'; // 主进程按 llm.config 转发到本机反代或远程 API
 const TTS_URL = '/api/tts'; // 主进程转发到 GPT-SoVITS 9880
 // GPT-SoVITS 参考音频（泠鸢yousa，真人歌声，训练集切片），路径以 GPT-SoVITS 服务端视角解析
 const TTS_REF = {
@@ -62,16 +62,20 @@ function getHistMode(isInf = false) {
   if (isInf) return DEBUG_MODE ? 'debug-infwake' : 'infwake';
   return DEBUG_MODE ? 'debug' : undefined;
 }
-// 思考方案开关（启动脚本 PET_THINK 环境变量 → /api/config）：pet_think（模型自选强度）| off（不注入）
+// 运行时配置（主进程 llm.config + config.json → /api/config）：每轮前自动刷新，改配置下轮即生效
 let THINK_MODE = 'pet_think';
-(async () => {
+let llmConfig = normalizeLlmConfig();
+async function refreshRuntimeConfig() {
   try {
     const c = await (await fetch('/api/config', { cache: 'no-store' })).json();
-    if (c && c.think && THINK_MODULES[c.think]) THINK_MODE = c.think;
-    if (c && c.think === 'off') THINK_MODE = 'off';
+    if (c?.llm) llmConfig = normalizeLlmConfig(c.llm);
+    const nextThink = c?.llm?.promptPolicy?.thinkMode ?? c?.think;
+    if (nextThink === 'off') THINK_MODE = 'off';
+    else if (nextThink === 'custom' || THINK_MODULES[nextThink]) THINK_MODE = nextThink;
     applyBedroom(c?.bedroom);
   } catch {}
-})();
+}
+refreshRuntimeConfig();
 if (DEBUG_MODE) $('dbgbadge').style.display = 'block';
 async function saveHistory(arr = history, isInf = false) {
   const mode = getHistMode(isInf);
@@ -227,13 +231,14 @@ async function getToolLedger() {
 let lastExchange = null; // 记录最近一次底层请求与响应（供“继续”按钮使用）
 
 async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
-  const mod = THINK_MODE === 'off' ? null : THINK_MODULES.pet_think; // v2：模型自评难度
+  await refreshRuntimeConfig();
   turnUsedTools = false;
+  let forceRequiredTool = false;
   let bodyMsgs;
   if (continueBaseMsgs) {
     bodyMsgs = continueBaseMsgs.slice();
   } else {
-    // 台账 + 强度指令通过提示词组装层统一拼装；主历史只读，无限唤醒拼 mainHistory + infHistory
+    // 台账 + 尾部思考/工具策略由 llmConfig 驱动；主历史只读，无限唤醒拼 mainHistory + infHistory
     const ledger = await getToolLedger();
     const sysAndPersona = await getSystemAndPersona();
     const assembled = assemblePrompt({
@@ -245,10 +250,12 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       userContent,
       toolLedger: ledger,
       thinkMode: THINK_MODE,
+      llmConfig,
       forceToolPrefill,
     });
     bodyMsgs = assembled.messages;
     if (assembled.consumedForceToolPrefill) forceToolPrefill = false;
+    forceRequiredTool = Boolean(assembled.forceRequiredTool);
   }
   // 剥离思考标签：cfm 模式下引擎只返回续写部分——可能没有开头标签只有结尾 </think>，
   // 两种形态都要兜住：成对块整体删；无开头时删到第一个结尾标签为止（剩下全是思考残段）
@@ -308,23 +315,16 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   for (let round = 0; ; round++) {
     touchTurnActivity();
     const slicer = makeSentenceSlicer();
-    const model = 'strata-nothink'; // 固定 nothink：快；思考强度全靠 pet_think 指令动态控制
     const sendMsgs = bodyMsgs.slice();
-    const needCfm = sendMsgs[sendMsgs.length - 1]?.role === 'assistant';
-    // cfm 的续写起点状态从预填充内容本身推断，不能一律当成“在思考块里”：
-    // 预填充可能以闭合的 <think>…</think> 结尾（当前配置，续写从正文开始），
-    // 也可能停在未闭合的 pet_think / tool_call 里（如强制工具预填 <tool_call>）。
-    const cfmText = needCfm ? String(sendMsgs[sendMsgs.length - 1].content || '') : '';
-    const startInThink = (cfmText.match(/<(?:pet_)?think>/g) || []).length > (cfmText.match(/<\/(?:pet_)?think>/g) || []).length;
-    const startInTool = (cfmText.match(/<(?:tool_call|invoke)>/g) || []).length > (cfmText.match(/<\/(?:tool_call|invoke)>/g) || []).length;
-    const reqPayload = {
-      model, messages: sendMsgs,
-      tools: noTools ? undefined : TOOLS,
-      tool_choice: noTools ? undefined : 'auto',
-      temperature: 0.8, max_tokens: 65536, stream: true,
-      stream_options: { include_usage: true },
-      ...(needCfm ? { continue_final_message: true } : {}),
-    };
+    const { startInThink, startInTool } = getPrefillState(sendMsgs);
+    const reqPayload = buildChatPayload({
+      llmConfig,
+      messages: sendMsgs,
+      tools: TOOLS,
+      noTools,
+      forceRequiredTool,
+    });
+    forceRequiredTool = false;
     const res = await fetch(LLM_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -338,6 +338,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     const dec = new TextDecoder();
     let sse = '';
     let rawContent = '';
+    let rawReasoning = '';
     let inThink = startInThink;   // 由预填充推断：续写起点是否停在未闭合的思考块里
     let inTool = startInTool;     // 由预填充推断：续写起点是否停在未闭合的 tool_call/invoke 块里
     let processed = 0;          // rawContent 已处理光标
@@ -420,6 +421,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
             nativeCalls.set(idx, cur);
           }
         }
+        if (typeof d.reasoning_content === 'string' && d.reasoning_content) { rawReasoning += d.reasoning_content; }
         if (typeof d.content === 'string' && d.content) { rawContent += d.content; processRaw(); }
       }
     }
@@ -433,14 +435,15 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     // ===== 组装等价非流形状 → 完全复用现有护栏与工具执行 =====
     const content = rawContent;
     let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v) : null;
-    if (!toolCalls && content) {
+    if (!toolCalls && content && llmConfig.promptPolicy.parseTextToolCalls !== false) {
       const parsed = parseTextToolCalls(content, round);
       if (parsed.length) toolCalls = parsed;
     }
-    const data = { choices: [{ message: { role: 'assistant', content }, finish_reason: finish || (toolCalls ? 'tool_calls' : 'stop') }], usage: usage || {} };
+    const reasoningExtra = (llmConfig.capabilities.preserveReasoningInHistory && rawReasoning) ? { reasoning_content: rawReasoning } : {};
+    const data = { choices: [{ message: { role: 'assistant', content, ...reasoningExtra }, finish_reason: finish || (toolCalls ? 'tool_calls' : 'stop') }], usage: usage || {} };
     const msg = data.choices[0].message;
     lastExchange = { round, reqPayload: { ...reqPayload, stream: false, messages: sendMsgs }, resData: data, resMsg: msg, finish, userContent, isInf, hadSavedHistory: false };
-    // 兜底解析：模型偶尔不用原生 tool_calls（宽容解析已支持 <tool_call> 与 <invoke> 两种格式）
+    // 兜底解析：模型偶尔不用原生 tool_calls（是否解析 <tool_call>/<invoke> 由 llmConfig.promptPolicy.parseTextToolCalls 控制）
     if (toolCalls?.length) {
       const msgContentBeforeTools = stripThink(content ?? '').replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, '').replace(/<invoke[\s\S]*?<\/invoke>\s*/g, '').trim();
       const truncated = finish === 'length';
@@ -450,12 +453,13 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       const lastMsg = bodyMsgs[bodyMsgs.length - 1];
       if (lastMsg && lastMsg.role === 'assistant') {
         lastMsg.tool_calls = toolCalls;
+        if (reasoningExtra.reasoning_content) lastMsg.reasoning_content = reasoningExtra.reasoning_content;
         if (msgContentBeforeTools && !lastMsg.content.includes(msgContentBeforeTools)) {
           lastMsg.content = (lastMsg.content || '').trimEnd() + '\n' + msgContentBeforeTools;
         }
         lastMsg.content = (lastMsg.content || '').replace(/<tool_call>[\s\S]*$/g, '').trim();
       } else {
-        bodyMsgs.push({ role: 'assistant', content: msgContentBeforeTools || '', tool_calls: toolCalls });
+        bodyMsgs.push({ role: 'assistant', content: msgContentBeforeTools || '', ...reasoningExtra, tool_calls: toolCalls });
       }
       for (const call of toolCalls) {
         let parsed = {};
@@ -569,15 +573,15 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       continue;
     }
     if (!content && !toolCalls?.length) {
-      if (isContinuation) {
+      if (isContinuation && llmConfig.promptPolicy.forceToolMode === 'prefill_tag' && llmConfig.capabilities.prefixMode !== 'none') {
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
         if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content.includes('<tool_call>')) {
-          lastMsg.content = lastMsg.content.trimEnd() + '\n<tool_call>';
+          lastMsg.content = lastMsg.content.trimEnd() + '\n' + (llmConfig.promptPolicy.forceToolPrefillText || '<tool_call>\n').trimEnd();
           round--;
           continue;
         }
-        throw new Error('上一轮回复已完结，无需继续');
       }
+      if (isContinuation) throw new Error('上一轮回复已完结，无需继续');
       throw new Error('LLM 返回空回复: ' + JSON.stringify(data).slice(0, 200));
     }
     // 可见正文 = 思考剥离后的累积文本；流式期间已逐句 TTS（streamSpoken）
@@ -594,7 +598,21 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
         // 思考块没收尾时别再补 <tool_call> 预填（会落进思考块里，把续写带偏）
         const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
-        const tail = hasToolIntent ? '\n<tool_call>' : '\n';
+        const canPrefillTag = llmConfig.promptPolicy.forceToolMode === 'prefill_tag' && llmConfig.capabilities.prefixMode !== 'none';
+        if (hasToolIntent && !canPrefillTag) {
+          if (fullContent) bodyMsgs.push({ role: 'assistant', content: fullContent, ...reasoningExtra });
+          bodyMsgs.push({ role: 'user', content: llmConfig.promptPolicy.forceToolNudge });
+          if (llmConfig.promptPolicy.forceToolMode === 'tool_choice_required') forceRequiredTool = true;
+          showBubble('准备执行工具…');
+          continue;
+        }
+        if (llmConfig.capabilities.prefixMode === 'none') {
+          if (fullContent) bodyMsgs.push({ role: 'assistant', content: fullContent, ...reasoningExtra });
+          bodyMsgs.push({ role: 'user', content: '请继续补充你的回答。' });
+          showBubble('继续组织语言中…');
+          continue;
+        }
+        const tail = hasToolIntent ? '\n' + (llmConfig.promptPolicy.forceToolPrefillText || '<tool_call>\n').trimEnd() : '\n';
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
         if (lastMsg && lastMsg.role === 'assistant') {
           lastMsg.content = (lastMsg.content || '').trimEnd() + '\n' + fullContent + tail;
@@ -727,12 +745,14 @@ async function wakeNow(wakeText = '你被唤醒了，用户没有给你指示，
       return;
     }
     let b64 = null;
-    try {
-      b64 = window.petWindow
-        ? await window.petWindow.captureScreen()
-        : await (await fetch('/api/capture')).text();
-      if (b64 === 'null') b64 = null;
-    } catch {}
+    if (llmConfig.capabilities.vision) {
+      try {
+        b64 = window.petWindow
+          ? await window.petWindow.captureScreen()
+          : await (await fetch('/api/capture')).text();
+        if (b64 === 'null') b64 = null;
+      } catch {}
+    }
     const userContent = [{ type: 'text', text: wakeText }];
     if (b64) userContent.push({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b64 } });
     await submitRequest(userContent, null, { isInfiniteWake: isInf });
@@ -911,10 +931,12 @@ async function continueRequest() {
     const seemsToolIntent = toolKeywords.test(prevRes.content || '') && hadNoToolCalls;
 
     if (seemsToolIntent) {
-      // 预填充 <tool_call> 标签，强力引导模型补全计划中的工具参数
+      const canPrefillTag = llmConfig.promptPolicy.forceToolMode === 'prefill_tag' && llmConfig.capabilities.prefixMode !== 'none';
       const targetMsg = baseMsgs[baseMsgs.length - 1];
-      if (targetMsg && targetMsg.role === 'assistant') {
-        targetMsg.content = targetMsg.content.trimEnd() + '\n<tool_call>';
+      if (canPrefillTag && targetMsg && targetMsg.role === 'assistant') {
+        targetMsg.content = targetMsg.content.trimEnd() + '\n' + (llmConfig.promptPolicy.forceToolPrefillText || '<tool_call>\n').trimEnd();
+      } else if (!canPrefillTag) {
+        baseMsgs.push({ role: 'user', content: llmConfig.promptPolicy.forceToolNudge });
       }
     }
 

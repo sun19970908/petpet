@@ -8,6 +8,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { appendLine, createRotatingStream, readLastLines } = require('./lib/logger');
 const { createVoiceAndApi } = require('./main/voice');
+const { createLlmConfigManager } = require('./main/llm-config');
+const { createLlmProxy } = require('./main/llm-proxy');
 const { createScreenTools } = require('./main/screen');
 const { createStorage } = require('./main/storage');
 const { createFsTools } = require('./main/fs-tools');
@@ -66,12 +68,16 @@ let cliGsvIdle = null;
 let cliCapMain = null;
 let cliCapRoom = null;
 let cliNoInfwake = false;
+let cliLlmProfile = null;
+let cliThinkMode = null;
 for (const arg of process.argv.slice(1)) {
   if (!arg || arg === '.' || arg.endsWith('electron.exe') || arg.endsWith('main.js')) continue;
   if (arg.startsWith('--gsv-mode=')) cliGsvMode = arg.slice(11);
   else if (arg.startsWith('--gsv-idle=')) cliGsvIdle = arg.slice(11);
   else if (arg.startsWith('--cap-main=')) cliCapMain = arg.slice(11);
   else if (arg.startsWith('--cap-room=')) cliCapRoom = arg.slice(11);
+  else if (arg.startsWith('--llm=')) cliLlmProfile = arg.slice(6);
+  else if (arg.startsWith('--think=')) cliThinkMode = arg.slice(8);
   else if (arg === '--no-infwake') cliNoInfwake = true;
   else if (arg === 'debug' || arg === '--debug') process.env.PET_DEBUG = '1';
   else if (['auto', 'always', 'on', 'never', 'off'].includes(arg.toLowerCase())) cliGsvMode = arg;
@@ -105,8 +111,19 @@ const getGsvIdleTimeoutMs = () => {
   return (Number.isFinite(sec) && sec > 0 ? sec : 600) * 1000;
 };
 
-const { ensureGSV, stopGSV, ensureASR, stopASR, handleApi } = createVoiceAndApi({
+const { ensureGSV, stopGSV, ensureASR, stopASR, onLlmActivity, handleApi } = createVoiceAndApi({
   APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs, appendLine, createRotatingStream,
+});
+
+const llmConfigMgr = createLlmConfigManager({
+  APP_ROOT,
+  getConfig,
+  cliProfile: cliLlmProfile,
+  envThinkMode: cliThinkMode || (process.env.PET_THINK === 'off' ? 'off' : null),
+});
+const llmProxy = createLlmProxy({
+  getServerConfig: () => llmConfigMgr.getServerConfig(),
+  logError: (m) => console.error(m),
 });
 
 const { captureScreenBy, captureNow, gpuUtil, getScreensInfo } = createScreenTools({
@@ -133,13 +150,15 @@ function serveStatic(req, res) {
     if (req.url.startsWith('/api/')) {
       const apiPath = req.url.split('?')[0];
       if (apiPath === '/api/config') {
+        const publicLlm = llmConfigMgr.getPublicConfig();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
-          think: THINK_MODE,
+          think: publicLlm.promptPolicy?.thinkMode || THINK_MODE,
           bedroom: Boolean(bedroomDisplay()),
           infwakeCutoff: getInfwakeCutoff().str,
           infwakePhase: getInfwakePhaseId(),
           gsvIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
+          llm: publicLlm,
         }));
         return;
       }
@@ -252,6 +271,11 @@ function serveStatic(req, res) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(out));
         });
+        return;
+      }
+      if (apiPath === '/api/llm') {
+        onLlmActivity();
+        llmProxy.handleLlmRequest(req, res);
         return;
       }
       handleApi(req, res);
