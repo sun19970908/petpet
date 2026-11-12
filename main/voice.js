@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const net = require('net');
 
-function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT, appendLine, createRotatingStream }) {
+function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, appendLine, createRotatingStream }) {
   const GSV_DIR = process.env.PET_GSV_DIR || 'G:\\GPT-SoVITS-v2pro-20250604';
   const GSV_PYTHON = path.join(GSV_DIR, 'runtime', 'python.exe');
   const GSV_CONFIG = process.env.PET_GSV_CONFIG || 'GPT_SoVITS/configs/tts_infer_yousa.yaml';
@@ -21,8 +21,12 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT, appendLine, c
   let gsvProc = null;
   let gsvStartingPromise = null;
   let lastGsvActivity = Date.now();
+  const resolveIdleMs = () => {
+    const v = typeof getGsvIdleTimeoutMs === 'function' ? getGsvIdleTimeoutMs() : GSV_IDLE_TIMEOUT;
+    return Number.isFinite(v) && v > 0 ? v : 600000;
+  };
 
-  console.log(`[gsv] 配置: mode=${GSV_MODE}, idleTimeout=${GSV_IDLE_TIMEOUT / 1000}s, gpu=${GSV_GPU}`);
+  console.log(`[gsv] 配置: mode=${GSV_MODE}, idleTimeout=${resolveIdleMs() / 1000}s, gpu=${GSV_GPU}`);
 
   function touchGsvActivity() {
     lastGsvActivity = Date.now();
@@ -128,11 +132,11 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT, appendLine, c
     console.log('[gsv] GPT-SoVITS 已关闭');
   }
 
-  // 自动空闲巡检（auto 模式下超时无请求则杀死）
+  // 自动空闲巡检（auto 模式下超时无请求则杀死，动态读取 config.json 生效）
   if (GSV_MODE === 'auto') {
     setInterval(async () => {
       const idleMs = Date.now() - lastGsvActivity;
-      if (idleMs >= GSV_IDLE_TIMEOUT) {
+      if (idleMs >= resolveIdleMs()) {
         if (await isGsvPortOpen()) {
           await stopGSV();
         }

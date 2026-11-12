@@ -84,7 +84,6 @@ const rawGsvMode = (cliGsvMode || process.env.PET_GSV_MODE || 'auto').toLowerCas
 const GSV_MODE = ['always', 'on'].includes(rawGsvMode) ? 'always'
   : ['never', 'off', 'none'].includes(rawGsvMode) ? 'never'
   : 'auto';
-const GSV_IDLE_TIMEOUT = (parseInt(cliGsvIdle || process.env.PET_GSV_IDLE, 10) || 600) * 1000;
 
 let petWin = null;
 let bedroomWin = null;
@@ -95,18 +94,24 @@ function winLog(msg) {
 }
 
 // ===== 子模块装配 =====
+const {
+  getConfig, getInfwakeCutoff, getInfwakePhaseId, historyLoad, historySave,
+  memoryAdd, memorySearch, memoryBackfill, roomStateLoad, roomStateSave, fstoolTail,
+} = createStorage({ APP_ROOT, PET_SPACE_DIR, readLastLines });
+
+const getGsvIdleTimeoutMs = () => {
+  const raw = cliGsvIdle ?? process.env.PET_GSV_IDLE ?? getConfig().gsvIdleSeconds;
+  const sec = parseInt(raw, 10);
+  return (Number.isFinite(sec) && sec > 0 ? sec : 600) * 1000;
+};
+
 const { ensureGSV, stopGSV, ensureASR, stopASR, handleApi } = createVoiceAndApi({
-  APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT, appendLine, createRotatingStream,
+  APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs, appendLine, createRotatingStream,
 });
 
 const { captureScreenBy, captureNow, gpuUtil, getScreensInfo } = createScreenTools({
   APP_ROOT, capMainCfg: CAP_MAIN_CFG, capRoomCfg: CAP_ROOM_CFG, getBedroomWin: () => bedroomWin, screen, desktopCapturer, winLog,
 });
-
-const {
-  getInfwakeCutoff, getInfwakePhaseId, historyLoad, historySave,
-  memoryAdd, memorySearch, memoryBackfill, roomStateLoad, roomStateSave, fstoolTail,
-} = createStorage({ APP_ROOT, PET_SPACE_DIR, readLastLines });
 
 function maybeRoomChanged(call) {
   const name = (call && call.name) || '';
@@ -134,6 +139,7 @@ function serveStatic(req, res) {
           bedroom: Boolean(bedroomDisplay()),
           infwakeCutoff: getInfwakeCutoff().str,
           infwakePhase: getInfwakePhaseId(),
+          gsvIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
         }));
         return;
       }
