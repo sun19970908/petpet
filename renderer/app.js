@@ -1429,8 +1429,8 @@ if (DEBUG_MODE) {
     fetch('/api/dbg', { method: 'POST', headers: { 'X-Pet-Debug': '1' }, body: JSON.stringify({
       t: new Date().toISOString(), ptr: dbg.ptr, mouse: dbg.mouse,
       last: [dbg.lastX, dbg.lastY, dbg.lastTarget],
-      angleX: +(+p.angleX ?? 0).toFixed(1), eyeBallX: +(+p.eyeBallX ?? 0).toFixed(2),
-      browL: +(+p.browLY ?? 0).toFixed(2), smile: +(+p.smile ?? 0).toFixed(2),
+      angleX: +(+(p.angleX ?? 0)).toFixed(1), eyeBallX: +(+(p.eyeBallX ?? 0)).toFixed(2),
+      browL: +(+(p.browLY ?? 0)).toFixed(2), smile: +(+(p.smile ?? 0)).toFixed(2),
       clickThrough, hasBridge: typeof window.petWindow !== 'undefined',
       dpr: WINDOW_DPR, wh: [innerWidth, innerHeight], fac: dprFactor,
       canvas: (() => { const r = petCanvas.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; })(),

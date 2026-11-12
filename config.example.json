@@ -7,32 +7,5 @@
   "gsvIdleSeconds": 600,
   "watchdog": false,
   "llmProfile": "strata",
-  "wakeGpuLimit": 40,
-  "presets": {
-    "day": {
-      "name": "白天·日常/游戏",
-      "desc": "硅基流动云端 + 关看门狗 + 显卡免检(100%) + 语音按需释放",
-      "llmProfile": "硅基流动",
-      "ttsMode": "auto",
-      "gsvIdleSeconds": 120,
-      "watchdog": false,
-      "wakeGpuLimit": 100
-    },
-    "night": {
-      "name": "夜间·挂机值班",
-      "desc": "strata本地大模型 + 开看门狗保活 + 显卡防打扰(40%) + 语音按需释放",
-      "llmProfile": "strata",
-      "ttsMode": "auto",
-      "gsvIdleSeconds": 120,
-      "watchdog": true,
-      "wakeGpuLimit": 40
-    },
-    "silent": {
-      "name": "静音·游戏免扰",
-      "desc": "彻底关闭语音合成 + 关看门狗 + 显卡免检(100%)",
-      "ttsMode": "off",
-      "watchdog": false,
-      "wakeGpuLimit": 100
-    }
-  }
+  "wakeGpuLimit": 40
 }
