@@ -7,6 +7,7 @@ const DEFAULT_PROFILE = {
   apiKey: '',
   model: 'strata-nothink',
   customPrompt: '',
+  wakeGpuLimit: 40,
   requestDefaults: {
     temperature: 0.8,
     max_tokens: 65536,
@@ -100,9 +101,22 @@ function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envThi
 
     const baseUrl = String(merged.baseUrl || DEFAULT_PROFILE.baseUrl).trim();
 
+    const parseGpuLimit = (val) => {
+      if (val === null || val === undefined || val === '') return null;
+      const n = Number(val);
+      return Number.isFinite(n) ? n : null;
+    };
+    const wakeGpuLimit = parseGpuLimit(
+      appInline?.wakeGpuLimit ?? appInline?.wakeGpuThreshold ?? appInline?.wake_gpu_limit ?? appInline?.gpuLimit ??
+      fileProfile?.wakeGpuLimit ?? fileProfile?.wakeGpuThreshold ?? fileProfile?.wake_gpu_limit ?? fileProfile?.gpuLimit ??
+      fileCfg.wakeGpuLimit ?? fileCfg.wakeGpuThreshold ?? fileCfg.wake_gpu_limit ?? fileCfg.gpuLimit ??
+      DEFAULT_PROFILE.wakeGpuLimit
+    ) ?? 40;
+
     return {
       ...merged,
       customPrompt: String(merged.customPrompt ?? merged.promptPolicy?.customPrompt ?? ''),
+      wakeGpuLimit,
       activeProfile: profileName,
       apiKey,
       baseUrl,

@@ -2608,6 +2608,7 @@ void main(){ o=texture(uTex,vUv); }`;
     activeProfile: "strata",
     model: "strata-nothink",
     customPrompt: "",
+    wakeGpuLimit: 40,
     requestDefaults: DEFAULT_REQUEST_DEFAULTS,
     capabilities: DEFAULT_CAPABILITIES,
     promptPolicy: DEFAULT_PROMPT_POLICY
@@ -2617,10 +2618,19 @@ void main(){ o=texture(uTex,vUv); }`;
     const reqSrc = src.requestDefaults && typeof src.requestDefaults === "object" ? src.requestDefaults : {};
     const capSrc = src.capabilities && typeof src.capabilities === "object" ? src.capabilities : {};
     const policySrc = src.promptPolicy && typeof src.promptPolicy === "object" ? src.promptPolicy : {};
+    const parseGpuLimit = (val) => {
+      if (val === null || val === void 0 || val === "") return null;
+      const n4 = Number(val);
+      return Number.isFinite(n4) ? n4 : null;
+    };
+    const wakeGpuLimit = parseGpuLimit(
+      src.wakeGpuLimit ?? src.wakeGpuThreshold ?? src.wake_gpu_limit ?? src.gpuLimit ?? policySrc.wakeGpuLimit
+    ) ?? DEFAULT_LLM_CONFIG.wakeGpuLimit;
     return {
       activeProfile: src.activeProfile || DEFAULT_LLM_CONFIG.activeProfile,
       model: src.model || DEFAULT_LLM_CONFIG.model,
       customPrompt: String(src.customPrompt ?? policySrc.customPrompt ?? DEFAULT_LLM_CONFIG.customPrompt),
+      wakeGpuLimit,
       hasApiKey: Boolean(src.hasApiKey),
       requestDefaults: {
         ...DEFAULT_REQUEST_DEFAULTS,
@@ -4289,29 +4299,34 @@ ${note}` : note };
     clearPendingImage();
     await submitRequest(text, image);
   }
-  var WAKE_GPU_LIMIT = 40;
+  var DEFAULT_WAKE_GPU_LIMIT = 40;
   var wakeRunning = false;
   async function wakeNow(wakeText = "\u4F60\u88AB\u5524\u9192\u4E86\uFF0C\u7528\u6237\u6CA1\u6709\u7ED9\u4F60\u6307\u793A\uFF0C\u81EA\u7531\u884C\u52A8\u5427", { isInfiniteWake: isInf = false } = {}) {
     if (busy || wakeRunning) return;
     wakeRunning = true;
     try {
-      let util = null;
-      try {
-        const raw = window.petWindow ? await window.petWindow.gpuUtil() : await (await fetch("/api/gpuutil")).text();
-        util = parseInt(raw, 10);
-        if (!Number.isFinite(util)) util = null;
-      } catch {
-      }
-      if (util !== null && util > WAKE_GPU_LIMIT) {
-        if (infiniteWake) {
-          queueInfiniteWake(3e4);
+      await refreshRuntimeConfig();
+      const rawLimit = Number(llmConfig?.wakeGpuLimit);
+      const gpuLimit = Number.isFinite(rawLimit) ? rawLimit : DEFAULT_WAKE_GPU_LIMIT;
+      if (gpuLimit < 100) {
+        let util = null;
+        try {
+          const raw = window.petWindow ? await window.petWindow.gpuUtil() : await (await fetch("/api/gpuutil")).text();
+          util = parseInt(raw, 10);
+          if (!Number.isFinite(util)) util = null;
+        } catch {
+        }
+        if (util !== null && util > gpuLimit) {
+          if (infiniteWake) {
+            queueInfiniteWake(3e4);
+            return;
+          }
+          showBubble(`\u663E\u5361\u6B63\u5FD9\uFF08${util}%\uFF09\uFF0C\u8FD9\u6B21\u5148\u4E0D\u5524\u9192\u5566\uFF0C\u7A0D\u540E\u518D\u53EB\u6211`);
+          setTimeout(() => {
+            if (!busy) hideBubble();
+          }, 6e3);
           return;
         }
-        showBubble(`\u663E\u5361\u6B63\u5FD9\uFF08${util}%\uFF09\uFF0C\u8FD9\u6B21\u5148\u4E0D\u5524\u9192\u5566\uFF0C\u7A0D\u540E\u518D\u53EB\u6211`);
-        setTimeout(() => {
-          if (!busy) hideBubble();
-        }, 6e3);
-        return;
       }
       let b64 = null;
       if (llmConfig.capabilities.vision) {

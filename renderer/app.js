@@ -730,25 +730,30 @@ async function send() {
   await submitRequest(text, image);
 }
 
-// 手动唤醒：先查主卡 GPU 占用率（防打扰），通过则自动截屏 + 固定唤醒提示，让她自由行动。
+// 手动唤醒：先查主卡 GPU 占用率（防打扰；若配置 wakeGpuLimit >= 100 则跳过判定），通过则自动截屏 + 固定唤醒提示，让她自由行动。
 // 以后定时自动唤醒复用 wakeNow()，前置条件一致
-const WAKE_GPU_LIMIT = 40; // 主卡占用率上限（%），超过则跳过本次唤醒
+const DEFAULT_WAKE_GPU_LIMIT = 40; // 默认主卡占用率上限（%），超过则跳过本次唤醒；>= 100 时跳过判定
 let wakeRunning = false;
 async function wakeNow(wakeText = '你被唤醒了，用户没有给你指示，自由行动吧', { isInfiniteWake: isInf = false } = {}) {
   if (busy || wakeRunning) return;
   wakeRunning = true;
   try {
-    let util = null;
-    try {
-      const raw = window.petWindow ? await window.petWindow.gpuUtil() : await (await fetch('/api/gpuutil')).text();
-      util = parseInt(raw, 10);
-      if (!Number.isFinite(util)) util = null;
-    } catch {}
-    if (util !== null && util > WAKE_GPU_LIMIT) {
-      if (infiniteWake) { queueInfiniteWake(30000); return; } // 无限模式：显卡忙就等会儿再试，不刷屏
-      showBubble(`显卡正忙（${util}%），这次先不唤醒啦，稍后再叫我`);
-      setTimeout(() => { if (!busy) hideBubble(); }, 6000);
-      return;
+    await refreshRuntimeConfig();
+    const rawLimit = Number(llmConfig?.wakeGpuLimit);
+    const gpuLimit = Number.isFinite(rawLimit) ? rawLimit : DEFAULT_WAKE_GPU_LIMIT;
+    if (gpuLimit < 100) {
+      let util = null;
+      try {
+        const raw = window.petWindow ? await window.petWindow.gpuUtil() : await (await fetch('/api/gpuutil')).text();
+        util = parseInt(raw, 10);
+        if (!Number.isFinite(util)) util = null;
+      } catch {}
+      if (util !== null && util > gpuLimit) {
+        if (infiniteWake) { queueInfiniteWake(30000); return; } // 无限模式：显卡忙就等会儿再试，不刷屏
+        showBubble(`显卡正忙（${util}%），这次先不唤醒啦，稍后再叫我`);
+        setTimeout(() => { if (!busy) hideBubble(); }, 6000);
+        return;
+      }
     }
     let b64 = null;
     if (llmConfig.capabilities.vision) {
