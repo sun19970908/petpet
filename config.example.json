@@ -3,5 +3,8 @@
   "embeddingModel": "BAAI/bge-m3",
   "embeddingDim": 1024,
   "infwakeCutoff": "12:00",
-  "gsvIdleSeconds": 600
+  "ttsMode": "auto",
+  "gsvIdleSeconds": 600,
+  "watchdog": false,
+  "llmProfile": "strata"
 }

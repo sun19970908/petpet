@@ -79,6 +79,7 @@ function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envThi
       cliProfile ||
       process.env.PET_LLM_PROFILE ||
       appCfg.llmProfile ||
+      appCfg.activeProfile ||
       fileCfg.activeProfile ||
       'strata'
     ).trim() || 'strata';

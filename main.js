@@ -5,7 +5,7 @@ const { app, BrowserWindow, screen, ipcMain, desktopCapturer, nativeImage, sessi
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const { appendLine, createRotatingStream, readLastLines } = require('./lib/logger');
 const { createVoiceAndApi } = require('./main/voice');
 const { createLlmConfigManager } = require('./main/llm-config');
@@ -86,10 +86,6 @@ for (const arg of process.argv.slice(1)) {
 
 const CAP_MAIN_CFG = cliCapMain ?? process.env.PET_CAP_MAIN ?? 'main';
 const CAP_ROOM_CFG = cliCapRoom ?? process.env.PET_CAP_ROOM ?? 'room';
-const rawGsvMode = (cliGsvMode || process.env.PET_GSV_MODE || 'auto').toLowerCase();
-const GSV_MODE = ['always', 'on'].includes(rawGsvMode) ? 'always'
-  : ['never', 'off', 'none'].includes(rawGsvMode) ? 'never'
-  : 'auto';
 
 let petWin = null;
 let bedroomWin = null;
@@ -105,14 +101,33 @@ const {
   memoryAdd, memorySearch, memoryBackfill, roomStateLoad, roomStateSave, fstoolTail,
 } = createStorage({ APP_ROOT, PET_SPACE_DIR, readLastLines });
 
+const normalizeGsvMode = (v) => {
+  const m = String(v || 'auto').toLowerCase().trim();
+  if (['always', 'on', 'true', '1'].includes(m)) return 'always';
+  if (['never', 'off', 'none', 'false', '0'].includes(m)) return 'never';
+  return 'auto';
+};
+
+const getGsvMode = () => {
+  const cfg = getConfig();
+  const raw = cliGsvMode ?? process.env.PET_GSV_MODE ?? cfg.ttsMode ?? cfg.gsvMode ?? 'auto';
+  return normalizeGsvMode(raw);
+};
+
+const getGsvModeLabel = () => {
+  const m = getGsvMode();
+  return m === 'always' ? 'on' : m === 'never' ? 'off' : 'auto';
+};
+
 const getGsvIdleTimeoutMs = () => {
-  const raw = cliGsvIdle ?? process.env.PET_GSV_IDLE ?? getConfig().gsvIdleSeconds;
+  const cfg = getConfig();
+  const raw = cliGsvIdle ?? process.env.PET_GSV_IDLE ?? cfg.ttsIdleSeconds ?? cfg.gsvIdleSeconds;
   const sec = parseInt(raw, 10);
   return (Number.isFinite(sec) && sec > 0 ? sec : 600) * 1000;
 };
 
 const { ensureGSV, stopGSV, ensureASR, stopASR, onLlmActivity, handleApi } = createVoiceAndApi({
-  APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs, appendLine, createRotatingStream,
+  APP_ROOT, GSV_MODE: getGsvMode(), getGsvMode, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs, appendLine, createRotatingStream,
 });
 
 const llmConfigMgr = createLlmConfigManager({
@@ -153,6 +168,63 @@ const { runFsTool } = createFsTools({
   APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged: maybeRoomChanged,
 });
 
+// ===== 看门狗同步策略（根据 config.json 中的 watchdog 配置） =====
+function stopWatchdogSync() {
+  try {
+    const pidFile = path.join(APP_ROOT, 'logs', 'watchdog.pid');
+    if (fs.existsSync(pidFile)) {
+      try {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+        if (pid) {
+          try { process.kill(pid, 0); process.kill(pid, 'SIGTERM'); } catch {}
+          try { exec(`taskkill /PID ${pid} /T /F`, () => {}); } catch {}
+        }
+      } catch {}
+      try { fs.unlinkSync(pidFile); } catch {}
+    }
+    const ps1 = path.join(APP_ROOT, 'stop-watchdog.ps1');
+    if (fs.existsSync(ps1)) {
+      exec(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ps1}"`, { windowsHide: true }, () => {});
+    }
+    console.log('[watchdog] 已根据配置 watchdog=false/off 确保关闭看门狗');
+  } catch (e) {
+    console.error('[watchdog] 关闭看门狗异常:', e.message);
+  }
+}
+
+function startWatchdogSync() {
+  try {
+    const pidFile = path.join(APP_ROOT, 'logs', 'watchdog.pid');
+    if (fs.existsSync(pidFile)) {
+      try {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+        if (pid) {
+          process.kill(pid, 0);
+          console.log('[watchdog] 看门狗已在运行 (pid=' + pid + ')');
+          return;
+        }
+      } catch {}
+    }
+    const ps1 = path.join(APP_ROOT, 'start-watchdog.ps1');
+    if (fs.existsSync(ps1)) {
+      exec(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ps1}"`, { windowsHide: true }, () => {});
+      console.log('[watchdog] 已根据配置 watchdog=true/on 启动看门狗');
+    }
+  } catch (e) {
+    console.error('[watchdog] 启动看门狗异常:', e.message);
+  }
+}
+
+function applyWatchdogPolicy() {
+  const cfg = getConfig();
+  const w = cfg.watchdog;
+  if (w === false || w === 'off' || w === 'never' || w === 'false') {
+    stopWatchdogSync();
+  } else if (w === true || w === 'on' || w === 'always' || w === 'true') {
+    startWatchdogSync();
+  }
+}
+
 // ===== 本地 HTTP 静态资源 + API 兜底路由 =====
 function serveStatic(req, res) {
   try {
@@ -160,13 +232,19 @@ function serveStatic(req, res) {
       const apiPath = req.url.split('?')[0];
       if (apiPath === '/api/config') {
         const publicLlm = llmConfigMgr.getPublicConfig();
+        const cfg = getConfig();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           think: publicLlm.promptPolicy?.thinkMode || THINK_MODE,
           bedroom: Boolean(bedroomDisplay()),
           infwakeCutoff: getInfwakeCutoff().str,
           infwakePhase: getInfwakePhaseId(),
+          ttsMode: getGsvModeLabel(),
+          gsvMode: getGsvModeLabel(),
           gsvIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
+          ttsIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
+          watchdog: cfg.watchdog ?? false,
+          llmProfile: publicLlm.activeProfile,
           llm: publicLlm,
         }));
         return;
@@ -431,7 +509,8 @@ function spawnBedroom(port) {
 
 // ===== 应用初始化与 IPC 绑定 =====
 app.whenReady().then(() => {
-  if (GSV_MODE === 'always') {
+  applyWatchdogPolicy();
+  if (getGsvMode() === 'always') {
     ensureGSV().catch((e) => console.error('[gsv] 常驻启动失败:', e.message));
   }
   ensureASR().catch((e) => console.error('[asr] 预拉起失败:', e.message));

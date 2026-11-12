@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const net = require('net');
 
-function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, appendLine, createRotatingStream }) {
+function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, appendLine, createRotatingStream }) {
   const GSV_DIR = process.env.PET_GSV_DIR || 'G:\\GPT-SoVITS-v2pro-20250604';
   const GSV_PYTHON = path.join(GSV_DIR, 'runtime', 'python.exe');
   const GSV_CONFIG = process.env.PET_GSV_CONFIG || 'GPT_SoVITS/configs/tts_infer_yousa.yaml';
@@ -25,8 +25,15 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
     const v = typeof getGsvIdleTimeoutMs === 'function' ? getGsvIdleTimeoutMs() : GSV_IDLE_TIMEOUT;
     return Number.isFinite(v) && v > 0 ? v : 600000;
   };
+  const resolveGsvMode = () => {
+    const raw = typeof getGsvMode === 'function' ? getGsvMode() : GSV_MODE;
+    const m = String(raw || 'auto').toLowerCase().trim();
+    if (['always', 'on'].includes(m)) return 'always';
+    if (['never', 'off', 'none'].includes(m)) return 'never';
+    return 'auto';
+  };
 
-  console.log(`[gsv] 配置: mode=${GSV_MODE}, idleTimeout=${resolveIdleMs() / 1000}s, gpu=${GSV_GPU}`);
+  console.log(`[gsv] 配置: mode=${resolveGsvMode()}, idleTimeout=${resolveIdleMs() / 1000}s, gpu=${GSV_GPU}`);
 
   function touchGsvActivity() {
     lastGsvActivity = Date.now();
@@ -45,7 +52,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
   }
 
   async function ensureGSV() {
-    if (GSV_MODE === 'never') return false;
+    if (resolveGsvMode() === 'never') return false;
     touchGsvActivity();
 
     if (await isGsvPortOpen()) return true;
@@ -133,16 +140,23 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
   }
 
   // 自动空闲巡检（auto 模式下超时无请求则杀死，动态读取 config.json 生效）
-  if (GSV_MODE === 'auto') {
-    setInterval(async () => {
+  setInterval(async () => {
+    const mode = resolveGsvMode();
+    if (mode === 'never') {
+      if (await isGsvPortOpen()) {
+        await stopGSV();
+      }
+      return;
+    }
+    if (mode === 'auto') {
       const idleMs = Date.now() - lastGsvActivity;
       if (idleMs >= resolveIdleMs()) {
         if (await isGsvPortOpen()) {
           await stopGSV();
         }
       }
-    }, 10000);
-  }
+    }
+  }, 10000);
 
   // ===== Sherpa-ONNX / SenseVoice ASR 生命周期管理器 =====
   const ASR_PYTHON = 'G:\\AI\\Open-LLM-VTuber\\.venv\\Scripts\\python.exe';
@@ -244,7 +258,8 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
 
   function onLlmActivity() {
     touchGsvActivity();
-    if (GSV_MODE === 'auto') {
+    const mode = resolveGsvMode();
+    if (mode === 'auto' || mode === 'always') {
       ensureGSV().catch((e) => console.error('[gsv] 预热启动异常:', e.message));
     }
   }
@@ -312,9 +327,9 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, GSV_IDLE_TIMEOUT = 600000, getG
       }
 
       if (isTts) {
-        if (GSV_MODE === 'never') {
+        if (resolveGsvMode() === 'never') {
           if (!res.headersSent) res.writeHead(503);
-          res.end('TTS disabled (GSV_MODE=never)');
+          res.end('TTS disabled (mode=never/off)');
           return;
         }
         const ok = await ensureGSV();

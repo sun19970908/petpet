@@ -12,11 +12,20 @@ const STATE = path.join(ROOT, 'pet_space', '.wake-state.json');
 const LOG = path.join(ROOT, 'logs', 'watchdog.log');
 const PIDFILE = path.join(ROOT, 'logs', 'watchdog.pid');
 const PETBAT = path.join(ROOT, 'start-pet.bat');
-const WATCHDOG_GSV_MODE = (
-  process.argv.slice(2).find((a) => ['auto', 'always', 'on', 'never', 'off'].includes(a.toLowerCase())) ||
-  process.env.PET_GSV_MODE ||
-  'off'
-).toLowerCase();
+function getWatchdogGsvMode() {
+  const cli = process.argv.slice(2).find((a) => ['auto', 'always', 'on', 'never', 'off'].includes(a.toLowerCase()));
+  if (cli) return cli.toLowerCase();
+  if (process.env.PET_GSV_MODE) return process.env.PET_GSV_MODE.toLowerCase();
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
+    const m = cfg.ttsMode || cfg.gsvMode;
+    if (m && ['auto', 'always', 'on', 'never', 'off'].includes(String(m).toLowerCase())) {
+      return String(m).toLowerCase();
+    }
+  } catch {}
+  return 'off';
+}
+const WATCHDOG_GSV_MODE = getWatchdogGsvMode();
 
 function log(m) {
   const s = new Date().toISOString() + ' ' + m;
