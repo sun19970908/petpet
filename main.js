@@ -5,7 +5,7 @@ const { app, BrowserWindow, screen, ipcMain, desktopCapturer, nativeImage, sessi
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { spawn, exec } = require('child_process');
+const { spawn } = require('child_process');
 const { appendLine, createRotatingStream, readLastLines } = require('./lib/logger');
 const { createVoiceAndApi } = require('./main/voice');
 const { createLlmConfigManager } = require('./main/llm-config');
@@ -13,6 +13,7 @@ const { createLlmProxy } = require('./main/llm-proxy');
 const { createScreenTools } = require('./main/screen');
 const { createStorage } = require('./main/storage');
 const { createFsTools } = require('./main/fs-tools');
+const watchdogCtl = require('./lib/watchdog-ctl');
 
 // 防护 Windows 下脱钩控制台/管道关闭时 console.log / pipe 触发的 EPIPE/EOF 未捕获异常弹窗
 if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on('error', () => {});
@@ -171,22 +172,10 @@ const { runFsTool } = createFsTools({
 // ===== 看门狗同步策略（根据 config.json 中的 watchdog 配置） =====
 function stopWatchdogSync() {
   try {
-    const pidFile = path.join(APP_ROOT, 'logs', 'watchdog.pid');
-    if (fs.existsSync(pidFile)) {
-      try {
-        const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
-        if (pid) {
-          try { process.kill(pid, 0); process.kill(pid, 'SIGTERM'); } catch {}
-          try { exec(`taskkill /PID ${pid} /T /F`, () => {}); } catch {}
-        }
-      } catch {}
-      try { fs.unlinkSync(pidFile); } catch {}
-    }
-    const ps1 = path.join(APP_ROOT, 'stop-watchdog.ps1');
-    if (fs.existsSync(ps1)) {
-      exec(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ps1}"`, { windowsHide: true }, () => {});
-    }
-    console.log('[watchdog] 已根据配置 watchdog=false/off 确保关闭看门狗');
+    const r = watchdogCtl.stop();
+    console.log(r.stopped
+      ? '[watchdog] 已根据配置 watchdog=false/off 关闭看门狗 (pid=' + r.pid + ')'
+      : '[watchdog] 配置为关闭，看门狗本来就没在运行');
   } catch (e) {
     console.error('[watchdog] 关闭看门狗异常:', e.message);
   }
@@ -194,22 +183,14 @@ function stopWatchdogSync() {
 
 function startWatchdogSync() {
   try {
-    const pidFile = path.join(APP_ROOT, 'logs', 'watchdog.pid');
-    if (fs.existsSync(pidFile)) {
-      try {
-        const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
-        if (pid) {
-          process.kill(pid, 0);
-          console.log('[watchdog] 看门狗已在运行 (pid=' + pid + ')');
-          return;
-        }
-      } catch {}
+    const r = watchdogCtl.start();
+    if (!r.ok) {
+      console.log('[watchdog] 启动失败: ' + r.error);
+      return;
     }
-    const ps1 = path.join(APP_ROOT, 'start-watchdog.ps1');
-    if (fs.existsSync(ps1)) {
-      exec(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ps1}"`, { windowsHide: true }, () => {});
-      console.log('[watchdog] 已根据配置 watchdog=true/on 启动看门狗');
-    }
+    console.log(r.already
+      ? '[watchdog] 看门狗已在运行 (pid=' + r.pid + ')'
+      : '[watchdog] 已根据配置 watchdog=true/on 启动看门狗 (pid=' + r.pid + ')');
   } catch (e) {
     console.error('[watchdog] 启动看门狗异常:', e.message);
   }

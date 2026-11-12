@@ -1,6 +1,7 @@
 // 语义记忆（Orama + 硅基流动 embedding）、配置、聊天历史（主历史与无限唤醒分文件）及房间状态读写
 const fs = require('fs');
 const path = require('path');
+const { loadConfig, parseCutoff } = require('../lib/config-store');
 
 function createStorage({ APP_ROOT, PET_SPACE_DIR, readLastLines }) {
   const MEMORY_FILE = path.join(APP_ROOT, 'history', 'memory.orama');
@@ -146,15 +147,10 @@ function createStorage({ APP_ROOT, PET_SPACE_DIR, readLastLines }) {
   const INFWAKE_DIR = path.join(APP_ROOT, 'history', 'infwake');
 
   function getConfig() {
-    try { return JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'config.json'), 'utf8')); }
-    catch { return {}; }
+    return loadConfig(APP_ROOT);
   }
   function getInfwakeCutoff() {
-    const raw = String(getConfig().infwakeCutoff || '12:00').trim();
-    const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
-    const hour = m ? Math.max(0, Math.min(23, Number(m[1]))) : 12;
-    const min = m ? Math.max(0, Math.min(59, Number(m[2]))) : 0;
-    return { str: `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`, hour, min };
+    return parseCutoff(getConfig().infwakeCutoff);
   }
   function getInfwakePhaseId(now = new Date()) {
     const { hour, min } = getInfwakeCutoff();

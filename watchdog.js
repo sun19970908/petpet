@@ -4,6 +4,7 @@
 //   - 在线但 .wake-state.json 显示"无限唤醒开着、心跳却停了 >180s"或"同轮次无任何活动进展 >600s" → 杀掉重拉（重启后自动恢复无限唤醒）
 const http = require('http'), fs = require('fs'), path = require('path'), { spawn, execSync } = require('child_process');
 const { appendLine } = require('./lib/logger');
+const { loadConfig, parseCutoff } = require('./lib/config-store');
 if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on('error', () => {});
 if (process.stderr && typeof process.stderr.on === 'function') process.stderr.on('error', () => {});
 
@@ -17,7 +18,7 @@ function getWatchdogGsvMode() {
   if (cli) return cli.toLowerCase();
   if (process.env.PET_GSV_MODE) return process.env.PET_GSV_MODE.toLowerCase();
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
+    const cfg = loadConfig(ROOT);
     const m = cfg.ttsMode || cfg.gsvMode;
     if (m && ['auto', 'always', 'on', 'never', 'off'].includes(String(m).toLowerCase())) {
       return String(m).toLowerCase();
@@ -78,14 +79,7 @@ let restarts = [], lastLaunch = 0, busySince = 0, lastTurnSeq = 0, lastSeenActTs
 let lastTickTs = Date.now(), pendingStopInfwake = false, stoppedCutoffKey = '';
 function getCutoffConfig() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
-    const raw = String(cfg.infwakeCutoff || '12:00').trim();
-    const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
-    if (m) {
-      const hour = Math.max(0, Math.min(23, Number(m[1])));
-      const min = Math.max(0, Math.min(59, Number(m[2])));
-      return { hour, min, str: `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}` };
-    }
+    return parseCutoff(loadConfig(ROOT).infwakeCutoff);
   } catch {}
   return { hour: 12, min: 0, str: '12:00' };
 }

@@ -1,6 +1,5 @@
 // 通用 LLM 配置层（主进程）：只保存标准 OpenAI 兼容 API 字段与桌宠适配参数，不绑定特定厂商逻辑
-const fs = require('fs');
-const path = require('path');
+const { loadLlmConfig, readJson, configPath, resolveActiveProfile } = require('../lib/config-store');
 
 const DEFAULT_PROFILE = {
   baseUrl: 'http://127.0.0.1:11435/v1/chat/completions',
@@ -62,27 +61,17 @@ function mergeProfile(base, override) {
 }
 
 function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envThinkMode = null }) {
-  const LLM_CONFIG_FILE = path.join(APP_ROOT, 'llm.config.json');
-
-  function readLlmFile() {
-    try {
-      return JSON.parse(fs.readFileSync(LLM_CONFIG_FILE, 'utf8'));
-    } catch {
-      return {};
-    }
-  }
-
   function getServerConfig() {
-    const fileCfg = readLlmFile();
+    const fileCfg = loadLlmConfig(APP_ROOT);
     const appCfg = typeof getConfig === 'function' ? (getConfig() || {}) : {};
-    const profileName = String(
-      cliProfile ||
-      process.env.PET_LLM_PROFILE ||
-      appCfg.llmProfile ||
-      appCfg.activeProfile ||
-      fileCfg.activeProfile ||
-      'strata'
-    ).trim() || 'strata';
+    // 用文件里“显式写过”的 llmProfile 参与优先级判断，避免默认值把 llm.config.json 的 activeProfile 压掉
+    const rawCfg = readJson(configPath(APP_ROOT), {});
+    const profileName = resolveActiveProfile({
+      config: rawCfg,
+      llmConfig: fileCfg,
+      cliProfile,
+      envProfile: process.env.PET_LLM_PROFILE,
+    });
 
     const fileProfile = fileCfg.profiles && typeof fileCfg.profiles === 'object' ? fileCfg.profiles[profileName] : null;
     const appInline = appCfg.llm && typeof appCfg.llm === 'object' ? appCfg.llm : null;

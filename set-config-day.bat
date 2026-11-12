@@ -42,11 +42,7 @@ if errorlevel 1 (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%~dp0config.json'; $c=Get-Content -Raw $p | ConvertFrom-Json; if('%LLM_PROFILE%') { $c.llmProfile='%LLM_PROFILE%' }; if('%TTS_MODE%') { $c.ttsMode='%TTS_MODE%' }; if('%GSV_IDLE%') { $c.gsvIdleSeconds=[int]'%GSV_IDLE%' }; $c.watchdog=('%WATCHDOG%' -eq 'on'); [IO.File]::WriteAllText($p, ($c | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false)); Write-Host '[OK] 已通过备用通道成功改写 config.json！'"
 )
 
-if /i "%WATCHDOG%"=="on" (
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-watchdog.ps1"
-) else (
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0stop-watchdog.ps1"
-)
+rem 看门狗按上面的 WATCHDOG 开关，由 apply-config.js 自动拉起或关闭
 
 echo.
 echo 提示：已成功改写 config.json，桌宠无需重启即可即时生效。
