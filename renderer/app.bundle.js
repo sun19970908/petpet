@@ -3090,18 +3090,124 @@ ${note}` : note };
     }
     return segs.length ? segs : [s3];
   }
+  function cleanForTTS(text) {
+    let s3 = String(text || "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[`*~#]+/g, "").replace(/(^|\s)(?:\.\.?[\\/])+/g, "$1").replace(/\.{2,}/g, "\uFF0C").replace(/[\\/_]+/g, " ").replace(/(?<=[a-zA-Z0-9])-(?=[a-zA-Z0-9])/g, " ");
+    for (let i3 = 0; i3 < 3; i3++) {
+      s3 = s3.replace(/([a-zA-Z0-9])\.([a-zA-Z])/g, "$1 \u70B9 $2");
+    }
+    return s3.replace(/\s+/g, " ").trim();
+  }
+  function parseWavHeader(buf) {
+    if (buf.length < 12) return null;
+    const tag = (o3) => String.fromCharCode(buf[o3], buf[o3 + 1], buf[o3 + 2], buf[o3 + 3]);
+    if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return null;
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let sampleRate = 32e3;
+    let channels = 1;
+    let pos = 12;
+    while (pos + 8 <= buf.length) {
+      const id = tag(pos);
+      const sz = dv.getUint32(pos + 4, true);
+      if (id === "fmt ") {
+        if (pos + 24 > buf.length) return null;
+        channels = dv.getUint16(pos + 10, true) || 1;
+        sampleRate = dv.getUint32(pos + 12, true) || 32e3;
+      } else if (id === "data") {
+        return { sampleRate, channels, dataOffset: pos + 8 };
+      }
+      pos += 8 + sz + (sz & 1);
+    }
+    return null;
+  }
+  function createWavRunawayGuard(textLen) {
+    const maxAudioSec = Math.max(12, Math.min(20, textLen * 0.45 + 6));
+    const hdrChunks = [];
+    let hdrBytes = 0;
+    let totalStreamBytes = 0;
+    let wav = null;
+    let pcmBytes = 0;
+    let hasLo = false;
+    let loByte = 0;
+    let sumSq = 0;
+    let winCount = 0;
+    let sawSpeech = false;
+    let silentWindows = 0;
+    return function inspect(chunk) {
+      if (!wav && hdrBytes < 256) {
+        hdrChunks.push(chunk);
+        hdrBytes += chunk.byteLength;
+        const merged = hdrChunks.length === 1 ? hdrChunks[0] : (() => {
+          const out = new Uint8Array(hdrBytes);
+          let o3 = 0;
+          for (const c3 of hdrChunks) {
+            out.set(c3, o3);
+            o3 += c3.byteLength;
+          }
+          return out;
+        })();
+        wav = parseWavHeader(merged);
+        if (!wav && totalStreamBytes + chunk.byteLength >= 256) {
+          wav = { sampleRate: 32e3, channels: 1, dataOffset: 44 };
+        }
+      }
+      const baseStreamPos = totalStreamBytes;
+      totalStreamBytes += chunk.byteLength;
+      if (!wav) return { cutByte: -1, reason: "" };
+      const frameBytes = 2 * wav.channels;
+      const maxPcmBytes = Math.floor(maxAudioSec * wav.sampleRate) * frameBytes;
+      const winSamples = Math.max(1e3, Math.round(wav.sampleRate * wav.channels * 0.25));
+      const startOff = Math.max(0, wav.dataOffset - baseStreamPos);
+      if (startOff >= chunk.byteLength) return { cutByte: -1, reason: "" };
+      for (let i3 = startOff; i3 < chunk.byteLength; i3++) {
+        const b3 = chunk[i3];
+        if (!hasLo) {
+          loByte = b3;
+          hasLo = true;
+        } else {
+          let v3 = loByte | b3 << 8;
+          if (v3 >= 32768) v3 -= 65536;
+          hasLo = false;
+          sumSq += v3 * v3;
+          winCount += 1;
+          if (winCount >= winSamples) {
+            const rms = Math.sqrt(sumSq / winCount);
+            sumSq = 0;
+            winCount = 0;
+            if (rms >= 950) {
+              sawSpeech = true;
+              silentWindows = 0;
+            } else if (sawSpeech && rms < 800) {
+              silentWindows += 1;
+            }
+            if (silentWindows >= 10) {
+              const alignedPcm = Math.floor((pcmBytes + 1) / frameBytes) * frameBytes;
+              const cutByte = Math.max(startOff, startOff + alignedPcm - (pcmBytes - (i3 - startOff)));
+              return { cutByte: Math.min(chunk.byteLength, cutByte), reason: "eos-silence-tail" };
+            }
+          }
+        }
+        pcmBytes += 1;
+        if (pcmBytes >= maxPcmBytes) {
+          const excess = pcmBytes - maxPcmBytes;
+          const cutByte = Math.max(startOff, Math.floor((i3 + 1 - excess) / frameBytes) * frameBytes);
+          return { cutByte: Math.min(chunk.byteLength, cutByte), reason: `max-${Math.round(maxAudioSec)}s` };
+        }
+      }
+      return { cutByte: -1, reason: "" };
+    };
+  }
   function createTtsController({ ttsUrl, ttsRef, speech: speech2, touchTurnActivity: touchTurnActivity2 }) {
     let gsvDownUntil = 0;
-    function fetchTts(seg, signal) {
+    function fetchTts(cleanText, signal) {
       return fetch(ttsUrl, {
         method: "POST",
         signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: seg,
+          text: cleanText,
           text_lang: "zh",
           prompt_lang: "zh",
-          text_split_method: "cut5",
+          text_split_method: cleanText.length <= 60 ? "cut0" : "cut5",
           media_type: "wav",
           streaming_mode: 2,
           temperature: 0.4,
@@ -3111,7 +3217,7 @@ ${note}` : note };
         })
       });
     }
-    async function sayResponse(res, label, signal) {
+    async function sayResponse(res, label, textLen, signal) {
       const hooks = {
         onStart: () => rlog("tts-play-start", label),
         onEnd: () => rlog("tts-play-end", label),
@@ -3126,23 +3232,109 @@ ${note}` : note };
       }
       let totalBytes = 0;
       let firstChunk = false;
+      let cutReason = "";
       const t0 = Date.now();
-      const { readable, writable } = new TransformStream({
-        transform(chunk, controller) {
-          totalBytes += chunk.byteLength;
-          if (!firstChunk) {
-            firstChunk = true;
-            rlog("tts-first-chunk", `${label} in ${Date.now() - t0}ms (${chunk.byteLength}B)`);
-          }
-          touchTurnActivity2();
-          controller.enqueue(chunk);
+      const reader = res.body.getReader();
+      let readableCtrl = null;
+      let closed = false;
+      const closeStream = () => {
+        if (closed) return;
+        closed = true;
+        try {
+          readableCtrl && readableCtrl.close();
+        } catch {
+        }
+      };
+      const errorStream = (err) => {
+        if (closed) return;
+        closed = true;
+        try {
+          readableCtrl && readableCtrl.error(err);
+        } catch {
+        }
+      };
+      const readable = new ReadableStream({
+        start(c3) {
+          readableCtrl = c3;
+        },
+        cancel() {
+          closed = true;
+          reader.cancel().catch(() => {
+          });
         }
       });
+      if (signal && signal.aborted) {
+        try {
+          await reader.cancel(signal.reason || "aborted");
+        } catch {
+        }
+        try {
+          reader.releaseLock();
+        } catch {
+        }
+        return;
+      }
       const streamedRes = new Response(readable, { status: res.status, headers: res.headers });
       speech2.say(streamedRes, hooks);
-      await res.body.pipeTo(writable, signal ? { signal } : void 0);
-      touchTurnActivity2();
-      rlog("tts-stream-ok", totalBytes + "B");
+      let stallTimer = null;
+      const armStall = () => {
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => {
+          cutReason = "chunk-stall-18s";
+          reader.cancel(cutReason).catch(() => {
+          });
+        }, 18e3);
+      };
+      const onAbort = () => {
+        reader.cancel(signal && signal.reason || "aborted").catch(() => {
+        });
+      };
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
+      const guard = createWavRunawayGuard(textLen);
+      armStall();
+      try {
+        for (; ; ) {
+          const { value: chunk, done } = await reader.read();
+          if (done) break;
+          armStall();
+          if (!chunk || !chunk.byteLength) continue;
+          const { cutByte, reason } = guard(chunk);
+          const out = cutByte >= 0 ? chunk.subarray(0, cutByte) : chunk;
+          totalBytes += out.byteLength;
+          if (!firstChunk) {
+            firstChunk = true;
+            rlog("tts-first-chunk", `${label} in ${Date.now() - t0}ms (${out.byteLength}B)`);
+          }
+          touchTurnActivity2();
+          if (!closed && out.byteLength > 0) readableCtrl.enqueue(out);
+          if (cutByte >= 0) {
+            cutReason = reason;
+            closeStream();
+            await reader.cancel(reason).catch(() => {
+            });
+            break;
+          }
+        }
+        closeStream();
+        touchTurnActivity2();
+        if (cutReason) rlog("tts-eos-cut", `${label} (${cutReason}, ${totalBytes}B)`);
+        else rlog("tts-stream-ok", totalBytes + "B");
+      } catch (e3) {
+        if (cutReason && !(signal && signal.aborted)) {
+          closeStream();
+          rlog("tts-eos-cut", `${label} (${cutReason}, ${totalBytes}B)`);
+          return;
+        }
+        errorStream(e3);
+        throw e3;
+      } finally {
+        clearTimeout(stallTimer);
+        if (signal) signal.removeEventListener("abort", onAbort);
+        try {
+          reader.releaseLock();
+        } catch {
+        }
+      }
     }
     async function speakSegment2(seg, signal) {
       touchTurnActivity2();
@@ -3150,6 +3342,8 @@ ${note}` : note };
         rlog("tts-skip-down", Math.round((gsvDownUntil - Date.now()) / 1e3) + "s left");
         return;
       }
+      const clean = cleanForTTS(seg);
+      if (!clean || !/[\p{L}\p{N}]/u.test(clean)) return;
       const label = seg.slice(0, 30);
       rlog("tts-start", label);
       const ctrl = new AbortController();
@@ -3165,7 +3359,7 @@ ${note}` : note };
       }
       const timer = setTimeout(onAbort, 12e4);
       try {
-        const res = await fetchTts(seg, ctrl.signal);
+        const res = await fetchTts(clean, ctrl.signal);
         touchTurnActivity2();
         if (res.status === 502 || res.status === 503 || res.status === 504) {
           gsvDownUntil = Date.now() + 6e4;
@@ -3173,7 +3367,7 @@ ${note}` : note };
           return;
         }
         if (!res.ok) throw new Error("TTS HTTP " + res.status);
-        await sayResponse(res, label, ctrl.signal);
+        await sayResponse(res, label, clean.length, ctrl.signal);
       } catch (e3) {
         if (signal && signal.aborted) {
           rlog("tts-abort", "turn aborted");
@@ -3198,13 +3392,15 @@ ${note}` : note };
       for (const seg of segs) {
         if (signal && signal.aborted) return;
         if (Date.now() < gsvDownUntil) return;
+        const clean = cleanForTTS(seg);
+        if (!clean || !/[\p{L}\p{N}]/u.test(clean)) continue;
         try {
-          const res = await fetchTts(seg, signal);
+          const res = await fetchTts(clean, signal);
           if (!res.ok) {
             fails += 1;
             console.warn("TTS HTTP " + res.status);
           } else {
-            await sayResponse(res, seg.slice(0, 30), signal);
+            await sayResponse(res, seg.slice(0, 30), clean.length, signal);
             fails = 0;
           }
         } catch (e3) {
