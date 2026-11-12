@@ -2820,11 +2820,11 @@ ${note}` : note };
   function buildTailMessages({
     policy = DEFAULT_PROMPT_POLICY,
     thinkMode,
-    forceToolPrefill: forceToolPrefill2 = false,
+    forceToolPrefill = false,
     isInfiniteWake = false
   } = {}) {
     const effectiveThink = thinkMode ?? policy.thinkMode ?? "pet_think";
-    if (forceToolPrefill2 && isInfiniteWake) {
+    if (forceToolPrefill && isInfiniteWake) {
       if (policy.forceToolMode === "tool_choice_required") {
         return {
           tailMessages: [{ role: "user", content: policy.forceToolNudge || FORCE_TOOL_NUDGE }],
@@ -2885,7 +2885,7 @@ ${note}` : note };
     toolLedger = "",
     thinkMode,
     llmConfig: llmConfig2 = null,
-    forceToolPrefill: forceToolPrefill2 = false,
+    forceToolPrefill = false,
     continueBaseMsgs = null
   } = {}) {
     if (Array.isArray(continueBaseMsgs)) {
@@ -2900,7 +2900,7 @@ ${note}` : note };
     const tail = buildTailMessages({
       policy,
       thinkMode: thinkMode ?? policy.thinkMode,
-      forceToolPrefill: forceToolPrefill2,
+      forceToolPrefill,
       isInfiniteWake
     });
     const systemMsg = buildSystemMessage({
@@ -3786,6 +3786,148 @@ ${note}` : note };
     return { add, recall, ledger };
   }
 
+  // renderer/infinite-wake.js
+  var CTX_ABORT_TOKENS = 64e3;
+  var CTX_ABORT_COUNT = 3;
+  var TITLE_ON = "\u8FDE\u7EED\u5524\u9192\u5F00\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u70B9\u51FB\u5173\u95ED\uFF09";
+  var TITLE_OFF = "\u8FDE\u7EED\u5524\u9192\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u65E0\u9650\u6A21\u5F0F\uFF09";
+  function normReply(s3) {
+    return String(s3 || "").replace(/<[^>]+>/g, "").replace(/[\s\p{P}\p{S}]/gu, "").slice(0, 500);
+  }
+  function replySim(a4, b3) {
+    if (!a4 || !b3) return 0;
+    const bg = (x3) => {
+      const m3 = /* @__PURE__ */ new Map();
+      for (let i3 = 0; i3 < x3.length - 1; i3++) {
+        const g3 = x3.slice(i3, i3 + 2);
+        m3.set(g3, (m3.get(g3) || 0) + 1);
+      }
+      return m3;
+    };
+    const A3 = bg(a4), B3 = bg(b3);
+    let inter = 0, tot = 0;
+    for (const [g3, n4] of A3) {
+      tot += n4;
+      if (B3.has(g3)) inter += Math.min(n4, B3.get(g3));
+    }
+    for (const n4 of B3.values()) tot += n4;
+    return tot ? 2 * inter / tot : 0;
+  }
+  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, storage = window.localStorage }) {
+    let on = false;
+    let timer = null;
+    let lastCtxTokens = 0;
+    let ctxOverCount = 0;
+    let prevReplyNorm = "";
+    let noToolTurns = 0;
+    let forceToolPrefill = false;
+    function persist(v3) {
+      try {
+        storage.setItem("infwake", v3 ? "1" : "0");
+      } catch {
+      }
+    }
+    function syncButton() {
+      if (!button) return;
+      button.classList.toggle("on", on);
+      button.title = on ? TITLE_ON : TITLE_OFF;
+    }
+    function stop(reason = "") {
+      on = false;
+      persist(false);
+      if (button) {
+        button.classList.remove("on");
+        button.title = TITLE_OFF;
+      }
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (reason) showBubble2(reason);
+    }
+    function queue(delay = 1500) {
+      if (!on || timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (on && !isBusy()) wakeNow2(wakeText, { isInfiniteWake: true });
+      }, delay);
+    }
+    function toggle() {
+      on = !on;
+      persist(on);
+      syncButton();
+      if (on) queue(500);
+      else if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    }
+    function restore({ disabled = false } = {}) {
+      try {
+        if (disabled) {
+          persist(false);
+          return;
+        }
+        if (storage.getItem("infwake") === "1") {
+          on = true;
+          syncButton();
+          queue(3e3);
+        }
+      } catch {
+      }
+    }
+    function noteContext(pt) {
+      pt = Number(pt);
+      if (!Number.isFinite(pt) || pt <= 0) return;
+      lastCtxTokens = pt;
+      if (pt >= CTX_ABORT_TOKENS) ctxOverCount += 1;
+      if (ctxOverCount >= CTX_ABORT_COUNT && on) {
+        stop("\u4E0A\u4E0B\u6587\u5DF2\u7ECF\u585E\u5230 64k \u597D\u51E0\u6B21\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
+        console.warn("[infwake] \u505C\u6B62\u65E0\u9650\u5524\u9192\uFF1Aprompt_tokens \u8FBE 64k \u7B2C " + ctxOverCount + " \u6B21");
+      }
+    }
+    function noteLoop(reply, usedTools) {
+      const cur = normReply(reply);
+      if (!usedTools) noToolTurns += 1;
+      else {
+        noToolTurns = 0;
+        forceToolPrefill = false;
+      }
+      if (on && noToolTurns >= 2 && replySim(prevReplyNorm, cur) >= 0.6) {
+        forceToolPrefill = true;
+        console.warn("[infwake] \u68C0\u6D4B\u5230\u6587\u5B57\u6B7B\u5FAA\u73AF\uFF08\u8FDE\u7EED\u65E0\u5DE5\u5177 + \u56DE\u590D\u9AD8\u5EA6\u76F8\u4F3C\uFF09\uFF0C\u4E0B\u4E00\u8F6E\u8865 <tool_call> \u9884\u586B\u5145");
+      }
+      prevReplyNorm = cur;
+    }
+    function clearForceToolPrefill() {
+      forceToolPrefill = false;
+    }
+    function startKeepalive(ms = 6e4) {
+      setInterval(() => {
+        if (on && !isBusy()) queue(1e3);
+      }, ms);
+    }
+    return {
+      get on() {
+        return on;
+      },
+      get lastCtxTokens() {
+        return lastCtxTokens;
+      },
+      get forceToolPrefill() {
+        return forceToolPrefill;
+      },
+      clearForceToolPrefill,
+      stop,
+      queue,
+      toggle,
+      restore,
+      noteContext,
+      noteLoop,
+      startKeepalive
+    };
+  }
+
   // renderer/app.js
   (function capFPS(fps = 30) {
     const orig = window.requestAnimationFrame.bind(window);
@@ -3995,10 +4137,10 @@ ${note}` : note };
         toolLedger: ledger,
         thinkMode: THINK_MODE,
         llmConfig,
-        forceToolPrefill
+        forceToolPrefill: wake.forceToolPrefill
       });
       bodyMsgs = assembled.messages;
-      if (assembled.consumedForceToolPrefill) forceToolPrefill = false;
+      if (assembled.consumedForceToolPrefill) wake.clearForceToolPrefill();
       forceRequiredTool = Boolean(assembled.forceRequiredTool);
     }
     let noTools = false;
@@ -4107,7 +4249,7 @@ ${note}` : note };
           }
         }
       }
-      noteContext(usage && usage.prompt_tokens);
+      wake.noteContext(usage && usage.prompt_tokens);
       {
         const tail = slicer.flush();
         if (tail) dispatchTTS(tail);
@@ -4302,13 +4444,13 @@ ${note}` : note };
         history.push({ role: "assistant", content: reply });
         await saveHistory(history, false);
       }
-      noteLoop(reply);
+      wake.noteLoop(reply, turnUsedTools);
       if (lastExchange) lastExchange.hadSavedHistory = true;
       showBubble(reply);
       replied = true;
       react(reply);
       if (!isInf) memory.add(userContent, reply);
-      queueInfiniteWake();
+      wake.queue();
       return true;
     } catch (e3) {
       if (isAbort(e3)) {
@@ -4320,11 +4462,11 @@ ${note}` : note };
           const t5 = typeof userContent === "string" ? userContent : userContent.find?.((c3) => c3.type === "text")?.text || "";
           if (t5 && !/^(你被唤醒了|现在是无限唤醒模式|（)/.test(t5)) input.value = t5;
         }
-        if (turnAbortReason === "guard") queueInfiniteWake(3e3);
+        if (turnAbortReason === "guard") wake.queue(3e3);
         return false;
       }
       showBubble(String(e3.message || e3), true);
-      queueInfiniteWake(3e4);
+      wake.queue(3e4);
       return false;
     } finally {
       busy = false;
@@ -4364,8 +4506,8 @@ ${note}` : note };
         } catch {
         }
         if (util !== null && util > gpuLimit) {
-          if (infiniteWake) {
-            queueInfiniteWake(3e4);
+          if (wake.on) {
+            wake.queue(3e4);
             return;
           }
           showBubble(`\u663E\u5361\u6B63\u5FD9\uFF08${util}%\uFF09\uFF0C\u8FD9\u6B21\u5148\u4E0D\u5524\u9192\u5566\uFF0C\u7A0D\u540E\u518D\u53EB\u6211`);
@@ -4401,114 +4543,21 @@ ${note}` : note };
     if (busy) interrupt();
     else wakeNow();
   });
-  var infiniteWake = false;
-  var infTimer = null;
-  function stopInfiniteWake(reason = "") {
-    infiniteWake = false;
-    try {
-      localStorage.setItem("infwake", "0");
-    } catch {
-    }
-    $3("infwake").classList.remove("on");
-    $3("infwake").title = "\u8FDE\u7EED\u5524\u9192\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u65E0\u9650\u6A21\u5F0F\uFF09";
-    if (infTimer) {
-      clearTimeout(infTimer);
-      infTimer = null;
-    }
-    if (reason) showBubble(reason);
-  }
-  function queueInfiniteWake(delay = 1500) {
-    if (!infiniteWake || infTimer) return;
-    infTimer = setTimeout(() => {
-      infTimer = null;
-      if (infiniteWake && !busy) wakeNow(INF_WAKE_TEXT, { isInfiniteWake: true });
-    }, delay);
-  }
-  $3("infwake").addEventListener("click", () => {
-    infiniteWake = !infiniteWake;
-    try {
-      localStorage.setItem("infwake", infiniteWake ? "1" : "0");
-    } catch {
-    }
-    $3("infwake").classList.toggle("on", infiniteWake);
-    $3("infwake").title = infiniteWake ? "\u8FDE\u7EED\u5524\u9192\u5F00\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u70B9\u51FB\u5173\u95ED\uFF09" : "\u8FDE\u7EED\u5524\u9192\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u65E0\u9650\u6A21\u5F0F\uFF09";
-    if (infiniteWake) queueInfiniteWake(500);
-    else if (infTimer) {
-      clearTimeout(infTimer);
-      infTimer = null;
-    }
+  var wake = createInfiniteWake({
+    button: $3("infwake"),
+    wakeNow,
+    showBubble,
+    isBusy: () => busy,
+    wakeText: INF_WAKE_TEXT
   });
+  wake.startKeepalive(6e4);
+  $3("infwake").addEventListener("click", () => wake.toggle());
   window.petWindow?.onStopInfwake?.(() => {
-    stopInfiniteWake("\u5230\u622A\u6B62\u65F6\u95F4\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
+    wake.stop("\u5230\u622A\u6B62\u65F6\u95F4\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
     console.log("[infwake] \u6536\u5230\u770B\u95E8\u72D7\u622A\u6B62\u6307\u4EE4\uFF0C\u5DF2\u5173\u95ED\u65E0\u9650\u5524\u9192");
   });
-  try {
-    if (NO_INFWAKE) {
-      localStorage.setItem("infwake", "0");
-    } else if (localStorage.getItem("infwake") === "1") {
-      infiniteWake = true;
-      $3("infwake").classList.add("on");
-      $3("infwake").title = "\u8FDE\u7EED\u5524\u9192\u5F00\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u70B9\u51FB\u5173\u95ED\uFF09";
-      queueInfiniteWake(3e3);
-    }
-  } catch {
-  }
-  var CTX_ABORT_TOKENS = 64e3;
-  var CTX_ABORT_COUNT = 3;
-  var lastCtxTokens = 0;
-  var ctxOverCount = 0;
-  function noteContext(pt) {
-    pt = Number(pt);
-    if (!Number.isFinite(pt) || pt <= 0) return;
-    lastCtxTokens = pt;
-    if (pt >= CTX_ABORT_TOKENS) ctxOverCount += 1;
-    if (ctxOverCount >= CTX_ABORT_COUNT && infiniteWake) {
-      stopInfiniteWake("\u4E0A\u4E0B\u6587\u5DF2\u7ECF\u585E\u5230 64k \u597D\u51E0\u6B21\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
-      console.warn("[infwake] \u505C\u6B62\u65E0\u9650\u5524\u9192\uFF1Aprompt_tokens \u8FBE 64k \u7B2C " + ctxOverCount + " \u6B21");
-    }
-  }
-  var prevReplyNorm = "";
-  var noToolTurns = 0;
-  var forceToolPrefill = false;
+  wake.restore({ disabled: NO_INFWAKE });
   var turnUsedTools = false;
-  function normReply(s3) {
-    return String(s3 || "").replace(/<[^>]+>/g, "").replace(/[\s\p{P}\p{S}]/gu, "").slice(0, 500);
-  }
-  function replySim(a4, b3) {
-    if (!a4 || !b3) return 0;
-    const bg = (x3) => {
-      const m3 = /* @__PURE__ */ new Map();
-      for (let i3 = 0; i3 < x3.length - 1; i3++) {
-        const g3 = x3.slice(i3, i3 + 2);
-        m3.set(g3, (m3.get(g3) || 0) + 1);
-      }
-      return m3;
-    };
-    const A3 = bg(a4), B3 = bg(b3);
-    let inter = 0, tot = 0;
-    for (const [g3, n4] of A3) {
-      tot += n4;
-      if (B3.has(g3)) inter += Math.min(n4, B3.get(g3));
-    }
-    for (const n4 of B3.values()) tot += n4;
-    return tot ? 2 * inter / tot : 0;
-  }
-  function noteLoop(reply) {
-    const cur = normReply(reply);
-    if (!turnUsedTools) noToolTurns += 1;
-    else {
-      noToolTurns = 0;
-      forceToolPrefill = false;
-    }
-    if (infiniteWake && noToolTurns >= 2 && replySim(prevReplyNorm, cur) >= 0.6) {
-      forceToolPrefill = true;
-      console.warn("[infwake] \u68C0\u6D4B\u5230\u6587\u5B57\u6B7B\u5FAA\u73AF\uFF08\u8FDE\u7EED\u65E0\u5DE5\u5177 + \u56DE\u590D\u9AD8\u5EA6\u76F8\u4F3C\uFF09\uFF0C\u4E0B\u4E00\u8F6E\u8865 <tool_call> \u9884\u586B\u5145");
-    }
-    prevReplyNorm = cur;
-  }
-  setInterval(() => {
-    if (infiniteWake && !busy) queueInfiniteWake(1e3);
-  }, 6e4);
   setInterval(() => {
     if (!busy) return;
     if (!lastTurnActivityTs) {
@@ -4532,14 +4581,14 @@ ${note}` : note };
     setTimeout(() => {
       if (!busy) hideBubble();
     }, 6e3);
-    if (infiniteWake) queueInfiniteWake(3e3);
+    if (wake.on) wake.queue(3e3);
   }, 3e4);
   setInterval(() => {
     try {
       window.petWindow && window.petWindow.wakeBeat && window.petWindow.wakeBeat({
-        infwake: !!infiniteWake,
+        infwake: wake.on,
         busy: !!busy,
-        ctx: lastCtxTokens,
+        ctx: wake.lastCtxTokens,
         turnSeq,
         lastActivityTs: lastTurnActivityTs
       });
@@ -4632,7 +4681,7 @@ ${note}` : note };
       replied = true;
       react(newReply);
       if (!isInf) memory.add(userContent, fullReply);
-      queueInfiniteWake();
+      wake.queue();
       return true;
     } catch (e3) {
       if (isAbort(e3)) {
@@ -4642,11 +4691,11 @@ ${note}` : note };
             if (!busy) hideBubble();
           }, 3e3);
         }
-        if (turnAbortReason === "guard") queueInfiniteWake(3e3);
+        if (turnAbortReason === "guard") wake.queue(3e3);
         return false;
       }
       showBubble("\u7EE7\u7EED\u5931\u8D25: " + String(e3.message || e3), true);
-      queueInfiniteWake(3e4);
+      wake.queue(3e4);
       return false;
     } finally {
       busy = false;

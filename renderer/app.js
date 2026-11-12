@@ -9,6 +9,7 @@ import { createAsrController } from './asr-recorder.js';
 import { stripThink, createContentFilter } from './stream-filter.js';
 import { createPetTools } from './pet-tools.js';
 import { createMemoryClient } from './memory-client.js';
+import { createInfiniteWake } from './infinite-wake.js';
 
 // 帧率封顶 30fps：桌宠动画（呼吸/眨眼/摇摆）足够流畅；60Hz 全速渲染会让 DWM 合成吃掉大量 GPU
 // 必须在 new Player() 之前装上——livliv 的渲染循环每帧经 window.requestAnimationFrame 排程
@@ -236,10 +237,10 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       toolLedger: ledger,
       thinkMode: THINK_MODE,
       llmConfig,
-      forceToolPrefill,
+      forceToolPrefill: wake.forceToolPrefill,
     });
     bodyMsgs = assembled.messages;
-    if (assembled.consumedForceToolPrefill) forceToolPrefill = false;
+    if (assembled.consumedForceToolPrefill) wake.clearForceToolPrefill();
     forceRequiredTool = Boolean(assembled.forceRequiredTool);
   }
   // ===== 流式主循环：SSE 解析 + 思维链静默状态机 + 成句即说 =====
@@ -339,7 +340,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         if (typeof d.content === 'string' && d.content) { filter.feed(d.content); }
       }
     }
-    noteContext(usage && usage.prompt_tokens);
+    wake.noteContext(usage && usage.prompt_tokens);
     // 本轮流结束就把切句器尾巴冲刷进 TTS：工具轮会在下面 continue，不冲刷的话
     // "说完半句就去调工具"的尾句只显示不发声（强标点结尾的句子已在流式时切走）
     {
@@ -543,14 +544,14 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
       history.push({ role: 'assistant', content: reply });
       await saveHistory(history, false);
     }
-    noteLoop(reply);
+    wake.noteLoop(reply, turnUsedTools);
     if (lastExchange) lastExchange.hadSavedHistory = true;
     showBubble(reply);
     replied = true;
     react(reply);
     // 流式阶段已成句即说（dispatchTTS），不再重复整段 speak
     if (!isInf) memory.add(userContent, reply); // 无限唤醒不再进 memory.orama
-    queueInfiniteWake();
+    wake.queue();
     return true;
   } catch (e) {
     if (isAbort(e)) {
@@ -561,11 +562,11 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
         const t = typeof userContent === 'string' ? userContent : (userContent.find?.((c) => c.type === 'text')?.text || '');
         if (t && !/^(你被唤醒了|现在是无限唤醒模式|（)/.test(t)) input.value = t;
       }
-      if (turnAbortReason === 'guard') queueInfiniteWake(3000);
+      if (turnAbortReason === 'guard') wake.queue(3000);
       return false;
     }
     showBubble(String(e.message || e), true);
-    queueInfiniteWake(30000); // 失败不紧重试，避免对着挂掉的反代刷屏
+    wake.queue(30000); // 失败不紧重试，避免对着挂掉的反代刷屏
     return false;
   } finally {
     busy = false;
@@ -606,7 +607,7 @@ async function wakeNow(wakeText = '你被唤醒了，用户没有给你指示，
         if (!Number.isFinite(util)) util = null;
       } catch {}
       if (util !== null && util > gpuLimit) {
-        if (infiniteWake) { queueInfiniteWake(30000); return; } // 无限模式：显卡忙就等会儿再试，不刷屏
+        if (wake.on) { wake.queue(30000); return; } // 无限模式：显卡忙就等会儿再试，不刷屏
         showBubble(`显卡正忙（${util}%），这次先不唤醒啦，稍后再叫我`);
         setTimeout(() => { if (!busy) hideBubble(); }, 6000);
         return;
@@ -640,81 +641,22 @@ $('wake').addEventListener('click', () => {
   if (busy) interrupt();
   else wakeNow();
 });
-// ===== 连续唤醒（∞）：她一停下来就再唤醒；开关会持久化（重启/看门狗拉起后自动恢复）；上下文多次≈64k 或到截止时间自动停 =====
-let infiniteWake = false;
-let infTimer = null;
-function stopInfiniteWake(reason = '') {
-  infiniteWake = false;
-  try { localStorage.setItem('infwake', '0'); } catch {}
-  $('infwake').classList.remove('on');
-  $('infwake').title = '连续唤醒：她一停下来就再唤醒（无限模式）';
-  if (infTimer) { clearTimeout(infTimer); infTimer = null; }
-  if (reason) showBubble(reason);
-}
-function queueInfiniteWake(delay = 1500) {
-  if (!infiniteWake || infTimer) return;
-  infTimer = setTimeout(() => {
-    infTimer = null;
-    if (infiniteWake && !busy) wakeNow(INF_WAKE_TEXT, { isInfiniteWake: true });
-  }, delay);
-}
-$('infwake').addEventListener('click', () => {
-  infiniteWake = !infiniteWake;
-  try { localStorage.setItem('infwake', infiniteWake ? '1' : '0'); } catch {}
-  $('infwake').classList.toggle('on', infiniteWake);
-  $('infwake').title = infiniteWake ? '连续唤醒开：她一停下来就再唤醒（点击关闭）' : '连续唤醒：她一停下来就再唤醒（无限模式）';
-  if (infiniteWake) queueInfiniteWake(500);
-  else if (infTimer) { clearTimeout(infTimer); infTimer = null; }
+// ===== 连续唤醒（∞）与护栏：状态机见 infinite-wake.js =====
+const wake = createInfiniteWake({
+  button: $('infwake'),
+  wakeNow,
+  showBubble,
+  isBusy: () => busy,
+  wakeText: INF_WAKE_TEXT,
 });
+wake.startKeepalive(60000);
+$('infwake').addEventListener('click', () => wake.toggle());
 window.petWindow?.onStopInfwake?.(() => {
-  stopInfiniteWake('到截止时间啦，我先停下无限唤醒，等主人回来～');
+  wake.stop('到截止时间啦，我先停下无限唤醒，等主人回来～');
   console.log('[infwake] 收到看门狗截止指令，已关闭无限唤醒');
 });
-// 持久化的无限唤醒：重启后自动恢复（看门狗拉起、崩溃重启都不丢）；若带 --no-infwake 则清掉不恢复
-try {
-  if (NO_INFWAKE) {
-    localStorage.setItem('infwake', '0');
-  } else if (localStorage.getItem('infwake') === '1') {
-    infiniteWake = true;
-    $('infwake').classList.add('on');
-    $('infwake').title = '连续唤醒开：她一停下来就再唤醒（点击关闭）';
-    queueInfiniteWake(3000);
-  }
-} catch {}
-// 中止条件：上下文多次接近/超过 64k → 停无限唤醒（避免在塞满的上下文里空转，烧一晚上）
-const CTX_ABORT_TOKENS = 64000, CTX_ABORT_COUNT = 3;
-let lastCtxTokens = 0, ctxOverCount = 0;
-function noteContext(pt) {
-  pt = Number(pt);
-  if (!Number.isFinite(pt) || pt <= 0) return;
-  lastCtxTokens = pt;
-  if (pt >= CTX_ABORT_TOKENS) ctxOverCount += 1;
-  if (ctxOverCount >= CTX_ABORT_COUNT && infiniteWake) {
-    stopInfiniteWake('上下文已经塞到 64k 好几次啦，我先停下无限唤醒，等主人回来～');
-    console.warn('[infwake] 停止无限唤醒：prompt_tokens 达 64k 第 ' + ctxOverCount + ' 次');
-  }
-}
-// 文字死循环护栏：连续"无工具 + 回复高度相似"且无限唤醒开着 → 下一轮补 <tool_call> 预填充，逼她动手
-let prevReplyNorm = '', noToolTurns = 0, forceToolPrefill = false, turnUsedTools = false;
-function normReply(s) { return String(s || '').replace(/<[^>]+>/g, '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 500); }
-function replySim(a, b) {
-  if (!a || !b) return 0;
-  const bg = (x) => { const m = new Map(); for (let i = 0; i < x.length - 1; i++) { const g = x.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); } return m; };
-  const A = bg(a), B = bg(b); let inter = 0, tot = 0;
-  for (const [g, n] of A) { tot += n; if (B.has(g)) inter += Math.min(n, B.get(g)); }
-  for (const n of B.values()) tot += n;
-  return tot ? (2 * inter) / tot : 0;
-}
-function noteLoop(reply) {
-  const cur = normReply(reply);
-  if (!turnUsedTools) noToolTurns += 1; else { noToolTurns = 0; forceToolPrefill = false; }
-  if (infiniteWake && noToolTurns >= 2 && replySim(prevReplyNorm, cur) >= 0.6) {
-    forceToolPrefill = true;
-    console.warn('[infwake] 检测到文字死循环（连续无工具 + 回复高度相似），下一轮补 <tool_call> 预填充');
-  }
-  prevReplyNorm = cur;
-}
-setInterval(() => { if (infiniteWake && !busy) queueInfiniteWake(1000); }, 60000);   // 循环万一因异常断了，兜底续上
+wake.restore({ disabled: NO_INFWAKE });
+let turnUsedTools = false; // 本轮是否真的调用过工具（文字死循环护栏用）
 // busy 卡死兜底：某个 await（工具/请求）真的无进展卡住超过 5 分钟才强制中断并续上；
 // 以 lastTurnActivityTs 为准（流式吐字/调工具/TTS 均会刷新），避免连续多轮健康无限唤醒被误判为卡死！
 setInterval(() => {
@@ -729,14 +671,14 @@ setInterval(() => {
   busy = false;
   showBubble('（卡住了，我强行中断了上一轮～）');
   setTimeout(() => { if (!busy) hideBubble(); }, 6000);
-  if (infiniteWake) queueInfiniteWake(3000);
+  if (wake.on) wake.queue(3000);
 }, 30000);
 setInterval(() => {
   try {
     window.petWindow && window.petWindow.wakeBeat && window.petWindow.wakeBeat({
-      infwake: !!infiniteWake,
+      infwake: wake.on,
       busy: !!busy,
-      ctx: lastCtxTokens,
+      ctx: wake.lastCtxTokens,
       turnSeq,
       lastActivityTs: lastTurnActivityTs,
     });
@@ -832,7 +774,7 @@ async function continueRequest() {
     react(newReply);
     // 流式阶段已成句即说（dispatchTTS），不再重复整段 speak
     if (!isInf) memory.add(userContent, fullReply);
-    queueInfiniteWake();
+    wake.queue();
     return true;
   } catch (e) {
     if (isAbort(e)) {
@@ -840,11 +782,11 @@ async function continueRequest() {
         showBubble(turnAbortReason === 'guard' ? '（上一轮响应超时，自动重连…）' : '（已打断）');
         setTimeout(() => { if (!busy) hideBubble(); }, 3000);
       }
-      if (turnAbortReason === 'guard') queueInfiniteWake(3000);
+      if (turnAbortReason === 'guard') wake.queue(3000);
       return false;
     }
     showBubble('继续失败: ' + String(e.message || e), true);
-    queueInfiniteWake(30000);
+    wake.queue(30000);
     return false;
   } finally {
     busy = false;
