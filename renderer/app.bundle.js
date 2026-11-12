@@ -2261,17 +2261,29 @@ void main(){ o=texture(uTex,vUv); }`;
     if (!Array.isArray(messages)) return [];
     return messages.map((m3) => Array.isArray(m3?.content) ? { role: m3.role, content: "[\u56FE\u7247] " + textOf(m3.content) } : m3);
   }
-  function buildSystemMessage({ systemPrompt = "", persona = "", memories = [], extraSections = [] } = {}) {
+  function buildSystemMessage({ systemPrompt = "", persona = "", extraSections = [] } = {}) {
     const parts = [String(systemPrompt || "").trim()];
     if (persona && String(persona).trim()) parts.push(String(persona).trim());
-    const memText = formatMemories(memories);
-    if (memText) parts.push(memText.trim());
     if (Array.isArray(extraSections)) {
       for (const sec of extraSections) {
         if (sec && String(sec).trim()) parts.push(String(sec).trim());
       }
     }
     return { role: "system", content: parts.filter(Boolean).join("\n\n") };
+  }
+  function getMemoryInsertIndex(prunedMain = [], prunedInf = [], backTurns = 5) {
+    const turnStarts = [];
+    for (let i3 = 0; i3 < prunedMain.length; i3++) {
+      if (prunedMain[i3]?.role === "user" || turnStarts.length === 0) {
+        turnStarts.push(i3);
+      }
+    }
+    for (let i3 = 0; i3 < prunedInf.length; i3++) {
+      turnStarts.push(prunedMain.length + i3);
+    }
+    const keepHistTurns = Math.max(0, (Number(backTurns) || 5) - 1);
+    if (turnStarts.length <= keepHistTurns) return 0;
+    return turnStarts[turnStarts.length - keepHistTurns];
   }
   function buildUserTurn(userContent, toolLedger = "") {
     const userText = textOf(userContent) + String(toolLedger || "");
@@ -2288,6 +2300,7 @@ void main(){ o=texture(uTex,vUv); }`;
     systemPrompt = "",
     persona = "",
     memories = [],
+    memoryBackTurns = 5,
     extraSystemSections = [],
     mainHistory = [],
     infHistory: infHistory2 = [],
@@ -2304,16 +2317,20 @@ void main(){ o=texture(uTex,vUv); }`;
     const systemMsg = buildSystemMessage({
       systemPrompt,
       persona,
-      memories,
       extraSections: extraSystemSections
     });
     const prunedMain = pruneHistoryMessages(mainHistory);
     const prunedInf = isInfiniteWake ? pruneHistoryMessages(infHistory2) : [];
+    const combinedHistory = [...prunedMain, ...prunedInf];
+    const memText = formatMemories(memories).trim();
+    if (memText) {
+      const insertIdx = getMemoryInsertIndex(prunedMain, prunedInf, memoryBackTurns);
+      combinedHistory.splice(insertIdx, 0, { role: "user", content: memText });
+    }
     const lastUser = buildUserTurn(userContent, toolLedger);
     const messages = [
       systemMsg,
-      ...prunedMain,
-      ...prunedInf,
+      ...combinedHistory,
       lastUser
     ];
     let consumedForceToolPrefill = false;

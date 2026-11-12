@@ -34,17 +34,31 @@ export function pruneHistoryMessages(messages) {
     : m);
 }
 
-export function buildSystemMessage({ systemPrompt = '', persona = '', memories = [], extraSections = [] } = {}) {
+export function buildSystemMessage({ systemPrompt = '', persona = '', extraSections = [] } = {}) {
   const parts = [String(systemPrompt || '').trim()];
   if (persona && String(persona).trim()) parts.push(String(persona).trim());
-  const memText = formatMemories(memories);
-  if (memText) parts.push(memText.trim());
   if (Array.isArray(extraSections)) {
     for (const sec of extraSections) {
       if (sec && String(sec).trim()) parts.push(String(sec).trim());
     }
   }
   return { role: 'system', content: parts.filter(Boolean).join('\n\n') };
+}
+
+// 计算 Orama 回忆的插入下标（默认倒数第 5 轮会话位置：保留最近 4 轮历史 + 本轮共 5 轮在后，前面整段稳定命中 KV 缓存）
+export function getMemoryInsertIndex(prunedMain = [], prunedInf = [], backTurns = 5) {
+  const turnStarts = [];
+  for (let i = 0; i < prunedMain.length; i++) {
+    if (prunedMain[i]?.role === 'user' || turnStarts.length === 0) {
+      turnStarts.push(i);
+    }
+  }
+  for (let i = 0; i < prunedInf.length; i++) {
+    turnStarts.push(prunedMain.length + i);
+  }
+  const keepHistTurns = Math.max(0, (Number(backTurns) || 5) - 1);
+  if (turnStarts.length <= keepHistTurns) return 0;
+  return turnStarts[turnStarts.length - keepHistTurns];
 }
 
 export function buildUserTurn(userContent, toolLedger = '') {
@@ -63,6 +77,7 @@ export function assemblePrompt({
   systemPrompt = '',
   persona = '',
   memories = [],
+  memoryBackTurns = 5,
   extraSystemSections = [],
   mainHistory = [],
   infHistory = [],
@@ -77,22 +92,27 @@ export function assemblePrompt({
     return { messages: continueBaseMsgs.slice(), consumedForceToolPrefill: false };
   }
 
+  // system 保持纯静态（不含动态召回记忆），最大化复用首段 KV 缓存
   const systemMsg = buildSystemMessage({
     systemPrompt,
     persona,
-    memories,
     extraSections: extraSystemSections,
   });
 
   // 主历史始终可作为只读背景注入；开启无限唤醒时在其后接上本阶段纯 assistant 记录 infHistory
   const prunedMain = pruneHistoryMessages(mainHistory);
   const prunedInf = isInfiniteWake ? pruneHistoryMessages(infHistory) : [];
+  const combinedHistory = [...prunedMain, ...prunedInf];
+  const memText = formatMemories(memories).trim();
+  if (memText) {
+    const insertIdx = getMemoryInsertIndex(prunedMain, prunedInf, memoryBackTurns);
+    combinedHistory.splice(insertIdx, 0, { role: 'user', content: memText });
+  }
   const lastUser = buildUserTurn(userContent, toolLedger);
 
   const messages = [
     systemMsg,
-    ...prunedMain,
-    ...prunedInf,
+    ...combinedHistory,
     lastUser,
   ];
 
