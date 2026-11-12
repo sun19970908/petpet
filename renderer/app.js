@@ -696,13 +696,14 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
 
 async function send() {
   const text = input.value.trim();
-  if ((!text && !pendingImage) || busy) return;
+  const image = pendingImage;
+  if ((!text && !image) || busy) return;
   if (!unlocked) { speech.unlock(); unlocked = true; } // 必须在用户手势里解锁音频
   input.value = '';
   autoGrowInput(); // 发送后缩回单行
   clearPendingImage();
   // 台账/强度指令由 askLLM 在拼请求时临时挂到最后一条 user 上（不进历史，不重复）
-  await submitRequest(text, pendingImage);
+  await submitRequest(text, image);
 }
 
 // 手动唤醒：先查主卡 GPU 占用率（防打扰），通过则自动截屏 + 固定唤醒提示，让她自由行动。

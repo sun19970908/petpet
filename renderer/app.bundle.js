@@ -3502,7 +3502,8 @@ void main(){ o=texture(uTex,vUv); }`;
   }
   async function send() {
     const text = input.value.trim();
-    if (!text && !pendingImage || busy) return;
+    const image = pendingImage;
+    if (!text && !image || busy) return;
     if (!unlocked) {
       speech.unlock();
       unlocked = true;
@@ -3510,7 +3511,7 @@ void main(){ o=texture(uTex,vUv); }`;
     input.value = "";
     autoGrowInput();
     clearPendingImage();
-    await submitRequest(text, pendingImage);
+    await submitRequest(text, image);
   }
   var WAKE_GPU_LIMIT = 40;
   var wakeRunning = false;
