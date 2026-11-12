@@ -1055,9 +1055,73 @@ function runFsToolCore(call) {
       return Promise.resolve({ ok: false, error: '参数错误：未知 action ' + action + '（可选 write/append/copy/delete）' });
     }
     if (name === 'read_file') {
-      // 不截断：她以后要整份读聊天记录做上下文压缩；超大文件导致的请求失败是自然边界
-      const data = fs.readFileSync(path.resolve(args.path), 'utf8');
-      return Promise.resolve({ ok: true, result: data });
+      const resolved = path.resolve(args.path);
+      const data = fs.readFileSync(resolved, 'utf8');
+      const hasStart = args.start_line !== undefined && args.start_line !== null && args.start_line !== '';
+      const hasEnd = args.end_line !== undefined && args.end_line !== null && args.end_line !== '';
+      const hasQuery = typeof args.query === 'string' && args.query.trim() !== '';
+
+      // 未传区间/搜索参数时保持原有行为：整份读取不截断
+      if (!hasStart && !hasEnd && !hasQuery) {
+        return Promise.resolve({ ok: true, result: data });
+      }
+
+      const lines = data.split(/\r?\n/);
+      const total = lines.length;
+
+      if (hasQuery) {
+        const q = args.query.trim().toLowerCase();
+        const ctx = Math.max(0, Math.min(10, parseInt(args.context_lines, 10) || 2));
+        const maxHits = 30;
+        const hitIndices = [];
+        for (let i = 0; i < total; i++) {
+          if (lines[i].toLowerCase().includes(q)) {
+            hitIndices.push(i);
+            if (hitIndices.length >= maxHits) break;
+          }
+        }
+        if (!hitIndices.length) {
+          return Promise.resolve({ ok: true, result: `[文件: ${resolved} | 共 ${total} 行 | 搜索 "${args.query}" 无命中]` });
+        }
+        const out = [`[文件: ${resolved} | 共 ${total} 行 | 搜索 "${args.query}" 命中 ${hitIndices.length}${hitIndices.length >= maxHits ? '+' : ''} 处]`];
+        const printed = new Set();
+        for (const idx of hitIndices) {
+          const from = Math.max(0, idx - ctx);
+          const to = Math.min(total - 1, idx + ctx);
+          if (out.length > 1) out.push('---');
+          for (let j = from; j <= to; j++) {
+            if (printed.has(j)) continue;
+            printed.add(j);
+            const mark = j === idx ? '>' : ' ';
+            out.push(`${mark}L${j + 1}: ${lines[j]}`);
+          }
+        }
+        return Promise.resolve({ ok: true, result: out.join('\n') });
+      }
+
+      const rawStart = hasStart ? parseInt(args.start_line, 10) : 1;
+      let s = Number.isFinite(rawStart) ? rawStart : 1;
+      if (s < 0) s = Math.max(1, total + s + 1);
+      if (s < 1) s = 1;
+
+      let e;
+      if (hasEnd) {
+        const rawEnd = parseInt(args.end_line, 10);
+        e = Number.isFinite(rawEnd) ? rawEnd : Math.min(total, s + 149);
+      } else if (hasStart && rawStart < 0) {
+        e = total;
+      } else {
+        e = Math.min(total, s + 149);
+      }
+      if (e < s) e = Math.min(total, s + 149);
+      if (e > total) e = total;
+
+      if (s > total) {
+        return Promise.resolve({ ok: true, result: `[文件: ${resolved} | 共 ${total} 行 | 起始行 ${s} 超出范围]` });
+      }
+
+      const slice = lines.slice(s - 1, e).join('\n');
+      return Promise.resolve({ ok: true, result: `[文件: ${resolved} | 共 ${total} 行 | 当前第 ${s}-${e} 行]\n${slice}` });
     }
     if (name === 'list_dir') {
       const entries = fs.readdirSync(path.resolve(args.path), { withFileTypes: true })
