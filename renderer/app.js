@@ -1744,7 +1744,7 @@ if (DEBUG_MODE) {
   window.addEventListener('mousemove', () => dbg.mouse++, { passive: true });
   setInterval(() => {
     const p = player?.params ?? {};
-    fetch('/api/dbg', { method: 'POST', body: JSON.stringify({
+    fetch('/api/dbg', { method: 'POST', headers: { 'X-Pet-Debug': '1' }, body: JSON.stringify({
       t: new Date().toISOString(), ptr: dbg.ptr, mouse: dbg.mouse,
       last: [dbg.lastX, dbg.lastY, dbg.lastTarget],
       angleX: +(+p.angleX ?? 0).toFixed(1), eyeBallX: +(+p.eyeBallX ?? 0).toFixed(2),

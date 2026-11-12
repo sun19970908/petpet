@@ -4140,7 +4140,7 @@ void main(){ o=texture(uTex,vUv); }`;
     window.addEventListener("mousemove", () => dbg.mouse++, { passive: true });
     setInterval(() => {
       const p3 = player?.params ?? {};
-      fetch("/api/dbg", { method: "POST", body: JSON.stringify({
+      fetch("/api/dbg", { method: "POST", headers: { "X-Pet-Debug": "1" }, body: JSON.stringify({
         t: (/* @__PURE__ */ new Date()).toISOString(),
         ptr: dbg.ptr,
         mouse: dbg.mouse,

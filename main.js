@@ -322,7 +322,9 @@ function handleApi(req, res) {
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
-        appendLine(path.join(APP_ROOT, 'logs', 'renderer-dbg.log'), Buffer.concat(chunks).toString('utf8'), { stamp: false, maxBytes: 5 * 1024 * 1024 });
+        if (process.env.PET_DEBUG || req.headers['x-pet-debug'] === '1') {
+          appendLine(path.join(APP_ROOT, 'logs', 'renderer-dbg.log'), Buffer.concat(chunks).toString('utf8'), { stamp: false, maxBytes: 5 * 1024 * 1024 });
+        }
         res.writeHead(204); res.end();
       });
       return;
