@@ -427,10 +427,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       }
       turnUsedTools = true;
       toolCallTotal += toolCalls.length;
-      if (toolCallTotal > 16) {
-        noTools = true;
-        bodyMsgs.push({ role: 'user', content: '（系统：这一轮工具调用次数太多仍未收敛，像是在打转。请停止调用工具，直接用文字向主人说明现状和卡点。）' });
-      }
       if (repeatCount >= 2) {
         noTools = true;
       }

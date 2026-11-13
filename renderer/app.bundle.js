@@ -4345,10 +4345,6 @@ ${note}` : note };
         }
         turnUsedTools = true;
         toolCallTotal += toolCalls.length;
-        if (toolCallTotal > 16) {
-          noTools = true;
-          bodyMsgs.push({ role: "user", content: "\uFF08\u7CFB\u7EDF\uFF1A\u8FD9\u4E00\u8F6E\u5DE5\u5177\u8C03\u7528\u6B21\u6570\u592A\u591A\u4ECD\u672A\u6536\u655B\uFF0C\u50CF\u662F\u5728\u6253\u8F6C\u3002\u8BF7\u505C\u6B62\u8C03\u7528\u5DE5\u5177\uFF0C\u76F4\u63A5\u7528\u6587\u5B57\u5411\u4E3B\u4EBA\u8BF4\u660E\u73B0\u72B6\u548C\u5361\u70B9\u3002\uFF09" });
-        }
         if (repeatCount >= 2) {
           noTools = true;
         }
