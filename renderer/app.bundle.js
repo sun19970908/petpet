@@ -5032,6 +5032,20 @@ ${note}` : note };
       el.style.transform = t5;
     }
   }
+  async function recenterPet() {
+    await refreshDisplays();
+    const bed = displayInfo.find((d2) => !d2.isPrimary);
+    const r3 = bed ? displayCssRect(bed) : null;
+    if (!r3) {
+      if (!busy) showBubble("\u53EA\u6709\u4E00\u5757\u5C4F\uFF0C\u56DE\u4E0D\u4E86\u526F\u5C4F\u5566\uFF5E", true);
+      return;
+    }
+    await walkToCss(r3.x + r3.w / 2, r3.y + r3.h * 0.7);
+    if (!busy) showBubble("\u94C3\u94DB\u54CD\u5566\uFF0C\u6211\u56DE\u623F\u95F4\u4E2D\u592E\uFF5E");
+  }
+  window.petWindow?.onRecenter?.(() => {
+    if (ROLE === "pet") recenterPet();
+  });
   refreshDisplays();
   var petScale = Math.max(20, Math.min(100, parseFloat(localStorage.getItem("petScale")) || 88));
   function applyScale() {
@@ -5087,6 +5101,10 @@ ${note}` : note };
     if (!roomFrame || e3.source !== roomFrame.contentWindow) return;
     const d2 = e3.data;
     if (!d2 || typeof d2 !== "object") return;
+    if (d2.type === "pet-recenter") {
+      recenterPet();
+      return;
+    }
     if (d2.type === "room-state-request") {
       pushRoomState();
       return;

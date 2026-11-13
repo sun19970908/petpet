@@ -20,6 +20,7 @@
     window.addEventListener('message', (e) => {
       if (e.source !== rf.contentWindow) return;
       const d = e.data; if (!d) return;
+      if (d.type === 'pet-recenter') { try { window.petWindow && window.petWindow.recenterPet(); } catch {} return; }
       if (d.type === 'room-state-request') { poll(); return; }
       if (d.type === 'room-state') {
         const s = { curtain: d.curtain === 'closed' ? 'closed' : 'open', lamp: d.lamp === 'on' ? 'on' : 'off' };

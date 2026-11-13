@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('petWindow', {
   getDisplays: () => ipcRenderer.invoke('get-displays'),
   getWinBounds: () => ipcRenderer.invoke('get-win-bounds'),
   roomStateSave: (s) => ipcRenderer.invoke('room-state-save', s),
+  recenterPet: () => ipcRenderer.send('pet-recenter'),
+  onRecenter: (cb) => ipcRenderer.on('pet-recenter', () => cb()),
   onDisplaysChanged: (cb) => ipcRenderer.on('displays-changed', () => cb()),
   onRoomChanged: (cb) => ipcRenderer.on('room-changed', () => cb()),
   notifyRoomReloaded: () => ipcRenderer.send('room-reloaded'),

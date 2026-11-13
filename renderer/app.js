@@ -1118,6 +1118,16 @@ function updatePetDprScale() {
     el.style.transform = t;
   }
 }
+// 卧室铃铛：回到副屏正中央（按她此刻的可视高度把身体中心对准屏幕中心）
+async function recenterPet() {
+  await refreshDisplays();
+  const bed = displayInfo.find((d) => !d.isPrimary);
+  const r = bed ? displayCssRect(bed) : null;
+  if (!r) { if (!busy) showBubble('只有一块屏，回不了副屏啦～', true); return; }
+  await walkToCss(r.x + r.w / 2, r.y + r.h * 0.7);
+  if (!busy) showBubble('铃铛响啦，我回房间中央～');
+}
+window.petWindow?.onRecenter?.(() => { if (ROLE === 'pet') recenterPet(); });
 refreshDisplays();
 
 // 滚轮缩放（在她身上滚）：20%~100% 屏高，localStorage 记忆
@@ -1175,6 +1185,7 @@ window.addEventListener('message', (e) => {
   if (!roomFrame || e.source !== roomFrame.contentWindow) return;
   const d = e.data;
   if (!d || typeof d !== 'object') return;
+  if (d.type === 'pet-recenter') { recenterPet(); return; }
   if (d.type === 'room-state-request') { pushRoomState(); return; }
   if (d.type !== 'room-state') return;
   if (d.curtain === 'open' || d.curtain === 'closed') roomState.curtain = d.curtain;

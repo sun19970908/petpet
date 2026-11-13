@@ -512,6 +512,10 @@ app.whenReady().then(() => {
     const win = BrowserWindow.fromWebContents(e.sender);
     if (win) win.setIgnoreMouseEvents(!!on, { forward: true });
   });
+  // 卧室里的铃铛：卧室窗只负责转发，真正走动的是桌宠窗
+  ipcMain.on('pet-recenter', () => {
+    if (petWin && !petWin.isDestroyed()) petWin.webContents.send('pet-recenter');
+  });
   ipcMain.on('room-reloaded', (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     if (win && !win.isDestroyed()) {
