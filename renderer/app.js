@@ -1105,7 +1105,7 @@ function updatePetDprScale() {
     if (sx >= b.x && sx <= b.x + b.width && sy >= b.y && sy <= b.y + b.height) { scale = d.scaleFactor || WINDOW_DPR; break; }
   }
   // 补偿系数 = 该屏缩放 / 窗口渲染DPR：跨屏大窗按主屏DPI渲染时与旧公式等价；
-  // 窗口只铺单屏时 DPR 等于该屏缩放，系数=1（PET_ONLY_BEDROOM 测试模式）
+  // 窗口只铺单屏时 DPR 等于该屏缩放，系数=1（petOnlyBedroom 模式）
   const factor = Math.max(0.25, Math.min(4, scale / WINDOW_DPR));
   dprFactor = factor;
   const t = Math.abs(factor - 1) < 0.02 ? '' : 'scale(' + factor + ')';

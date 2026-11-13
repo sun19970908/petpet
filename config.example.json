@@ -6,5 +6,6 @@
   "ttsMode": "auto",
   "gsvIdleSeconds": 600,
   "watchdog": false,
+  "petOnlyBedroom": false,
   "llmProfile": "strata"
 }

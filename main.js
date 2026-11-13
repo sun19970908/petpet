@@ -387,9 +387,12 @@ function unionBounds() {
   if (!isFinite(x0)) return screen.getPrimaryDisplay().workArea;
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
-const PET_ONLY_BEDROOM = process.env.PET_ONLY_BEDROOM === '1';
 function petArea() {
-  return (PET_ONLY_BEDROOM && bedroomDisplay()) ? bedroomDisplay().workArea : unionBounds();
+  if (getConfig().petOnlyBedroom === true) {
+    const bedroom = bedroomDisplay();
+    if (bedroom) return bedroom.workArea;
+  }
+  return unionBounds();
 }
 
 app.on('before-quit', () => {
