@@ -28,7 +28,8 @@
         try { fetch('/api/room-state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) }); } catch {}
       }
     });
-    window.petWindow && window.petWindow.onRoomChanged && window.petWindow.onRoomChanged(() => { try { rf.src = '/pet_space/room/index.html?t=' + Date.now(); } catch {} });
+    // 11-13 修复：热重载不要只改 iframe.src，整页重载宿主，避免 iframe 停在空白页只剩底色
+    window.petWindow && window.petWindow.onRoomChanged && window.petWindow.onRoomChanged(() => { try { location.reload(); } catch {} });
     rf.addEventListener('load', () => {
       poll();
       try { window.petWindow && window.petWindow.notifyRoomReloaded && window.petWindow.notifyRoomReloaded(); } catch {}
