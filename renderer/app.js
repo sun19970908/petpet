@@ -555,6 +555,7 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
     return true;
   } catch (e) {
     if (isAbort(e)) {
+      if (turnAbortReason === 'cutoff') return false; // 截止时间的提示已由 stop() 显示，不覆盖成“已打断”
       // 用户打断：还没来得及说的那句话放回输入框
       if (!replied) {
         showBubble(turnAbortReason === 'guard' ? '（上一轮响应超时，自动重连…）' : '（已打断）');
@@ -630,9 +631,9 @@ async function wakeNow(wakeText = '你被唤醒了，用户没有给你指示，
   }
 }
 // 🔔 双语义：空闲 = 手动唤醒；忙碌 = 插话打断（立刻停语音、掐断生成，没说的话回到输入框）
-function interrupt() {
+function interrupt(reason = 'user') {
   if (!busy) return false;
-  turnAbortReason = 'user';
+  turnAbortReason = reason;
   turnAbort?.abort();
   speech.stop();
   return true;
@@ -653,7 +654,10 @@ const wake = createInfiniteWake({
 wake.startKeepalive(60000);
 $('infwake').addEventListener('click', () => wake.toggle());
 window.petWindow?.onStopInfwake?.(() => {
+  const wasInf = wake.on;
   wake.stop('到截止时间啦，我先停下无限唤醒，等主人回来～');
+  // 截止时把正在跑的那一轮也掐掉；只掐无限唤醒轮，不动正常聊天
+  if (busy && wasInf) interrupt('cutoff');
   console.log('[infwake] 收到看门狗截止指令，已关闭无限唤醒');
 });
 wake.restore({ disabled: NO_INFWAKE });

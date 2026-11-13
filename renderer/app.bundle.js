@@ -4465,6 +4465,7 @@ ${note}` : note };
       return true;
     } catch (e3) {
       if (isAbort(e3)) {
+        if (turnAbortReason === "cutoff") return false;
         if (!replied) {
           showBubble(turnAbortReason === "guard" ? "\uFF08\u4E0A\u4E00\u8F6E\u54CD\u5E94\u8D85\u65F6\uFF0C\u81EA\u52A8\u91CD\u8FDE\u2026\uFF09" : "\uFF08\u5DF2\u6253\u65AD\uFF09");
           setTimeout(() => {
@@ -4543,9 +4544,9 @@ ${note}` : note };
       wakeRunning = false;
     }
   }
-  function interrupt() {
+  function interrupt(reason = "user") {
     if (!busy) return false;
-    turnAbortReason = "user";
+    turnAbortReason = reason;
     turnAbort?.abort();
     speech.stop();
     return true;
@@ -4565,7 +4566,9 @@ ${note}` : note };
   wake.startKeepalive(6e4);
   $3("infwake").addEventListener("click", () => wake.toggle());
   window.petWindow?.onStopInfwake?.(() => {
+    const wasInf = wake.on;
     wake.stop("\u5230\u622A\u6B62\u65F6\u95F4\u5566\uFF0C\u6211\u5148\u505C\u4E0B\u65E0\u9650\u5524\u9192\uFF0C\u7B49\u4E3B\u4EBA\u56DE\u6765\uFF5E");
+    if (busy && wasInf) interrupt("cutoff");
     console.log("[infwake] \u6536\u5230\u770B\u95E8\u72D7\u622A\u6B62\u6307\u4EE4\uFF0C\u5DF2\u5173\u95ED\u65E0\u9650\u5524\u9192");
   });
   wake.restore({ disabled: NO_INFWAKE });
