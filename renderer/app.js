@@ -271,8 +271,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   }
   // ===== 流式主循环：SSE 解析 + 思维链静默状态机 + 成句即说 =====
   // 标签剥离与增量状态机已抽至 stream-filter.js；这里只负责请求、工具轮与历史落盘
-  let noTools = false;
-  let lastSig = null;
+  let lastTurnSig = null;
   let repeatCount = 0;
   let toolCallTotal = 0;
   // 正常回合（非无限唤醒）：user 消息与每个工具轮都边跑边写进主历史；内部提示词由 saveMessages 统一过滤
@@ -302,7 +301,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       llmConfig,
       messages: sendMsgs,
       tools: TOOLS,
-      noTools,
       forceRequiredTool,
     });
     forceRequiredTool = false;
@@ -381,6 +379,12 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       const parsed = parseTextToolCalls(content, round);
       if (parsed.length) toolCalls = parsed;
     }
+    // 统一轮次签名：工具轮看“工具名+参数”，文字轮看归一化正文；两者共用同一个计数器。
+    const turnSig = toolCalls?.length
+      ? 'T:' + toolCalls.map((c) => (c.function?.name || '') + ':' + (c.function?.arguments || '')).join('|')
+      : 'R:' + String(content || '').replace(/\s+/g, '').slice(0, 500);
+    repeatCount = turnSig === lastTurnSig ? repeatCount + 1 : 0;
+    lastTurnSig = turnSig;
     const reasoningExtra = (llmConfig.capabilities.preserveReasoningInHistory && rawReasoning) ? { reasoning_content: rawReasoning } : {};
     const data = { choices: [{ message: { role: 'assistant', content, ...reasoningExtra }, finish_reason: finish || (toolCalls ? 'tool_calls' : 'stop') }], usage: usage || {} };
     const msg = data.choices[0].message;
@@ -389,9 +393,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     if (toolCalls?.length) {
       const msgContentBeforeTools = stripThink(content ?? '').replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, '').replace(/<invoke[\s\S]*?<\/invoke>\s*/g, '').trim();
       const truncated = finish === 'length';
-      const sig = toolCalls.map((c) => (c.function?.name || '') + ':' + (c.function?.arguments || '')).join('|');
-      repeatCount = sig === lastSig ? repeatCount + 1 : 0;
-      lastSig = sig;
       const lastMsg = bodyMsgs[bodyMsgs.length - 1];
       if (lastMsg && lastMsg.role === 'assistant') {
         lastMsg.tool_calls = toolCalls;
@@ -451,9 +452,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       }
       turnUsedTools = true;
       toolCallTotal += toolCalls.length;
-      if (repeatCount >= 2) {
-        noTools = true;
-      }
       continue;
     }
     if (!content && !toolCalls?.length) {
@@ -509,7 +507,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       throw new Error('LLM 返回空回复（思考后无正文）');
     }
     // 查证兜底
-    if (wantsVerification && toolCallTotal === 0 && !verificationNudged && !noTools && isLive && !continueBaseMsgs) {
+    if (wantsVerification && toolCallTotal === 0 && !verificationNudged && isLive && !continueBaseMsgs) {
       verificationNudged = true;
       bodyMsgs.push({ role: 'user', content: '（系统提示：这条任务涉及需要核实的事实，但你本轮没有调用任何工具。请先调用工具查证——例如 read_file 读相关文件，或读 G:/AI/livliv-pet/logs/fstool.log 核对自己的操作记录——再给出最终回答。）' });
       showBubble('提醒她先查证…');

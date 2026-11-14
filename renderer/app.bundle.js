@@ -3802,8 +3802,9 @@ ${note}` : note };
   var DEFAULT_REFLECT_EVERY = 8;
   var TITLE_ON = "\u8FDE\u7EED\u5524\u9192\u5F00\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u70B9\u51FB\u5173\u95ED\uFF09";
   var TITLE_OFF = "\u8FDE\u7EED\u5524\u9192\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u65E0\u9650\u6A21\u5F0F\uFF09";
-  var REFLECT_TEXT = `\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u4EE5\u4E0B\u4E3A\u95F4\u6B47\u6027\u81EA\u52A8\u6CE8\u5165\u5185\u5BB9\uFF1A\u601D\u8003\u4E00\u4E0B\u6700\u8FD1\u51E0\u8F6E\u6709\u6CA1\u6709\u9677\u5165\u6B7B\u5FAA\u73AF\uFF0C\u6709\u6CA1\u6709\u8BA1\u5212\u4F7F\u7528\u5DE5\u5177\u4F46\u662F\u5FD8\u8BB0\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u592A\u8001\u5B9E\u4EC0\u4E48\u4E5F\u6CA1\u505A\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u5FD8\u8BB0\u4E3B\u4EBA\u7684\u8981\u6C42\u3002\u601D\u8003\u4E4B\u540E\uFF0C\u5982\u679C\u4F60\u6709\u9519\u8BEF\u9A6C\u4E0A\u6539\u6B63\u3002\u5982\u679C\u6CA1\u6709\u9519\u8BEF\uFF0C\u7EE7\u7EED\u4E4B\u524D\u7684\u4E8B\u60C5\u6216\u505A\u70B9\u65B0\u7684\u4E8B\u60C5\u3002
+  var REFLECT_TEXT = `\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u4EE5\u4E0B\u4E3A\u5B9A\u671F\u6CE8\u5165\u5185\u5BB9\uFF1A\u4E34\u65F6\u4EFB\u52A1\uFF0C\u601D\u8003\u4E00\u4E0B\u6700\u8FD1\u51E0\u8F6E\u6709\u6CA1\u6709\u9677\u5165\u6B7B\u5FAA\u73AF\uFF0C\u6709\u6CA1\u6709\u8BA1\u5212\u4F7F\u7528\u5DE5\u5177\u4F46\u662F\u5FD8\u8BB0\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u592A\u8001\u5B9E\u4EC0\u4E48\u4E5F\u6CA1\u505A\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u5FD8\u8BB0\u4E3B\u4EBA\u7684\u8981\u6C42\u3002\u601D\u8003\u4E4B\u540E\uFF0C\u5982\u679C\u4F60\u6709\u9519\u8BEF\u9A6C\u4E0A\u6539\u6B63\u3002\u5982\u679C\u6CA1\u6709\u9519\u8BEF\uFF0C\u7EE7\u7EED\u4E4B\u524D\u7684\u4E8B\u60C5\u6216\u505A\u70B9\u65B0\u7684\u4E8B\u60C5\u3002
 `;
+  var REFLECT_PREFILL = "<pet_think> \n \u4E3B\u4EBA\u6211\u73B0\u5728\u5C31\u53CD\u601D\uFF1A";
   function normReply(s3) {
     return String(s3 || "").replace(/<[^>]+>/g, "").replace(/[\s\p{P}\p{S}]/gu, "").slice(0, 500);
   }
@@ -3926,6 +3927,14 @@ ${note}` : note };
       if (reflectSeq % every !== 0) return;
       const at2 = msgs[msgs.length - 1]?.role === "assistant" ? msgs.length - 1 : msgs.length;
       msgs.splice(at2, 0, { role: "user", content: REFLECT_TEXT });
+      if (REFLECT_PREFILL) {
+        const last = msgs[msgs.length - 1];
+        if (last?.role === "assistant") {
+          last.content = (last.content || "") + REFLECT_PREFILL;
+        } else {
+          msgs.push({ role: "assistant", content: REFLECT_PREFILL });
+        }
+      }
     }
     function startKeepalive(ms = 6e4) {
       setInterval(() => {
@@ -4193,8 +4202,7 @@ ${note}` : note };
       if (assembled.consumedForceToolPrefill) wake.clearForceToolPrefill();
       forceRequiredTool = Boolean(assembled.forceRequiredTool);
     }
-    let noTools = false;
-    let lastSig = null;
+    let lastTurnSig = null;
     let repeatCount = 0;
     let toolCallTotal = 0;
     const isLive = !continueBaseMsgs;
@@ -4222,7 +4230,6 @@ ${note}` : note };
         llmConfig,
         messages: sendMsgs,
         tools: TOOLS,
-        noTools,
         forceRequiredTool
       });
       forceRequiredTool = false;
@@ -4308,6 +4315,9 @@ ${note}` : note };
         const parsed = parseTextToolCalls(content, round);
         if (parsed.length) toolCalls = parsed;
       }
+      const turnSig = toolCalls?.length ? "T:" + toolCalls.map((c3) => (c3.function?.name || "") + ":" + (c3.function?.arguments || "")).join("|") : "R:" + String(content || "").replace(/\s+/g, "").slice(0, 500);
+      repeatCount = turnSig === lastTurnSig ? repeatCount + 1 : 0;
+      lastTurnSig = turnSig;
       const reasoningExtra = llmConfig.capabilities.preserveReasoningInHistory && rawReasoning ? { reasoning_content: rawReasoning } : {};
       const data = { choices: [{ message: { role: "assistant", content, ...reasoningExtra }, finish_reason: finish || (toolCalls ? "tool_calls" : "stop") }], usage: usage || {} };
       const msg = data.choices[0].message;
@@ -4315,9 +4325,6 @@ ${note}` : note };
       if (toolCalls?.length) {
         const msgContentBeforeTools = stripThink(content ?? "").replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, "").replace(/<invoke[\s\S]*?<\/invoke>\s*/g, "").trim();
         const truncated = finish === "length";
-        const sig = toolCalls.map((c3) => (c3.function?.name || "") + ":" + (c3.function?.arguments || "")).join("|");
-        repeatCount = sig === lastSig ? repeatCount + 1 : 0;
-        lastSig = sig;
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
         if (lastMsg && lastMsg.role === "assistant") {
           lastMsg.tool_calls = toolCalls;
@@ -4374,9 +4381,6 @@ ${note}` : note };
         }
         turnUsedTools = true;
         toolCallTotal += toolCalls.length;
-        if (repeatCount >= 2) {
-          noTools = true;
-        }
         continue;
       }
       if (!content && !toolCalls?.length) {
@@ -4427,7 +4431,7 @@ ${note}` : note };
         }
         throw new Error("LLM \u8FD4\u56DE\u7A7A\u56DE\u590D\uFF08\u601D\u8003\u540E\u65E0\u6B63\u6587\uFF09");
       }
-      if (wantsVerification && toolCallTotal === 0 && !verificationNudged && !noTools && isLive && !continueBaseMsgs) {
+      if (wantsVerification && toolCallTotal === 0 && !verificationNudged && isLive && !continueBaseMsgs) {
         verificationNudged = true;
         bodyMsgs.push({ role: "user", content: "\uFF08\u7CFB\u7EDF\u63D0\u793A\uFF1A\u8FD9\u6761\u4EFB\u52A1\u6D89\u53CA\u9700\u8981\u6838\u5B9E\u7684\u4E8B\u5B9E\uFF0C\u4F46\u4F60\u672C\u8F6E\u6CA1\u6709\u8C03\u7528\u4EFB\u4F55\u5DE5\u5177\u3002\u8BF7\u5148\u8C03\u7528\u5DE5\u5177\u67E5\u8BC1\u2014\u2014\u4F8B\u5982 read_file \u8BFB\u76F8\u5173\u6587\u4EF6\uFF0C\u6216\u8BFB G:/AI/livliv-pet/logs/fstool.log \u6838\u5BF9\u81EA\u5DF1\u7684\u64CD\u4F5C\u8BB0\u5F55\u2014\u2014\u518D\u7ED9\u51FA\u6700\u7EC8\u56DE\u7B54\u3002\uFF09" });
         showBubble("\u63D0\u9192\u5979\u5148\u67E5\u8BC1\u2026");
