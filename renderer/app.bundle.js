@@ -3947,6 +3947,247 @@ ${note}` : note };
     };
   }
 
+  // renderer/history-store.js
+  function createHistoryStore({ debugMode }) {
+    const history2 = [];
+    const infHistory2 = [];
+    function getHistMode(isInf = false) {
+      if (isInf) return debugMode ? "debug-infwake" : "infwake";
+      return debugMode ? "debug" : void 0;
+    }
+    async function saveHistory(arr = history2, isInf = false) {
+      const mode = getHistMode(isInf);
+      const qs = mode ? "?mode=" + mode : "";
+      try {
+        if (window.petWindow) await window.petWindow.historySave(arr, mode);
+        else await fetch("/api/history" + qs, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(arr) });
+      } catch (e3) {
+        console.error("\u804A\u5929\u8BB0\u5F55\u4FDD\u5B58\u5931\u8D25:", e3);
+      }
+    }
+    function isInternalPrompt(m3) {
+      if (m3?.role !== "user") return false;
+      const text = typeof m3.content === "string" ? m3.content : textOf(m3.content);
+      return text === INF_WAKE_TEXT || text === REFLECT_TEXT;
+    }
+    async function saveMessages2(isInf, messages, replaceLast = false) {
+      const target = isInf ? infHistory2 : history2;
+      const last = messages[messages.length - 1];
+      let changed = false;
+      if (replaceLast && last && target.length && target[target.length - 1].role === "assistant") {
+        target[target.length - 1].content = last.content;
+        changed = true;
+      } else {
+        for (const m3 of messages) {
+          if (isInternalPrompt(m3)) continue;
+          target.push(m3);
+          changed = true;
+        }
+      }
+      if (changed) return saveHistory(target, isInf);
+    }
+    async function syncHistoryFromDisk2(isInf = false) {
+      const mode = getHistMode(isInf);
+      const qs = mode ? "?mode=" + mode : "";
+      let arr = [];
+      try {
+        arr = window.petWindow ? await window.petWindow.historyLoad(mode) : await (await fetch("/api/history" + qs)).json();
+        if (!Array.isArray(arr)) arr = [];
+      } catch {
+        arr = [];
+      }
+      if (!isInf && !arr.length && !debugMode) {
+        try {
+          if (!localStorage.getItem("chatHistoryMigrated")) {
+            const legacy = JSON.parse(localStorage.getItem("chatHistory") || "[]");
+            if (Array.isArray(legacy) && legacy.length) {
+              await saveHistory(legacy, false);
+              arr = legacy;
+            }
+            localStorage.setItem("chatHistoryMigrated", "1");
+            localStorage.removeItem("chatHistory");
+          }
+        } catch {
+        }
+      }
+      const target = isInf ? infHistory2 : history2;
+      target.splice(0, target.length, ...arr);
+    }
+    return { history: history2, infHistory: infHistory2, getHistMode, saveHistory, saveMessages: saveMessages2, syncHistoryFromDisk: syncHistoryFromDisk2 };
+  }
+
+  // renderer/tool-runner.js
+  function createToolRunner({ petTools: petTools2, showBubble: showBubble2, touchTurnActivity: touchTurnActivity2 }) {
+    async function run(call, bodyMsgs, { round, truncated }) {
+      let parsed = {};
+      let parseOk = true;
+      try {
+        parsed = JSON.parse(call.function?.arguments || "{}");
+      } catch {
+        parseOk = false;
+      }
+      if (!parseOk) {
+        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: "\u9519\u8BEF\uFF1A\u5DE5\u5177\u53C2\u6570\u4E0D\u662F\u5408\u6CD5 JSON\uFF08\u901A\u5E38\u662F\u6587\u672C\u91CC\u7684\u6362\u884C\u6216\u5F15\u53F7\u6CA1\u6709\u6B63\u786E\u8F6C\u4E49\uFF09\u3002\u8BF7\u91CD\u65B0\u751F\u6210 arguments \u4E3A\u5408\u6CD5 JSON \u540E\u91CD\u8BD5\u3002" });
+        return;
+      }
+      showBubble2(round === 0 ? "\u770B\u5C4F\u5E55\u4E2D\u2026" : "\u7EE7\u7EED\u7FFB\u2026");
+      if (call.function?.name === "search_memory") {
+        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: await petTools2.searchMemory(parsed) });
+        return;
+      }
+      if (call.function?.name === "walk_to") {
+        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: await petTools2.walkTo(parsed) });
+        return;
+      }
+      touchTurnActivity2();
+      const out = window.petWindow?.fsTool ? await window.petWindow.fsTool({ name: call.function?.name, args: parsed }) : await (await fetch("/api/fstool", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: call.function?.name, args: parsed }) })).json();
+      touchTurnActivity2();
+      bodyMsgs.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: out.ok ? String(out.result) : truncated ? "\u9519\u8BEF\uFF1A\u8FD9\u6B21\u8F93\u51FA\u5728 max_tokens \u5904\u88AB\u622A\u65AD\uFF0C\u5DE5\u5177\u53C2\u6570\u4E0D\u5B8C\u6574\u3002\u8BF7\u7CBE\u7B80\u8981\u5199\u5165\u7684\u5185\u5BB9\uFF0C\u6216\u5206\u6210\u591A\u6B21\u8C03\u7528\u3002" : "\u9519\u8BEF\uFF1A" + out.error
+      });
+      if (out.image) {
+        bodyMsgs.push({
+          role: "user",
+          content: [
+            { type: "text", text: "\uFF08\u7CFB\u7EDF\u9644\u4E0A\u521A\u624D\u5DE5\u5177\u751F\u6210\u7684\u753B\u9762\uFF0C\u8BF7\u57FA\u4E8E\u5B83\u7EE7\u7EED\u5904\u7406\u7528\u6237\u7684\u8BF7\u6C42\uFF09" },
+            { type: "image_url", image_url: { url: out.image } }
+          ]
+        });
+      }
+    }
+    return { run };
+  }
+
+  // renderer/room.js
+  function createRoomController({
+    role,
+    roomEl,
+    roomFrame,
+    getPetRect,
+    isBusy,
+    showBubble: showBubble2,
+    hideBubble: hideBubble2,
+    recenterPet: recenterPet2,
+    refreshDisplays: refreshDisplays2,
+    layoutChat: layoutChat2
+  }) {
+    let bedroomMode = false;
+    let roomRect = null;
+    let roomState = { curtain: "open", lamp: "off" };
+    let inRoom = false;
+    function updateInRoom(announce = false) {
+      const was = inRoom;
+      if (!roomRect) {
+        inRoom = false;
+        return;
+      }
+      const r3 = getPetRect();
+      const cx = r3.left + r3.width / 2, cy = r3.top + r3.height / 2;
+      inRoom = cx >= roomRect.x && cx <= roomRect.x + roomRect.width && cy >= roomRect.y && cy <= roomRect.y + roomRect.height;
+      if (inRoom !== was && announce && !isBusy()) {
+        showBubble2(inRoom ? "\u56DE\u5367\u5BA4\u5566~" : "\u51FA\u6765\u966A\u4F60\u5566~");
+        setTimeout(() => {
+          if (!isBusy()) hideBubble2();
+        }, 4e3);
+      }
+    }
+    function syncRoomRect() {
+      roomRect = bedroomMode ? { x: 0, y: 0, width: innerWidth, height: innerHeight } : null;
+      updateInRoom();
+    }
+    function applyBedroom(on) {
+      bedroomMode = role === "pet" ? false : !!on;
+      roomEl.style.display = bedroomMode ? "block" : "none";
+      syncRoomRect();
+    }
+    function pushRoomState() {
+      try {
+        roomFrame && roomFrame.contentWindow && roomFrame.contentWindow.postMessage({ type: "set-room-state", state: roomState }, "*");
+      } catch {
+      }
+    }
+    async function setRoomState(patch) {
+      if (patch.curtain === "open" || patch.curtain === "closed") roomState.curtain = patch.curtain;
+      if (patch.lamp === "on" || patch.lamp === "off") roomState.lamp = patch.lamp;
+      pushRoomState();
+      try {
+        if (window.petWindow) await window.petWindow.roomStateSave(roomState);
+        else await fetch("/api/room-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(roomState) });
+      } catch {
+      }
+    }
+    window.addEventListener("message", (e3) => {
+      if (!roomFrame || e3.source !== roomFrame.contentWindow) return;
+      const d2 = e3.data;
+      if (!d2 || typeof d2 !== "object") return;
+      if (d2.type === "pet-recenter") {
+        recenterPet2();
+        return;
+      }
+      if (d2.type === "room-state-request") {
+        pushRoomState();
+        return;
+      }
+      if (d2.type !== "room-state") return;
+      if (d2.curtain === "open" || d2.curtain === "closed") roomState.curtain = d2.curtain;
+      if (d2.lamp === "on" || d2.lamp === "off") roomState.lamp = d2.lamp;
+      try {
+        if (window.petWindow) window.petWindow.roomStateSave(roomState);
+        else fetch("/api/room-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(roomState) });
+      } catch {
+      }
+    });
+    if (roomFrame) roomFrame.addEventListener("load", pushRoomState);
+    if (role === "pet" && roomFrame) {
+      try {
+        roomFrame.src = "about:blank";
+      } catch {
+      }
+    }
+    window.petWindow?.onRoomChanged?.(() => {
+      if (roomFrame) roomFrame.src = "/pet_space/room/index.html?t=" + Date.now();
+    });
+    (async () => {
+      let s3 = null;
+      try {
+        s3 = window.petWindow ? await window.petWindow.roomStateLoad() : await (await fetch("/api/room-state")).json();
+      } catch {
+      }
+      roomState = { curtain: s3?.curtain === "closed" ? "closed" : "open", lamp: s3?.lamp === "on" ? "on" : "off" };
+      pushRoomState();
+    })();
+    window.petWindow?.onDisplaysChanged?.(async () => {
+      try {
+        const c3 = await (await fetch("/api/config", { cache: "no-store" })).json();
+        applyBedroom(c3?.bedroom);
+        await refreshDisplays2();
+        layoutChat2();
+      } catch {
+      }
+    });
+    return {
+      applyBedroom,
+      syncRoomRect,
+      setRoomState,
+      updateInRoom,
+      pushRoomState,
+      get state() {
+        return roomState;
+      },
+      get inRoom() {
+        return inRoom;
+      },
+      get bedroomMode() {
+        return bedroomMode;
+      },
+      get rect() {
+        return roomRect;
+      }
+    };
+  }
+
   // renderer/app.js
   (function capFPS(fps = 30) {
     const orig = window.requestAnimationFrame.bind(window);
@@ -3983,12 +4224,7 @@ ${note}` : note };
   var DEBUG_MODE = new URLSearchParams(location.search).has("debug");
   var ROLE = new URLSearchParams(location.search).get("role") || "app";
   var NO_INFWAKE = new URLSearchParams(location.search).has("noinfwake");
-  var history = [];
-  var infHistory = [];
-  function getHistMode(isInf = false) {
-    if (isInf) return DEBUG_MODE ? "debug-infwake" : "infwake";
-    return DEBUG_MODE ? "debug" : void 0;
-  }
+  var { history, infHistory, saveMessages, syncHistoryFromDisk } = createHistoryStore({ debugMode: DEBUG_MODE });
   var llmConfig = normalizeLlmConfig();
   var TTS_CONFIG = { url: "/api/tts", request: {}, shortTextLimit: 60, splitShort: "cut0", splitLong: "cut5" };
   var CHARACTER_PATH = "";
@@ -4000,70 +4236,11 @@ ${note}` : note };
       CHARACTER_PATH = String(c3?.characterPath || "").trim();
       const reflectEvery = parseInt(c3?.infwakeReflectEvery, 10);
       if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
-      applyBedroom(c3?.bedroom);
+      room.applyBedroom(c3?.bedroom);
     } catch {
     }
   }
-  var initialConfigReady = refreshRuntimeConfig();
   if (DEBUG_MODE) $3("dbgbadge").style.display = "block";
-  async function saveHistory(arr = history, isInf = false) {
-    const mode = getHistMode(isInf);
-    const qs = mode ? "?mode=" + mode : "";
-    try {
-      if (window.petWindow) await window.petWindow.historySave(arr, mode);
-      else await fetch("/api/history" + qs, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(arr) });
-    } catch (e3) {
-      console.error("\u804A\u5929\u8BB0\u5F55\u4FDD\u5B58\u5931\u8D25:", e3);
-    }
-  }
-  function isInternalPrompt(m3) {
-    if (m3?.role !== "user") return false;
-    const text = typeof m3.content === "string" ? m3.content : textOf(m3.content);
-    return text === INF_WAKE_TEXT || text === REFLECT_TEXT;
-  }
-  async function saveMessages(isInf, messages, replaceLast = false) {
-    const target = isInf ? infHistory : history;
-    const last = messages[messages.length - 1];
-    let changed = false;
-    if (replaceLast && last && target.length && target[target.length - 1].role === "assistant") {
-      target[target.length - 1].content = last.content;
-      changed = true;
-    } else {
-      for (const m3 of messages) {
-        if (isInternalPrompt(m3)) continue;
-        target.push(m3);
-        changed = true;
-      }
-    }
-    if (changed) return saveHistory(target, isInf);
-  }
-  async function syncHistoryFromDisk(isInf = false) {
-    const mode = getHistMode(isInf);
-    const qs = mode ? "?mode=" + mode : "";
-    let arr = [];
-    try {
-      arr = window.petWindow ? await window.petWindow.historyLoad(mode) : await (await fetch("/api/history" + qs)).json();
-      if (!Array.isArray(arr)) arr = [];
-    } catch {
-      arr = [];
-    }
-    if (!isInf && !arr.length && !DEBUG_MODE) {
-      try {
-        if (!localStorage.getItem("chatHistoryMigrated")) {
-          const legacy = JSON.parse(localStorage.getItem("chatHistory") || "[]");
-          if (Array.isArray(legacy) && legacy.length) {
-            await saveHistory(legacy, false);
-            arr = legacy;
-          }
-          localStorage.setItem("chatHistoryMigrated", "1");
-          localStorage.removeItem("chatHistory");
-        }
-      } catch {
-      }
-    }
-    const target = isInf ? infHistory : history;
-    target.splice(0, target.length, ...arr);
-  }
   var unlocked = false;
   var busy = false;
   var turnSeq = 0;
@@ -4113,13 +4290,26 @@ ${note}` : note };
   var player = new rt($3("pet"));
   var speech = M2(player);
   var { speakSegment, speak } = createTtsController({ getTtsConfig: () => TTS_CONFIG, speech, touchTurnActivity });
+  var room = createRoomController({
+    role: ROLE,
+    roomEl: $3("room"),
+    roomFrame: $3("roomframe"),
+    getPetRect: () => petCanvas.getBoundingClientRect(),
+    isBusy: () => busy,
+    showBubble,
+    hideBubble,
+    recenterPet,
+    refreshDisplays,
+    layoutChat
+  });
   window.__pet = { player, speech, showBubble, get clickThrough() {
     return clickThrough;
-  }, interrupt, room: { applyBedroom, set: setRoomState, update: updateInRoom, get state() {
-    return roomState;
+  }, interrupt, room: { applyBedroom: room.applyBedroom, set: room.setRoomState, update: room.updateInRoom, get state() {
+    return room.state;
   }, get inRoom() {
-    return inRoom;
+    return room.inRoom;
   } } };
+  var initialConfigReady = refreshRuntimeConfig();
   function showBubble(text, isError = false) {
     bubble.textContent = text;
     bubble.style.display = "block";
@@ -4147,12 +4337,13 @@ ${note}` : note };
   var petTools = createPetTools({
     ROLE,
     getDisplayInfo: () => displayInfo,
-    isBedroomMode: () => bedroomMode,
+    isBedroomMode: () => room.bedroomMode,
     displayCssRect,
     walkToCss,
     walkToFraction,
     memoryRecall: memory.recall
   });
+  var toolRunner = createToolRunner({ petTools, showBubble, touchTurnActivity });
   var lastExchange = null;
   async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
     await refreshRuntimeConfig();
@@ -4315,43 +4506,7 @@ ${note}` : note };
           bodyMsgs.push({ role: "assistant", content: msgContentBeforeTools || "", ...reasoningExtra, tool_calls: toolCalls });
         }
         for (const call of toolCalls) {
-          let parsed = {};
-          let parseOk = true;
-          try {
-            parsed = JSON.parse(call.function?.arguments || "{}");
-          } catch {
-            parseOk = false;
-          }
-          if (!parseOk) {
-            bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: "\u9519\u8BEF\uFF1A\u5DE5\u5177\u53C2\u6570\u4E0D\u662F\u5408\u6CD5 JSON\uFF08\u901A\u5E38\u662F\u6587\u672C\u91CC\u7684\u6362\u884C\u6216\u5F15\u53F7\u6CA1\u6709\u6B63\u786E\u8F6C\u4E49\uFF09\u3002\u8BF7\u91CD\u65B0\u751F\u6210 arguments \u4E3A\u5408\u6CD5 JSON \u540E\u91CD\u8BD5\u3002" });
-            continue;
-          }
-          showBubble(round === 0 ? "\u770B\u5C4F\u5E55\u4E2D\u2026" : "\u7EE7\u7EED\u7FFB\u2026");
-          if (call.function?.name === "search_memory") {
-            bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: await petTools.searchMemory(parsed) });
-            continue;
-          }
-          if (call.function?.name === "walk_to") {
-            bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: await petTools.walkTo(parsed) });
-            continue;
-          }
-          touchTurnActivity();
-          const out = window.petWindow?.fsTool ? await window.petWindow.fsTool({ name: call.function?.name, args: parsed }) : await (await fetch("/api/fstool", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: call.function?.name, args: parsed }) })).json();
-          touchTurnActivity();
-          bodyMsgs.push({
-            role: "tool",
-            tool_call_id: call.id,
-            content: out.ok ? String(out.result) : truncated ? "\u9519\u8BEF\uFF1A\u8FD9\u6B21\u8F93\u51FA\u5728 max_tokens \u5904\u88AB\u622A\u65AD\uFF0C\u5DE5\u5177\u53C2\u6570\u4E0D\u5B8C\u6574\u3002\u8BF7\u7CBE\u7B80\u8981\u5199\u5165\u7684\u5185\u5BB9\uFF0C\u6216\u5206\u6210\u591A\u6B21\u8C03\u7528\u3002" : "\u9519\u8BEF\uFF1A" + out.error
-          });
-          if (out.image) {
-            bodyMsgs.push({
-              role: "user",
-              content: [
-                { type: "text", text: "\uFF08\u7CFB\u7EDF\u9644\u4E0A\u521A\u624D\u5DE5\u5177\u751F\u6210\u7684\u753B\u9762\uFF0C\u8BF7\u57FA\u4E8E\u5B83\u7EE7\u7EED\u5904\u7406\u7528\u6237\u7684\u8BF7\u6C42\uFF09" },
-                { type: "image_url", image_url: { url: out.image } }
-              ]
-            });
-          }
+          await toolRunner.run(call, bodyMsgs, { round, truncated });
         }
         if (isLive) {
           const visible = (msgContentBeforeTools || "").trim();
@@ -4797,7 +4952,7 @@ ${note}` : note };
     return x3 >= r3.left + insetX && x3 <= r3.right - insetX && y3 >= r3.top + insetY && y3 <= r3.bottom - insetY;
   }
   function refreshClickThrough(x3, y3) {
-    const overRoom = roomRect && x3 >= roomRect.x && x3 <= roomRect.x + roomRect.width && y3 >= roomRect.y && y3 <= roomRect.y + roomRect.height;
+    const overRoom = room.rect && x3 >= room.rect.x && x3 <= room.rect.x + room.rect.width && y3 >= room.rect.y && y3 <= room.rect.y + room.rect.height;
     const overPending = pendingBox && pendingBox.style.display !== "none" && rectHit(pendingBox, x3, y3, -6, -6);
     const overBubble = bubble && bubble.style.display !== "none" && rectHit(bubble, x3, y3, -6, -6);
     const over = overRoom || rectHit(petCanvas, x3, y3, petCanvas.getBoundingClientRect().width * 0.14, 8) || rectHit(closeBtn, x3, y3, -6, -6) || rectHit(inputRow, x3, y3, -6, -6) || overPending || overBubble;
@@ -4894,11 +5049,11 @@ ${note}` : note };
     layoutChat();
     savePetPos();
     ensurePetVisible();
-    updateInRoom(true);
+    room.updateInRoom(true);
   });
   window.addEventListener("resize", () => {
     layoutChat();
-    syncRoomRect();
+    room.syncRoomRect();
   });
   var walkToken = 0;
   function walkToFraction(fx, fy) {
@@ -4928,7 +5083,7 @@ ${note}` : note };
         }
         savePetPos();
         ensurePetVisible();
-        updateInRoom(true);
+        room.updateInRoom(true);
         if (lastPX >= 0) refreshClickThrough(lastPX, lastPY);
         resolve();
       }
@@ -5042,7 +5197,7 @@ ${note}` : note };
   function applyScale() {
     petWrap.style.setProperty("--pet-h", petScale + "%");
     layoutChat();
-    updateInRoom();
+    room.updateInRoom();
   }
   applyScale();
   petCanvas.addEventListener("wheel", (e3) => {
@@ -5051,102 +5206,6 @@ ${note}` : note };
     localStorage.setItem("petScale", String(petScale));
     applyScale();
   }, { passive: false });
-  var roomEl = $3("room");
-  var roomFrame = $3("roomframe");
-  if (ROLE === "pet" && roomFrame) {
-    try {
-      roomFrame.src = "about:blank";
-    } catch {
-    }
-  }
-  var bedroomMode = false;
-  var roomRect = null;
-  var roomState = { curtain: "open", lamp: "off" };
-  var inRoom = false;
-  function applyBedroom(on) {
-    bedroomMode = ROLE === "pet" ? false : !!on;
-    roomEl.style.display = bedroomMode ? "block" : "none";
-    syncRoomRect();
-  }
-  function syncRoomRect() {
-    roomRect = bedroomMode ? { x: 0, y: 0, width: innerWidth, height: innerHeight } : null;
-    updateInRoom();
-  }
-  function pushRoomState() {
-    try {
-      roomFrame && roomFrame.contentWindow && roomFrame.contentWindow.postMessage({ type: "set-room-state", state: roomState }, "*");
-    } catch {
-    }
-  }
-  async function setRoomState(patch) {
-    if (patch.curtain === "open" || patch.curtain === "closed") roomState.curtain = patch.curtain;
-    if (patch.lamp === "on" || patch.lamp === "off") roomState.lamp = patch.lamp;
-    pushRoomState();
-    try {
-      if (window.petWindow) await window.petWindow.roomStateSave(roomState);
-      else await fetch("/api/room-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(roomState) });
-    } catch {
-    }
-  }
-  window.addEventListener("message", (e3) => {
-    if (!roomFrame || e3.source !== roomFrame.contentWindow) return;
-    const d2 = e3.data;
-    if (!d2 || typeof d2 !== "object") return;
-    if (d2.type === "pet-recenter") {
-      recenterPet();
-      return;
-    }
-    if (d2.type === "room-state-request") {
-      pushRoomState();
-      return;
-    }
-    if (d2.type !== "room-state") return;
-    if (d2.curtain === "open" || d2.curtain === "closed") roomState.curtain = d2.curtain;
-    if (d2.lamp === "on" || d2.lamp === "off") roomState.lamp = d2.lamp;
-    try {
-      if (window.petWindow) window.petWindow.roomStateSave(roomState);
-      else fetch("/api/room-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(roomState) });
-    } catch {
-    }
-  });
-  if (roomFrame) roomFrame.addEventListener("load", pushRoomState);
-  window.petWindow?.onRoomChanged?.(() => {
-    if (roomFrame) roomFrame.src = "/pet_space/room/index.html?t=" + Date.now();
-  });
-  function updateInRoom(announce = false) {
-    const was = inRoom;
-    if (!roomRect) {
-      inRoom = false;
-      return;
-    }
-    const r3 = petCanvas.getBoundingClientRect();
-    const cx = r3.left + r3.width / 2, cy = r3.top + r3.height / 2;
-    inRoom = cx >= roomRect.x && cx <= roomRect.x + roomRect.width && cy >= roomRect.y && cy <= roomRect.y + roomRect.height;
-    if (inRoom !== was && announce && !busy) {
-      showBubble(inRoom ? "\u56DE\u5367\u5BA4\u5566~" : "\u51FA\u6765\u966A\u4F60\u5566~");
-      setTimeout(() => {
-        if (!busy) hideBubble();
-      }, 4e3);
-    }
-  }
-  (async () => {
-    let s3 = null;
-    try {
-      s3 = window.petWindow ? await window.petWindow.roomStateLoad() : await (await fetch("/api/room-state")).json();
-    } catch {
-    }
-    roomState = { curtain: s3?.curtain === "closed" ? "closed" : "open", lamp: s3?.lamp === "on" ? "on" : "off" };
-    pushRoomState();
-  })();
-  window.petWindow?.onDisplaysChanged?.(async () => {
-    try {
-      const c3 = await (await fetch("/api/config", { cache: "no-store" })).json();
-      applyBedroom(c3?.bedroom);
-      await refreshDisplays();
-      layoutChat();
-    } catch {
-    }
-  });
   if (DEBUG_MODE) {
     const dbg = { ptr: 0, mouse: 0, lastX: null, lastY: null, lastTarget: "", sent: 0 };
     window.addEventListener("pointermove", (e3) => {

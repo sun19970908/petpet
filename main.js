@@ -2,10 +2,8 @@
 // 全屏透明置顶窗：默认鼠标穿透（forward 模式），桌宠看得到全屏光标，
 // livliv 自带的视线跟随/挑眉/微笑等原生互动全程生效
 const { app, BrowserWindow, screen, ipcMain, desktopCapturer, nativeImage, session } = require('electron');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
 const { appendLine, createRotatingStream, readLastLines } = require('./lib/logger');
 const { createVoiceAndApi } = require('./main/voice');
 const { createLlmConfigManager } = require('./main/llm-config');
@@ -13,6 +11,8 @@ const { createLlmProxy } = require('./main/llm-proxy');
 const { createScreenTools } = require('./main/screen');
 const { createStorage } = require('./main/storage');
 const { createFsTools } = require('./main/fs-tools');
+const { createHttpServer } = require('./main/http-server');
+const { createWindowManager } = require('./main/windows');
 const watchdogCtl = require('./lib/watchdog-ctl');
 const { loadConfig, loadTtsConfig } = require('./lib/config-store');
 
@@ -50,26 +50,6 @@ if (BOOT_CONFIG.hwCompositing === false) {
 }
 app.commandLine.appendSwitch('enable-features', 'WebRtcAllowWgcScreenCapturer');
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.webp': 'image/webp',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.wav': 'audio/wav',
-  '.mp3': 'audio/mpeg',
-  '.svg': 'image/svg+xml',
-  '.css': 'text/css; charset=utf-8',
-};
-
-// 静态资源白名单：页面、角色、性格档案、房间沙箱
-const STATIC_DIRS = ['renderer/', 'characters/', 'pet_space/room/'];
-const STATIC_FILES = new Set(['pet_space/persona.txt']);
-function isStaticAssetAllowed(relPath) {
-  return STATIC_FILES.has(relPath) || STATIC_DIRS.some((dir) => relPath.startsWith(dir));
-}
-
 // ===== 启动参数解析（只保留 debug；--no-infwake 由看门狗内部重启时使用） =====
 let cliNoInfwake = false;
 for (const arg of process.argv.slice(1)) {
@@ -82,10 +62,6 @@ for (const arg of process.argv.slice(1)) {
 const CAP_MAIN_CFG = BOOT_CONFIG.capMain ?? 'main';
 const CAP_ROOM_CFG = BOOT_CONFIG.capRoom ?? 'room';
 
-let petWin = null;
-let bedroomWin = null;
-let quitting = false;
-
 function winLog(msg) {
   appendLine(path.join(APP_ROOT, 'logs', 'windows.log'), msg, { maxBytes: 2 * 1024 * 1024 });
 }
@@ -95,6 +71,14 @@ const {
   getConfig, getInfwakeCutoff, getInfwakePhaseId, historyLoad, historySave,
   memoryAdd, memorySearch, memoryBackfill, roomStateLoad, roomStateSave, fstoolTail,
 } = createStorage({ APP_ROOT, PET_SPACE_DIR, readLastLines });
+
+const windows = createWindowManager({
+  APP_ROOT,
+  winLog,
+  getConfig,
+  getNoInfwake: () => cliNoInfwake,
+  getSplitWindows: () => SPLIT_WINDOWS,
+});
 
 const normalizeGsvMode = (v) => {
   const m = String(v || 'auto').toLowerCase().trim();
@@ -128,7 +112,7 @@ const llmProxy = createLlmProxy({
 });
 
 const { captureScreenBy, captureNow, gpuUtil, getScreensInfo } = createScreenTools({
-  APP_ROOT, capMainCfg: CAP_MAIN_CFG, capRoomCfg: CAP_ROOM_CFG, getBedroomWin: () => bedroomWin, screen, desktopCapturer, winLog,
+  APP_ROOT, capMainCfg: CAP_MAIN_CFG, capRoomCfg: CAP_ROOM_CFG, getBedroomWin: () => windows.bedroomWin, screen, desktopCapturer, winLog,
 });
 
 function maybeRoomChanged(call) {
@@ -139,14 +123,14 @@ function maybeRoomChanged(call) {
   const cands = [a.path, a.dest_path, a.out_path].filter(Boolean).map((p) => path.resolve(String(p)).toUpperCase());
   if (!cands.some((p) => p === roomDir || p.startsWith(roomDir + path.sep))) return;
   try {
-    const t = (SPLIT_WINDOWS && bedroomWin && !bedroomWin.isDestroyed()) ? bedroomWin : petWin;
+    const t = (SPLIT_WINDOWS && windows.bedroomWin && !windows.bedroomWin.isDestroyed()) ? windows.bedroomWin : windows.petWin;
     if (!t || t.isDestroyed()) return;
-    if (t === bedroomWin) {
+    if (t === windows.bedroomWin) {
       if (t.isMinimized()) t.restore();
       if (!t.isVisible()) t.showInactive();
     }
     t.webContents.send('room-changed');
-    if (t === bedroomWin) t.webContents.invalidate();
+    if (t === windows.bedroomWin) t.webContents.invalidate();
   } catch {}
 }
 
@@ -191,315 +175,13 @@ function applyWatchdogPolicy() {
   }
 }
 
-// ===== 本地 HTTP 静态资源 + API 兜底路由 =====
-function serveStatic(req, res) {
-  try {
-    if (req.url.startsWith('/api/')) {
-      const apiPath = req.url.split('?')[0];
-      if (apiPath === '/api/config') {
-        const publicLlm = llmConfigMgr.getPublicConfig();
-        const cfg = getConfig();
-        const ttsCfg = loadTtsConfig(APP_ROOT);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          bedroom: Boolean(bedroomDisplay()),
-          infwakeCutoff: getInfwakeCutoff().str,
-          infwakePhase: getInfwakePhaseId(),
-          ttsMode: getGsvModeLabel(),
-          gsvMode: getGsvModeLabel(),
-          gsvIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
-          ttsIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
-          watchdog: cfg.watchdog ?? false,
-          infwakeReflectEvery: cfg.infwakeReflectEvery,
-          characterPath: cfg.characterPath,
-          llmProfile: publicLlm.activeProfile,
-          tts: {
-            url: ttsCfg.app.url,
-            request: ttsCfg.request,
-            shortTextLimit: ttsCfg.app.shortTextLimit,
-            splitShort: ttsCfg.app.splitShort,
-            splitLong: ttsCfg.app.splitLong,
-          },
-          llm: publicLlm,
-        }));
-        return;
-      }
-      if (apiPath === '/api/infwake/stop' && req.method === 'POST') {
-        let sent = false;
-        try {
-          if (petWin && !petWin.isDestroyed()) {
-            petWin.webContents.send('stop-infwake');
-            sent = true;
-          }
-        } catch {}
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, sent }));
-        return;
-      }
-      if (apiPath === '/api/room-state') {
-        if (req.method === 'GET') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(roomStateLoad()));
-          return;
-        }
-        if (req.method === 'POST') {
-          const chunks = [];
-          req.on('data', (c) => chunks.push(c));
-          req.on('end', () => {
-            try { roomStateSave(JSON.parse(Buffer.concat(chunks).toString('utf8'))); res.writeHead(204); }
-            catch (e) { res.writeHead(500); res.end(String(e)); }
-            res.end();
-          });
-          return;
-        }
-      }
-      if (apiPath === '/api/gpuutil') {
-        gpuUtil().then((v) => {
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          res.end(v === null ? 'null' : String(v));
-        }).catch((e) => { res.writeHead(500); res.end(String(e)); });
-        return;
-      }
-      if (apiPath === '/api/memory-add' && req.method === 'POST') {
-        const chunks = [];
-        req.on('data', (c) => chunks.push(c));
-        req.on('end', async () => {
-          let items = [], mode;
-          try { const p = JSON.parse(Buffer.concat(chunks).toString('utf8')); items = p.items; mode = p.mode; } catch {}
-          const out = await memoryAdd(items, mode);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(out));
-        });
-        return;
-      }
-      if (apiPath === '/api/memory-search' && req.method === 'POST') {
-        const chunks = [];
-        req.on('data', (c) => chunks.push(c));
-        req.on('end', async () => {
-          let query = '', mode, limit = 5;
-          try { const p = JSON.parse(Buffer.concat(chunks).toString('utf8')); query = p.query; mode = p.mode; limit = p.limit; } catch {}
-          const out = await memorySearch(query, mode, limit);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(out));
-        });
-        return;
-      }
-      if (apiPath === '/api/fstool-tail') {
-        const n = parseInt(new URL(req.url, 'http://x').searchParams.get('n') || '10', 10);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(fstoolTail(Number.isFinite(n) ? n : 10)));
-        return;
-      }
-      if (apiPath === '/api/screens') {
-        getScreensInfo().then((info) => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(info, null, 2));
-        }).catch((e) => { res.writeHead(500); res.end(String(e)); });
-        return;
-      }
-      if (apiPath === '/api/capture') {
-        const which = new URL(req.url, 'http://127.0.0.1').searchParams.get('which') || 'main';
-        captureScreenBy(which).then((b64) => {
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          res.end(b64 === null ? 'null' : b64);
-        }).catch((e) => { res.writeHead(500); res.end(String(e)); });
-        return;
-      }
-      if (apiPath === '/api/history') {
-        const mode = new URL(req.url, 'http://x').searchParams.get('mode');
-        if (req.method === 'GET') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(historyLoad(mode)));
-          return;
-        }
-        if (req.method === 'POST') {
-          const chunks = [];
-          req.on('data', (c) => chunks.push(c));
-          req.on('end', () => {
-            try { historySave(JSON.parse(Buffer.concat(chunks).toString('utf8')), mode); res.writeHead(204); }
-            catch (e) { res.writeHead(500); res.end(String(e)); }
-            res.end();
-          });
-          return;
-        }
-      }
-      if (apiPath === '/api/fstool' && req.method === 'POST') {
-        const chunks = [];
-        req.on('data', (c) => chunks.push(c));
-        req.on('end', async () => {
-          let call = {};
-          try { call = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch {}
-          const out = await runFsTool(call);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(out));
-        });
-        return;
-      }
-      if (apiPath === '/api/llm') {
-        onLlmActivity();
-        llmProxy.handleLlmRequest(req, res);
-        return;
-      }
-      handleApi(req, res);
-      return;
-    }
-
-    serveStaticAsset(req, res);
-  } catch (e) {
-    res.writeHead(500); res.end(String(e));
-  }
-}
-
-function serveStaticAsset(req, res) {
-  try {
-    let urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    if (urlPath === '/') urlPath = '/renderer/index.html';
-    if (urlPath.includes('\\')) {
-      res.writeHead(403); res.end('forbidden'); return;
-    }
-    const relPath = path.posix.normalize(urlPath).replace(/^\/+/, '');
-    if (!isStaticAssetAllowed(relPath)) {
-      res.writeHead(403); res.end('forbidden'); return;
-    }
-    const fsRel = relPath.startsWith('characters/') ? path.join('characters', relPath) : relPath;
-    const fsPath = path.join(APP_ROOT, fsRel);
-    const relToRoot = path.relative(APP_ROOT, fsPath);
-    if (relToRoot.startsWith('..') || path.isAbsolute(relToRoot)) {
-      res.writeHead(403); res.end('forbidden'); return;
-    }
-    fs.readFile(fsPath, (err, data) => {
-      if (err) { res.writeHead(404); res.end('not found: ' + urlPath); return; }
-      res.writeHead(200, {
-        'Content-Type': MIME[path.extname(fsPath).toLowerCase()] || 'application/octet-stream',
-        'Cache-Control': 'no-cache',
-      });
-      res.end(data);
-    });
-  } catch (e) {
-    res.writeHead(500); res.end(String(e));
-  }
-}
-
-// ===== 窗口管理、显示器与跨屏置顶守卫 =====
-function bedroomDisplay() {
-  const primary = screen.getPrimaryDisplay();
-  return screen.getAllDisplays().find((d) => d.id !== primary.id) || null;
-}
-function targetWorkArea() {
-  return (bedroomDisplay() || screen.getPrimaryDisplay()).workArea;
-}
-function unionBounds() {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const d of screen.getAllDisplays()) {
-    const b = d.bounds;
-    x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height);
-  }
-  if (!isFinite(x0)) return screen.getPrimaryDisplay().workArea;
-  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
-}
-function petArea() {
-  if (getConfig().petOnlyBedroom === true) {
-    const bedroom = bedroomDisplay();
-    if (bedroom) return bedroom.workArea;
-  }
-  return unionBounds();
-}
+// ===== 窗口管理、显示器与跨屏置顶守卫已抽至 main/windows.js =====
 
 app.on('before-quit', () => {
-  quitting = true;
+  windows.beginQuit();
   stopGSV().catch(() => {});
   stopASR();
 });
-
-function baseWin(area, opts = {}) {
-  const win = new BrowserWindow({
-    x: area.x, y: area.y, width: area.width, height: area.height,
-    transparent: opts.transparent !== false, frame: false, hasShadow: false, alwaysOnTop: opts.topmost !== false, skipTaskbar: true, resizable: false,
-    focusable: opts.focusable !== false,
-    ...(opts.backgroundColor ? { backgroundColor: opts.backgroundColor } : {}),
-    webPreferences: {
-      contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false,
-    },
-  });
-  win.setBounds(area);
-  return win;
-}
-function createWindow(port) {
-  const win = baseWin(targetWorkArea());
-  win.setIgnoreMouseEvents(!bedroomDisplay(), { forward: true });
-  const qs = [];
-  if (process.env.PET_DEBUG) qs.push('debug=1');
-  if (cliNoInfwake) qs.push('noinfwake=1');
-  win.loadURL(`http://127.0.0.1:${port}/` + (qs.length ? '?' + qs.join('&') : ''));
-  return win;
-}
-function createPetOverlay(port, area) {
-  const win = baseWin(area);
-  win.setIgnoreMouseEvents(true, { forward: true });
-  const qs = ['role=pet'];
-  if (process.env.PET_DEBUG) qs.push('debug=1');
-  if (process.env.PET_AUTOWAKE) qs.push('autowake=' + encodeURIComponent(process.env.PET_AUTOWAKE_TEXT || '1'));
-  if (cliNoInfwake) qs.push('noinfwake=1');
-  win.loadURL(`http://127.0.0.1:${port}/?` + qs.join('&'));
-  return win;
-}
-function createBedroomWindow(port, area) {
-  const win = baseWin(area, { focusable: true, topmost: false, transparent: false, backgroundColor: '#0e1628' });
-  win.setIgnoreMouseEvents(false);
-  win.loadURL(`http://127.0.0.1:${port}/renderer/room.html`);
-  return win;
-}
-
-const respawnTimes = { pet: [], bedroom: [] };
-function wireLife(win, name, respawn) {
-  winLog(name + ' created bounds=' + JSON.stringify(win.getBounds()));
-  setTimeout(() => { try { winLog(name + ' bounds@1s=' + JSON.stringify(win.getBounds())); } catch {} }, 1000);
-  win.webContents.on('render-process-gone', (e, d) => {
-    winLog(name + ' render-process-gone ' + JSON.stringify(d));
-    if (!quitting) { try { win.webContents.reload(); winLog(name + ' reloaded'); } catch (err) { winLog(name + ' reload FAIL ' + err.message); } }
-  });
-  win.on('unresponsive', () => winLog(name + ' unresponsive'));
-  win.on('closed', () => {
-    winLog(name + ' closed quitting=' + quitting);
-    if (quitting || !respawn) return;
-    const now = Date.now();
-    respawnTimes[name] = respawnTimes[name].filter((t) => now - t < 300000);
-    if (respawnTimes[name].length >= 3) { winLog(name + ' respawn skipped (rate limit)'); return; }
-    respawnTimes[name].push(now);
-    setTimeout(() => { if (!quitting) { try { respawn(); winLog(name + ' respawned'); } catch (e) { winLog(name + ' respawn FAIL ' + e.message); } } }, 400);
-  });
-}
-
-let topmostGuard = null;
-function startTopmostGuard() {
-  if (topmostGuard) return;
-  try {
-    const ps1 = path.join(__dirname, 'topmost-guard.ps1');
-    if (!fs.existsSync(ps1)) return;
-    topmostGuard = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1, '-PetPid', String(process.pid)], { windowsHide: true, stdio: 'ignore' });
-    topmostGuard.on('error', () => { topmostGuard = null; });
-    topmostGuard.on('exit', () => { topmostGuard = null; });
-  } catch {}
-}
-function spawnPetOverlay(port) {
-  petWin = createPetOverlay(port, petArea());
-  wireLife(petWin, 'pet', () => spawnPetOverlay(port));
-  petWin.on('always-on-top-changed', (e, on) => winLog('pet alwaysOnTop=' + on));
-  startTopmostGuard();
-}
-function spawnBedroom(port) {
-  if (!bedroomDisplay()) return;
-  bedroomWin = createBedroomWindow(port, bedroomDisplay().workArea);
-  wireLife(bedroomWin, 'bedroom', () => {
-    spawnBedroom(port);
-    try { bedroomWin.setAlwaysOnTop(false); } catch {}
-  });
-  bedroomWin.on('minimize', () => {
-    winLog('bedroom minimized -> restore');
-    try { bedroomWin.restore(); } catch {}
-  });
-}
 
 // ===== 应用初始化与 IPC 绑定 =====
 app.whenReady().then(() => {
@@ -527,7 +209,7 @@ app.whenReady().then(() => {
   });
   // 卧室里的铃铛：卧室窗只负责转发，真正走动的是桌宠窗
   ipcMain.on('pet-recenter', () => {
-    if (petWin && !petWin.isDestroyed()) petWin.webContents.send('pet-recenter');
+    if (windows.petWin && !windows.petWin.isDestroyed()) windows.petWin.webContents.send('pet-recenter');
   });
   ipcMain.on('room-reloaded', (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
@@ -576,35 +258,39 @@ app.whenReady().then(() => {
   ipcMain.handle('room-state-load', () => roomStateLoad());
   ipcMain.handle('room-state-save', (e, state) => roomStateSave(state));
 
-  const onDisplaysChanged = () => {
-    winLog('displays changed: ' + JSON.stringify(screen.getAllDisplays().map((d) => [d.id, d.bounds.x, d.bounds.y, d.bounds.width, d.bounds.height, d.scaleFactor])));
-    if (petWin) {
-      if (SPLIT_WINDOWS && bedroomDisplay()) {
-        petWin.setBounds(petArea());
-        petWin.setIgnoreMouseEvents(true, { forward: true });
-      } else {
-        petWin.setBounds(targetWorkArea());
-        petWin.setIgnoreMouseEvents(!bedroomDisplay(), { forward: true });
-      }
-      petWin.webContents.send('displays-changed');
-    }
-    if (bedroomWin && bedroomDisplay()) {
-      bedroomWin.setBounds(bedroomDisplay().workArea);
-      bedroomWin.webContents.send('displays-changed');
-    }
-  };
-  screen.on('display-added', onDisplaysChanged);
-  screen.on('display-removed', onDisplaysChanged);
-  screen.on('display-metrics-changed', onDisplaysChanged);
+  windows.bindDisplayEvents();
 
-  const server = http.createServer(serveStatic);
+  const server = createHttpServer({
+    APP_ROOT,
+    llmConfigMgr,
+    getConfig,
+    getInfwakeCutoff,
+    getInfwakePhaseId,
+    getGsvModeLabel,
+    getGsvIdleTimeoutMs,
+    bedroomDisplay: windows.bedroomDisplay,
+    getPetWin: () => windows.petWin,
+    roomStateLoad,
+    roomStateSave,
+    gpuUtil,
+    memoryAdd,
+    memorySearch,
+    fstoolTail,
+    getScreensInfo,
+    captureScreenBy,
+    historyLoad,
+    historySave,
+    runFsTool,
+    onLlmActivity,
+    llmProxy,
+    handleApi,
+  });
   server.listen(PORT, '127.0.0.1', () => {
-    if (SPLIT_WINDOWS && bedroomDisplay()) {
-      spawnBedroom(PORT);
-      spawnPetOverlay(PORT);
+    if (SPLIT_WINDOWS && windows.bedroomDisplay()) {
+      windows.spawnBedroom(PORT);
+      windows.spawnPetOverlay(PORT);
     } else {
-      petWin = createWindow(PORT);
-      wireLife(petWin, 'pet', null);
+      windows.spawnMainWindow(PORT);
     }
   });
   server.on('error', (e) => {

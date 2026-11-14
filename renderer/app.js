@@ -9,7 +9,10 @@ import { createAsrController } from './asr-recorder.js';
 import { stripThink, createContentFilter } from './stream-filter.js';
 import { createPetTools } from './pet-tools.js';
 import { createMemoryClient } from './memory-client.js';
-import { createInfiniteWake, REFLECT_TEXT } from './infinite-wake.js';
+import { createInfiniteWake } from './infinite-wake.js';
+import { createHistoryStore } from './history-store.js';
+import { createToolRunner } from './tool-runner.js';
+import { createRoomController } from './room.js';
 
 // 帧率封顶 30fps：桌宠动画（呼吸/眨眼/摇摆）足够流畅；60Hz 全速渲染会让 DWM 合成吃掉大量 GPU
 // 必须在 new Player() 之前装上——livliv 的渲染循环每帧经 window.requestAnimationFrame 排程
@@ -61,12 +64,7 @@ const input = $('input');
 const DEBUG_MODE = new URLSearchParams(location.search).has('debug');
 const ROLE = new URLSearchParams(location.search).get('role') || 'app'; // 'pet'=双窗里的桌宠窗（不画房间）
 const NO_INFWAKE = new URLSearchParams(location.search).has('noinfwake');
-const history = []; // 主对话内存缓存（只读背景源，无限唤醒不写入它）
-const infHistory = []; // 当前阶段无限唤醒记录（按截止时间分文件，唤醒提示词本身不写入）
-function getHistMode(isInf = false) {
-  if (isInf) return DEBUG_MODE ? 'debug-infwake' : 'infwake';
-  return DEBUG_MODE ? 'debug' : undefined;
-}
+const { history, infHistory, saveMessages, syncHistoryFromDisk } = createHistoryStore({ debugMode: DEBUG_MODE });
 // 运行时配置（主进程 llm.config + config.json + tts.config.json → /api/config）：每轮前自动刷新
 let llmConfig = normalizeLlmConfig();
 let TTS_CONFIG = { url: '/api/tts', request: {}, shortTextLimit: 60, splitShort: 'cut0', splitLong: 'cut5' };
@@ -79,62 +77,11 @@ async function refreshRuntimeConfig() {
     CHARACTER_PATH = String(c?.characterPath || '').trim();
     const reflectEvery = parseInt(c?.infwakeReflectEvery, 10);
     if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
-    applyBedroom(c?.bedroom);
+    room.applyBedroom(c?.bedroom);
   } catch {}
 }
-const initialConfigReady = refreshRuntimeConfig();
 if (DEBUG_MODE) $('dbgbadge').style.display = 'block';
-async function saveHistory(arr = history, isInf = false) {
-  const mode = getHistMode(isInf);
-  const qs = mode ? '?mode=' + mode : '';
-  try {
-    if (window.petWindow) await window.petWindow.historySave(arr, mode);
-    else await fetch('/api/history' + qs, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(arr) });
-  } catch (e) { console.error('聊天记录保存失败:', e); }
-}
-// 写历史统一入口：内部提示词（唤醒提示/反思提示）不落盘；replaceLast 用于续写同一轮回复
-function isInternalPrompt(m) {
-  if (m?.role !== 'user') return false;
-  const text = typeof m.content === 'string' ? m.content : textOf(m.content);
-  return text === INF_WAKE_TEXT || text === REFLECT_TEXT;
-}
-async function saveMessages(isInf, messages, replaceLast = false) {
-  const target = isInf ? infHistory : history;
-  const last = messages[messages.length - 1];
-  let changed = false;
-  if (replaceLast && last && target.length && target[target.length - 1].role === 'assistant') {
-    target[target.length - 1].content = last.content;
-    changed = true;
-  } else {
-    for (const m of messages) {
-      if (isInternalPrompt(m)) continue;
-      target.push(m); changed = true;
-    }
-  }
-  if (changed) return saveHistory(target, isInf);
-}
-async function syncHistoryFromDisk(isInf = false) {
-  const mode = getHistMode(isInf);
-  const qs = mode ? '?mode=' + mode : '';
-  let arr = [];
-  try {
-    arr = window.petWindow ? await window.petWindow.historyLoad(mode) : await (await fetch('/api/history' + qs)).json();
-    if (!Array.isArray(arr)) arr = [];
-  } catch { arr = []; }
-  if (!isInf && !arr.length && !DEBUG_MODE) {
-    // 一次性迁移（仅正式主历史）：旧 localStorage 有记录且从未迁移过时搬过来（迁移标记防止删档后复活）
-    try {
-      if (!localStorage.getItem('chatHistoryMigrated')) {
-        const legacy = JSON.parse(localStorage.getItem('chatHistory') || '[]');
-        if (Array.isArray(legacy) && legacy.length) { await saveHistory(legacy, false); arr = legacy; }
-        localStorage.setItem('chatHistoryMigrated', '1');
-        localStorage.removeItem('chatHistory');
-      }
-    } catch {}
-  }
-  const target = isInf ? infHistory : history;
-  target.splice(0, target.length, ...arr);
-}
+
 let unlocked = false;
 let busy = false;
 let turnSeq = 0;
@@ -192,7 +139,20 @@ Player.prototype.play = function() {
 const player = new Player($('pet'));
 const speech = createSpeech(player);
 const { speakSegment, speak } = createTtsController({ getTtsConfig: () => TTS_CONFIG, speech, touchTurnActivity });
-window.__pet = { player, speech, showBubble, get clickThrough() { return clickThrough; }, interrupt, room: { applyBedroom, set: setRoomState, update: updateInRoom, get state() { return roomState; }, get inRoom() { return inRoom; } } }; // 调试句柄
+const room = createRoomController({
+  role: ROLE,
+  roomEl: $('room'),
+  roomFrame: $('roomframe'),
+  getPetRect: () => petCanvas.getBoundingClientRect(),
+  isBusy: () => busy,
+  showBubble,
+  hideBubble,
+  recenterPet,
+  refreshDisplays,
+  layoutChat,
+});
+window.__pet = { player, speech, showBubble, get clickThrough() { return clickThrough; }, interrupt, room: { applyBedroom: room.applyBedroom, set: room.setRoomState, update: room.updateInRoom, get state() { return room.state; }, get inRoom() { return room.inRoom; } } }; // 调试句柄
+const initialConfigReady = refreshRuntimeConfig();
 
 function showBubble(text, isError = false) {
   bubble.textContent = text;
@@ -226,12 +186,13 @@ const memory = createMemoryClient({ debugMode: DEBUG_MODE });
 const petTools = createPetTools({
   ROLE,
   getDisplayInfo: () => displayInfo,
-  isBedroomMode: () => bedroomMode,
+  isBedroomMode: () => room.bedroomMode,
   displayCssRect,
   walkToCss,
   walkToFraction,
   memoryRecall: memory.recall,
 });
+const toolRunner = createToolRunner({ petTools, showBubble, touchTurnActivity });
 
 let lastExchange = null; // 记录最近一次底层请求与响应（供“继续”按钮使用）
 
@@ -398,44 +359,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         bodyMsgs.push({ role: 'assistant', content: msgContentBeforeTools || '', ...reasoningExtra, tool_calls: toolCalls });
       }
       for (const call of toolCalls) {
-        let parsed = {};
-        let parseOk = true;
-        try { parsed = JSON.parse(call.function?.arguments || '{}'); } catch { parseOk = false; }
-        if (!parseOk) {
-          bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: '错误：工具参数不是合法 JSON（通常是文本里的换行或引号没有正确转义）。请重新生成 arguments 为合法 JSON 后重试。' });
-          continue;
-        }
-        showBubble(round === 0 ? '看屏幕中…' : '继续翻…');
-        if (call.function?.name === 'search_memory') {
-          bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: await petTools.searchMemory(parsed) });
-          continue;
-        }
-        if (call.function?.name === 'walk_to') {
-          bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: await petTools.walkTo(parsed) });
-          continue;
-        }
-        touchTurnActivity();
-        const out = window.petWindow?.fsTool
-          ? await window.petWindow.fsTool({ name: call.function?.name, args: parsed })
-          : await (await fetch('/api/fstool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: call.function?.name, args: parsed }) })).json();
-        touchTurnActivity();
-        bodyMsgs.push({
-          role: 'tool', tool_call_id: call.id,
-          content: out.ok
-            ? String(out.result)
-            : (truncated
-              ? '错误：这次输出在 max_tokens 处被截断，工具参数不完整。请精简要写入的内容，或分成多次调用。'
-              : '错误：' + out.error),
-        });
-        if (out.image) {
-          bodyMsgs.push({
-            role: 'user',
-            content: [
-              { type: 'text', text: '（系统附上刚才工具生成的画面，请基于它继续处理用户的请求）' },
-              { type: 'image_url', image_url: { url: out.image } },
-            ],
-          });
-        }
+        await toolRunner.run(call, bodyMsgs, { round, truncated });
       }
       if (isLive) {
         // 不再把"（本轮使用了工具：…）"写进历史：她会模仿这句话冒充调用工具。
@@ -892,7 +816,7 @@ function rectHit(el, x, y, insetX = 0, insetY = 0) {
 function refreshClickThrough(x, y) {
   // 画布热区向内收一圈（画布四周是透明边距，收窄能少挡桌面）；输入框/气泡/图片预览/关闭钮外扩 6px 保证好点
   // 卧室整个矩形都是实体场景（盖住副屏），不穿透
-  const overRoom = roomRect && x >= roomRect.x && x <= roomRect.x + roomRect.width && y >= roomRect.y && y <= roomRect.y + roomRect.height;
+  const overRoom = room.rect && x >= room.rect.x && x <= room.rect.x + room.rect.width && y >= room.rect.y && y <= room.rect.y + room.rect.height;
   const overPending = pendingBox && pendingBox.style.display !== 'none' && rectHit(pendingBox, x, y, -6, -6);
   const overBubble = bubble && bubble.style.display !== 'none' && rectHit(bubble, x, y, -6, -6);
   const over = overRoom ||
@@ -991,9 +915,9 @@ window.addEventListener('mouseup', () => {
   if (!drag) return;
   if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
   dragTarget = null;
-  drag = null; layoutChat(); savePetPos(); ensurePetVisible(); updateInRoom(true);
+  drag = null; layoutChat(); savePetPos(); ensurePetVisible(); room.updateInRoom(true);
 });
-window.addEventListener('resize', () => { layoutChat(); syncRoomRect(); });
+window.addEventListener('resize', () => { layoutChat(); room.syncRoomRect(); });
 
 // 自己走过去：按房间比例 (fx,fy)=脚下位置，平滑滑行到目标（无迈腿动画）
 let walkToken = 0;
@@ -1025,7 +949,7 @@ function walkToFraction(fx, fy) {
         petWrap.style.setProperty('--pet-right', tgtR + 'px');
         petWrap.style.setProperty('--pet-y', tgtB + 'px');
       }
-      savePetPos(); ensurePetVisible(); updateInRoom(true);
+      savePetPos(); ensurePetVisible(); room.updateInRoom(true);
       // 她走到静止的光标底下时不会有新的 pointermove，主动按最后位置重算一次穿透，否则点不到/拖不动她
       if (lastPX >= 0) refreshClickThrough(lastPX, lastPY);
       resolve();
@@ -1132,7 +1056,7 @@ let petScale = Math.max(20, Math.min(100, parseFloat(localStorage.getItem('petSc
 function applyScale() {
   petWrap.style.setProperty('--pet-h', petScale + '%');
   layoutChat();
-  updateInRoom();
+  room.updateInRoom();
 }
 applyScale();
 petCanvas.addEventListener('wheel', (e) => {
@@ -1141,89 +1065,6 @@ petCanvas.addEventListener('wheel', (e) => {
   localStorage.setItem('petScale', String(petScale));
   applyScale();
 }, { passive: false });
-
-// ===== 卧室（副屏）：整间房（含窗帘/灯的样子与点击）归 pet_space/room/index.html 自己；
-// app 只负责：把 iframe 摆到卧室矩形、存 room-state.json、判断她在不在房间里、room_control 转发状态 =====
-const roomEl = $('room');
-const roomFrame = $('roomframe');
-// 桌宠窗永远不渲染房间（房间在独立卧室窗）：把隐藏 iframe 也置空。
-// 否则她的房间脚本会在桌宠窗里再跑一份——改动出 bug 会拖死桌宠窗的输入/拖动，
-// 而且页面加载时 self report 的状态会覆盖窗帘/灯存盘。
-if (ROLE === 'pet' && roomFrame) { try { roomFrame.src = 'about:blank'; } catch {} }
-let bedroomMode = false; // 整窗在副屏 = 卧室铺满视口
-let roomRect = null; // 卧室矩形（CSS px）；卧室模式下 = 整个视口
-let roomState = { curtain: 'open', lamp: 'off' };
-let inRoom = false;
-
-function applyBedroom(on) {
-  bedroomMode = ROLE === 'pet' ? false : !!on;   // 双窗：桌宠窗不画房间（房间在独立的卧室窗）
-  roomEl.style.display = bedroomMode ? 'block' : 'none';
-  syncRoomRect();
-}
-function syncRoomRect() {
-  roomRect = bedroomMode ? { x: 0, y: 0, width: innerWidth, height: innerHeight } : null;
-  updateInRoom();
-}
-// 把状态推给她的房间页（窗帘/灯由她渲染）
-function pushRoomState() {
-  try { roomFrame && roomFrame.contentWindow && roomFrame.contentWindow.postMessage({ type: 'set-room-state', state: roomState }, '*'); } catch {}
-}
-async function setRoomState(patch) {
-  if (patch.curtain === 'open' || patch.curtain === 'closed') roomState.curtain = patch.curtain;
-  if (patch.lamp === 'on' || patch.lamp === 'off') roomState.lamp = patch.lamp;
-  pushRoomState();
-  try {
-    if (window.petWindow) await window.petWindow.roomStateSave(roomState);
-    else await fetch('/api/room-state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(roomState) });
-  } catch {}
-}
-// 她的房间页点窗帘/灯后上报；只认这两种消息形状，其余一律忽略
-window.addEventListener('message', (e) => {
-  if (!roomFrame || e.source !== roomFrame.contentWindow) return;
-  const d = e.data;
-  if (!d || typeof d !== 'object') return;
-  if (d.type === 'pet-recenter') { recenterPet(); return; }
-  if (d.type === 'room-state-request') { pushRoomState(); return; }
-  if (d.type !== 'room-state') return;
-  if (d.curtain === 'open' || d.curtain === 'closed') roomState.curtain = d.curtain;
-  if (d.lamp === 'on' || d.lamp === 'off') roomState.lamp = d.lamp;
-  try {
-    if (window.petWindow) window.petWindow.roomStateSave(roomState);
-    else fetch('/api/room-state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(roomState) });
-  } catch {}
-});
-if (roomFrame) roomFrame.addEventListener('load', pushRoomState);
-// 她改了 pet_space/room/ 下的文件：只重载房间 iframe（带缓存戳），不用重启 app
-window.petWindow?.onRoomChanged?.(() => {
-  if (roomFrame) roomFrame.src = '/pet_space/room/index.html?t=' + Date.now();
-});
-// 人物画布中心落进卧室矩形 = 在卧室；announce 时（拖拽松手）播报一句
-function updateInRoom(announce = false) {
-  const was = inRoom;
-  if (!roomRect) { inRoom = false; return; }
-  const r = petCanvas.getBoundingClientRect();
-  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-  inRoom = cx >= roomRect.x && cx <= roomRect.x + roomRect.width && cy >= roomRect.y && cy <= roomRect.y + roomRect.height;
-  if (inRoom !== was && announce && !busy) {
-    showBubble(inRoom ? '回卧室啦~' : '出来陪你啦~');
-    setTimeout(() => { if (!busy) hideBubble(); }, 4000);
-  }
-}
-(async () => {
-  let s = null;
-  try { s = window.petWindow ? await window.petWindow.roomStateLoad() : await (await fetch('/api/room-state')).json(); } catch {}
-  roomState = { curtain: s?.curtain === 'closed' ? 'closed' : 'open', lamp: s?.lamp === 'on' ? 'on' : 'off' };
-  pushRoomState();
-})();
-// 副屏插拔/分辨率变化：主进程重算窗口后通知这里重新拿房间矩形
-window.petWindow?.onDisplaysChanged?.(async () => {
-  try {
-    const c = await (await fetch('/api/config', { cache: 'no-store' })).json();
-    applyBedroom(c?.bedroom);
-    await refreshDisplays();
-    layoutChat();
-  } catch {}
-});
 
 // ===== 诊断桩：仅在 ?debug=1 时每 2s 上报指针与视线参数（日常不写盘避免日志膨胀） =====
 if (DEBUG_MODE) {
