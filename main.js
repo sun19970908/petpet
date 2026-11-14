@@ -63,6 +63,13 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
 };
 
+// 静态资源白名单：页面、角色、性格档案、房间沙箱
+const STATIC_DIRS = ['renderer/', 'characters/', 'pet_space/room/'];
+const STATIC_FILES = new Set(['pet_space/persona.txt']);
+function isStaticAssetAllowed(relPath) {
+  return STATIC_FILES.has(relPath) || STATIC_DIRS.some((dir) => relPath.startsWith(dir));
+}
+
 // ===== 启动参数解析（只保留 debug；--no-infwake 由看门狗内部重启时使用） =====
 let cliNoInfwake = false;
 for (const arg of process.argv.slice(1)) {
@@ -337,11 +344,27 @@ function serveStatic(req, res) {
       return;
     }
 
+    serveStaticAsset(req, res);
+  } catch (e) {
+    res.writeHead(500); res.end(String(e));
+  }
+}
+
+function serveStaticAsset(req, res) {
+  try {
     let urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (urlPath === '/') urlPath = '/renderer/index.html';
-    const rel = urlPath.startsWith('/characters/') ? path.join('characters', urlPath) : urlPath;
-    const fsPath = path.join(APP_ROOT, rel);
-    if (!path.normalize(fsPath).startsWith(APP_ROOT)) {
+    if (urlPath.includes('\\')) {
+      res.writeHead(403); res.end('forbidden'); return;
+    }
+    const relPath = path.posix.normalize(urlPath).replace(/^\/+/, '');
+    if (!isStaticAssetAllowed(relPath)) {
+      res.writeHead(403); res.end('forbidden'); return;
+    }
+    const fsRel = relPath.startsWith('characters/') ? path.join('characters', relPath) : relPath;
+    const fsPath = path.join(APP_ROOT, fsRel);
+    const relToRoot = path.relative(APP_ROOT, fsPath);
+    if (relToRoot.startsWith('..') || path.isAbsolute(relToRoot)) {
       res.writeHead(403); res.end('forbidden'); return;
     }
     fs.readFile(fsPath, (err, data) => {
