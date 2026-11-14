@@ -14,6 +14,7 @@ const { createScreenTools } = require('./main/screen');
 const { createStorage } = require('./main/storage');
 const { createFsTools } = require('./main/fs-tools');
 const watchdogCtl = require('./lib/watchdog-ctl');
+const { loadConfig } = require('./lib/config-store');
 
 // 防护 Windows 下脱钩控制台/管道关闭时 console.log / pipe 触发的 EPIPE/EOF 未捕获异常弹窗
 if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on('error', () => {});
@@ -38,7 +39,9 @@ const SPLIT_WINDOWS = true;   // 双窗：卧室独立窗(锁副屏，不动) + 
 
 // GPU 策略：在多 GPU（如 AMD 核显 + NVIDIA 独显）跨卡多显环境下，必须启用独显上下文并首选高性能 GPU，
 // 否则 Chromium 软件合成器或核显模式无法通过 DXGI / WGC 抓取接在独显上的主屏。
-if (process.env.PET_HW_COMPOSITING === '0') {
+// config.json 的 hwCompositing=false 可退回软件合成（占用 CPU、GPU 基本为 0）。
+const BOOT_CONFIG = loadConfig(APP_ROOT);
+if (BOOT_CONFIG.hwCompositing === false) {
   app.commandLine.appendSwitch('disable-gpu-compositing');
 } else {
   app.commandLine.appendSwitch('gpu-preference', '2');
@@ -63,30 +66,17 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
 };
 
-// ===== CLI 参数与环境变量解析 =====
-let cliGsvMode = null;
-let cliGsvIdle = null;
-let cliCapMain = null;
-let cliCapRoom = null;
+// ===== 启动参数解析（只保留 debug；--no-infwake 由看门狗内部重启时使用） =====
 let cliNoInfwake = false;
-let cliLlmProfile = null;
-let cliThinkMode = null;
 for (const arg of process.argv.slice(1)) {
   if (!arg || arg === '.' || arg.endsWith('electron.exe') || arg.endsWith('main.js')) continue;
-  if (arg.startsWith('--gsv-mode=')) cliGsvMode = arg.slice(11);
-  else if (arg.startsWith('--gsv-idle=')) cliGsvIdle = arg.slice(11);
-  else if (arg.startsWith('--cap-main=')) cliCapMain = arg.slice(11);
-  else if (arg.startsWith('--cap-room=')) cliCapRoom = arg.slice(11);
-  else if (arg.startsWith('--llm=')) cliLlmProfile = arg.slice(6);
-  else if (arg.startsWith('--think=')) cliThinkMode = arg.slice(8);
-  else if (arg === '--no-infwake') cliNoInfwake = true;
+  if (arg === '--no-infwake') cliNoInfwake = true;
   else if (arg === 'debug' || arg === '--debug') process.env.PET_DEBUG = '1';
-  else if (['auto', 'always', 'on', 'never', 'off'].includes(arg.toLowerCase())) cliGsvMode = arg;
-  else if (/^\d+$/.test(arg)) cliGsvIdle = arg;
 }
 
-const CAP_MAIN_CFG = cliCapMain ?? process.env.PET_CAP_MAIN ?? 'main';
-const CAP_ROOM_CFG = cliCapRoom ?? process.env.PET_CAP_ROOM ?? 'room';
+// 截屏认屏：config.json 的 capMain/capRoom
+const CAP_MAIN_CFG = BOOT_CONFIG.capMain ?? 'main';
+const CAP_ROOM_CFG = BOOT_CONFIG.capRoom ?? 'room';
 
 let petWin = null;
 let bedroomWin = null;
@@ -111,7 +101,7 @@ const normalizeGsvMode = (v) => {
 
 const getGsvMode = () => {
   const cfg = getConfig();
-  const raw = cliGsvMode ?? process.env.PET_GSV_MODE ?? cfg.ttsMode ?? cfg.gsvMode ?? 'auto';
+  const raw = process.env.PET_GSV_MODE ?? cfg.ttsMode ?? cfg.gsvMode ?? 'auto';
   return normalizeGsvMode(raw);
 };
 
@@ -122,7 +112,7 @@ const getGsvModeLabel = () => {
 
 const getGsvIdleTimeoutMs = () => {
   const cfg = getConfig();
-  const raw = cliGsvIdle ?? process.env.PET_GSV_IDLE ?? cfg.ttsIdleSeconds ?? cfg.gsvIdleSeconds;
+  const raw = process.env.PET_GSV_IDLE ?? cfg.ttsIdleSeconds ?? cfg.gsvIdleSeconds;
   const sec = parseInt(raw, 10);
   return (Number.isFinite(sec) && sec > 0 ? sec : 600) * 1000;
 };
@@ -134,8 +124,7 @@ const { ensureGSV, stopGSV, ensureASR, stopASR, onLlmActivity, handleApi } = cre
 const llmConfigMgr = createLlmConfigManager({
   APP_ROOT,
   getConfig,
-  cliProfile: cliLlmProfile,
-  envThinkMode: cliThinkMode || (process.env.PET_THINK === 'off' ? 'off' : null),
+  envThinkMode: process.env.PET_THINK === 'off' ? 'off' : null,
 });
 const llmProxy = createLlmProxy({
   getServerConfig: () => llmConfigMgr.getServerConfig(),

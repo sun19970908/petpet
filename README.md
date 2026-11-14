@@ -25,14 +25,14 @@ Electron + [livliv player](https://github.com/livliv-dev/player) 的本地 AI �
 
 前置服务：Strata(8081) → 反代(11435)。
 
-双击运行 `start-pet.bat`，可带参数控制 GPT-SoVITS 语音服务生命周期：
+双击运行 `start-pet.bat`，启动参数只保留 `debug`（进入独立调试历史）：
 
 ```bat
-start-pet.bat               # 默认：按需启动模式，收到 LLM 请求时预热拉起，120s 无请求自动杀死释放显存
-start-pet.bat auto 180      # 按需启动模式，自定义 180s 无请求自动休眠
-start-pet.bat on            # 常驻模式：开机即拉起，一直常驻不休眠
-start-pet.bat off           # 纯静音/不启动模式：桌宠不拉起也不管理 GSV
+start-pet.bat          # 正常启动
+start-pet.bat debug    # 调试模式：独立调试历史
 ```
+
+GPT-SoVITS 语音生命周期等运行配置统一改 `config.json`（`ttsMode`、`gsvIdleSeconds`），或使用目录下的配置卡片（`set-config*.bat`）。
 
 ## 改代码
 

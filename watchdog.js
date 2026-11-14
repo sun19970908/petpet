@@ -116,9 +116,9 @@ function launchPet(why) {
   if (Date.now() - lastLaunch < 45000) return; // 冷却：避免上一轮刚拉起尚未就绪又叠着拉一次
   if (!canRestart()) { log('需要重启但 1 小时内已 5 次，暂缓（防连环崩）：' + why); return; }
   restarts.push(Date.now()); lastLaunch = Date.now();
-  const args = ['/c', PETBAT, WATCHDOG_GSV_MODE];
+  const args = ['/c', PETBAT];
   if (pendingStopInfwake) args.push('--no-infwake');
-  log(`重启宠物 start-pet.bat ${WATCHDOG_GSV_MODE}${pendingStopInfwake ? ' --no-infwake' : ''}（原因：${why}）`);
+  log(`重启宠物 start-pet.bat${pendingStopInfwake ? ' --no-infwake' : ''}（gsv=${WATCHDOG_GSV_MODE}，原因：${why}）`);
   try {
     const p = spawn('cmd', args, {
       detached: true,

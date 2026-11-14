@@ -8,5 +8,8 @@
   "gsvIdleSeconds": 600,
   "watchdog": false,
   "petOnlyBedroom": false,
+  "hwCompositing": true,
+  "capMain": "main",
+  "capRoom": "room",
   "llmProfile": "strata"
 }
