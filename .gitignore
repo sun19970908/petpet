@@ -32,3 +32,6 @@ llm.config.json
 Thumbs.db
 *.tmp
 *.swp
+
+set-config-day.bat
+set-config-night.bat

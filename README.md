@@ -32,7 +32,7 @@ start-pet.bat          # 正常启动
 start-pet.bat debug    # 调试模式：独立调试历史
 ```
 
-TTS 开关 `ttsMode` 在 `config.json`；TTS 运行参数（闲置、服务启动、切句阈值）和 GPT-SoVITS 原生请求参数都在 `tts.config.json` 的 `app` / `request` 两块。也可使用目录下的配置卡片（`set-config*.bat`）。
+TTS 开关 `ttsMode` 在 `config.json`；TTS 运行参数（闲置、服务启动、切句阈值）和 GPT-SoVITS 原生请求参数都在 `tts.config.json` 的 `app` / `request` 两块。也可使用目录下的通用配置卡片 `set-config.bat`。
 
 LLM 档案在 `llm.config.json`：每个档案分 `app`（上下文/唤醒阈值、能力与提示策略）和 `llm`（端点、密钥，以及 `request` 里的模型名与原生采样参数）；`config.json.llmProfile` 选择档案。
 
