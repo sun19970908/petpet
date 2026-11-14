@@ -9,7 +9,7 @@ import { createAsrController } from './asr-recorder.js';
 import { stripThink, createContentFilter } from './stream-filter.js';
 import { createPetTools } from './pet-tools.js';
 import { createMemoryClient } from './memory-client.js';
-import { createInfiniteWake } from './infinite-wake.js';
+import { createInfiniteWake, REFLECT_TEXT } from './infinite-wake.js';
 
 // 帧率封顶 30fps：桌宠动画（呼吸/眨眼/摇摆）足够流畅；60Hz 全速渲染会让 DWM 合成吃掉大量 GPU
 // 必须在 new Player() 之前装上——livliv 的渲染循环每帧经 window.requestAnimationFrame 排程
@@ -32,6 +32,9 @@ const TTS_REF = {
   ref_audio_path: 'G:/AI/livliv-pet/voices/yousa/ref-yousa_data.WAV_902400_1050560.wav',
   prompt_text: '就是本来生日是有一首原创歌曲的。',
 };
+
+// 无限唤醒反思间隔（config 注入；具体提醒逻辑在 infinite-wake.js）
+let REFLECT_EVERY = 8;
 
 // 两层提示词解耦：
 //   1) renderer/system-prompt.txt —— 系统提示词（宪法），在写沙箱之外，只有用户能改
@@ -80,6 +83,8 @@ async function refreshRuntimeConfig() {
     const nextThink = c?.llm?.promptPolicy?.thinkMode ?? c?.think;
     if (nextThink === 'off') THINK_MODE = 'off';
     else if (nextThink === 'custom' || THINK_MODULES[nextThink]) THINK_MODE = nextThink;
+    const reflectEvery = parseInt(c?.infwakeReflectEvery, 10);
+    if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
     applyBedroom(c?.bedroom);
   } catch {}
 }
@@ -93,8 +98,13 @@ async function saveHistory(arr = history, isInf = false) {
     else await fetch('/api/history' + qs, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(arr) });
   } catch (e) { console.error('聊天记录保存失败:', e); }
 }
-// 写历史统一入口：无限唤醒只跳过唤醒提示词本身；replaceLast 用于续写同一轮回复
-async function saveMessages(isInf, messages, replaceLast = false, skipUser = false) {
+// 写历史统一入口：内部提示词（唤醒提示/反思提示）不落盘；replaceLast 用于续写同一轮回复
+function isInternalPrompt(m) {
+  if (m?.role !== 'user') return false;
+  const text = typeof m.content === 'string' ? m.content : textOf(m.content);
+  return text === INF_WAKE_TEXT || text === REFLECT_TEXT;
+}
+async function saveMessages(isInf, messages, replaceLast = false) {
   const target = isInf ? infHistory : history;
   const last = messages[messages.length - 1];
   let changed = false;
@@ -103,7 +113,7 @@ async function saveMessages(isInf, messages, replaceLast = false, skipUser = fal
     changed = true;
   } else {
     for (const m of messages) {
-      if (skipUser && m.role === 'user') continue;
+      if (isInternalPrompt(m)) continue;
       target.push(m); changed = true;
     }
   }
@@ -265,10 +275,9 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   let lastSig = null;
   let repeatCount = 0;
   let toolCallTotal = 0;
-  // 正常回合（非无限唤醒）：user 消息与每个工具轮都边跑边写进主历史；无限唤醒只跳过唤醒提示词本身
+  // 正常回合（非无限唤醒）：user 消息与每个工具轮都边跑边写进主历史；内部提示词由 saveMessages 统一过滤
   const isLive = !continueBaseMsgs;
-  const skipWakePrompt = isInf && textOf(userContent) === INF_WAKE_TEXT;
-  if (isLive) saveMessages(isInf, [{ role: 'user', content: userContent }], false, skipWakePrompt);
+  if (isLive) saveMessages(isInf, [{ role: 'user', content: userContent }]);
   let emptyTextRetries = 0;
   // 查证类任务（质询她做过什么/读过什么）且本轮零工具调用 → 自动补一轮提醒（防凭印象作答，每任务最多一次）
   const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
@@ -285,6 +294,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   };
   for (let round = 0; ; round++) {
     touchTurnActivity();
+    if (isInf) wake.reflect(bodyMsgs);
     const slicer = makeSentenceSlicer();
     const sendMsgs = bodyMsgs.slice();
     const { startInThink, startInTool } = getPrefillState(sendMsgs);
@@ -653,6 +663,7 @@ const wake = createInfiniteWake({
   isBusy: () => busy,
   wakeText: INF_WAKE_TEXT,
   getCtxLimit: () => llmConfig?.contextLength,
+  getReflectEvery: () => REFLECT_EVERY,
 });
 wake.startKeepalive(60000);
 $('infwake').addEventListener('click', () => wake.toggle());

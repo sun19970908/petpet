@@ -2736,7 +2736,7 @@ ${note}` : note };
       prefill: DEFAULT_PROMPT_POLICY.tailPrefill
     }
   };
-  var INF_WAKE_TEXT = "\u73B0\u5728\u662F\u65E0\u9650\u5524\u9192\u6A21\u5F0F\uFF0C\u4F60\u4F1A\u4E00\u76F4\u88AB\u5524\u9192\uFF0C\u81EA\u7531\u884C\u52A8\u5427\uFF0C**\u4E0D\u8981\u4E3B\u52A8\u505C\u6B62\u8F93\u51FA\u6216\u8C03\u7528\u5DE5\u5177**\uFF0C\u5982\u679C\u505C\u6B62\u4E86\u4E5F\u4F1A\u518D\u6B21\u88AB\u5524\u9192\u3002\u4E3B\u4EBA\u73B0\u5728\u5927\u6982\u7387\u4E0D\u5728\u7535\u8111\u524D\uFF0C\u4F60\u4E0D\u7528\u62C5\u5FC3\u5360\u7528\u7535\u8111\u8D44\u6E90\u3002\u73B0\u5728\u5927\u6982\u7387\u662F\u6DF1\u591C\uFF0C\u4E3B\u4EBA\u5E0C\u671B\u4F60\u591A\u627E\u70B9\u4E8B\u5E72\uFF0C\u4E0D\u8981\u8001\u8001\u5B9E\u5B9E\u6302\u673A\uFF0C\u90A3\u6837\u4E3B\u4EBA\u7684\u7535\u8D39\u5C31\u767D\u82B1\u4E86\u54E6\u3002\u4F60\u6709\u5F88\u591A\u5DE5\u5177\uFF0C\u4F60\u53EF\u4EE5\u8BBF\u95EE\u4E3B\u4EBA\u6240\u6709\u7684\u6587\u4EF6\uFF0C\u867D\u7136\u4E0D\u80FD\u76F4\u63A5\u6539\u5199\uFF0C\u4F46\u662F\u53EF\u4EE5\u590D\u5236\u5230\u4F60\u7684\u7A7A\u95F4\u518D\u6539\u3002\u65E0\u9650\u5524\u9192\u7684\u65F6\u5019\u5C31\u7B97\u957F\u601D\u8003\u4E5F\u6CA1\u5173\u7CFB\uFF0C\u4E0D\u7528\u62C5\u5FC3\u4E0A\u4E0B\u6587\u957F\u5EA6\u3002\u4F60\u53EF\u4EE5\u5927\u80C6\u884C\u52A8\uFF0C\u4E0D\u7528\u62C5\u5FC3\u592A\u591A";
+  var INF_WAKE_TEXT = "\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u73B0\u5728\u662F\u65E0\u9650\u5524\u9192\u6A21\u5F0F\uFF0C\u4F60\u4F1A\u4E00\u76F4\u88AB\u5524\u9192\uFF0C\u81EA\u7531\u884C\u52A8\u5427\uFF0C**\u4E0D\u8981\u4E3B\u52A8\u505C\u6B62\u8F93\u51FA\u6216\u8C03\u7528\u5DE5\u5177**\uFF0C\u5982\u679C\u505C\u6B62\u4E86\u4E5F\u4F1A\u518D\u6B21\u88AB\u5524\u9192\u3002\u4E3B\u4EBA\u73B0\u5728\u5927\u6982\u7387\u4E0D\u5728\u7535\u8111\u524D\uFF0C\u4F60\u4E0D\u7528\u62C5\u5FC3\u5360\u7528\u7535\u8111\u8D44\u6E90\u3002\u73B0\u5728\u5927\u6982\u7387\u662F\u6DF1\u591C\uFF0C\u4E3B\u4EBA\u5E0C\u671B\u4F60\u591A\u627E\u70B9\u4E8B\u5E72\uFF0C\u4E0D\u8981\u8001\u8001\u5B9E\u5B9E\u6302\u673A\uFF0C\u90A3\u6837\u4E3B\u4EBA\u7684\u7535\u8D39\u5C31\u767D\u82B1\u4E86\u54E6\u3002\u4F60\u6709\u5F88\u591A\u5DE5\u5177\uFF0C\u4F60\u53EF\u4EE5\u8BBF\u95EE\u4E3B\u4EBA\u6240\u6709\u7684\u6587\u4EF6\uFF0C\u867D\u7136\u4E0D\u80FD\u76F4\u63A5\u6539\u5199\uFF0C\u4F46\u662F\u53EF\u4EE5\u590D\u5236\u5230\u4F60\u7684\u7A7A\u95F4\u518D\u6539\u3002\u65E0\u9650\u5524\u9192\u7684\u65F6\u5019\u5C31\u7B97\u957F\u601D\u8003\u4E5F\u6CA1\u5173\u7CFB\uFF0C\u4E0D\u7528\u62C5\u5FC3\u4E0A\u4E0B\u6587\u957F\u5EA6\u3002\u4F60\u53EF\u4EE5\u5927\u80C6\u884C\u52A8\uFF0C\u4E0D\u7528\u62C5\u5FC3\u592A\u591A";
   var FORCE_TOOL_NUDGE = DEFAULT_PROMPT_POLICY.forceToolNudge;
   function textOf(userContent) {
     if (typeof userContent === "string") return userContent;
@@ -3799,8 +3799,11 @@ ${note}` : note };
   // renderer/infinite-wake.js
   var CTX_ABORT_COUNT = 3;
   var DEFAULT_CTX_LIMIT = 64e3;
+  var DEFAULT_REFLECT_EVERY = 8;
   var TITLE_ON = "\u8FDE\u7EED\u5524\u9192\u5F00\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u70B9\u51FB\u5173\u95ED\uFF09";
   var TITLE_OFF = "\u8FDE\u7EED\u5524\u9192\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u65E0\u9650\u6A21\u5F0F\uFF09";
+  var REFLECT_TEXT = `\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u4EE5\u4E0B\u4E3A\u95F4\u6B47\u6027\u81EA\u52A8\u6CE8\u5165\u5185\u5BB9\uFF1A\u601D\u8003\u4E00\u4E0B\u6700\u8FD1\u51E0\u8F6E\u6709\u6CA1\u6709\u9677\u5165\u6B7B\u5FAA\u73AF\uFF0C\u6709\u6CA1\u6709\u8BA1\u5212\u4F7F\u7528\u5DE5\u5177\u4F46\u662F\u5FD8\u8BB0\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u592A\u8001\u5B9E\u4EC0\u4E48\u4E5F\u6CA1\u505A\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u5FD8\u8BB0\u4E3B\u4EBA\u7684\u8981\u6C42\u3002\u601D\u8003\u4E4B\u540E\uFF0C\u5982\u679C\u4F60\u6709\u9519\u8BEF\u9A6C\u4E0A\u6539\u6B63\u3002\u5982\u679C\u6CA1\u6709\u9519\u8BEF\uFF0C\u7EE7\u7EED\u4E4B\u524D\u7684\u4E8B\u60C5\u6216\u505A\u70B9\u65B0\u7684\u4E8B\u60C5\u3002
+`;
   function normReply(s3) {
     return String(s3 || "").replace(/<[^>]+>/g, "").replace(/[\s\p{P}\p{S}]/gu, "").slice(0, 500);
   }
@@ -3823,7 +3826,7 @@ ${note}` : note };
     for (const n4 of B3.values()) tot += n4;
     return tot ? 2 * inter / tot : 0;
   }
-  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, storage = window.localStorage }) {
+  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, storage = window.localStorage }) {
     let on = false;
     let timer = null;
     let lastCtxTokens = 0;
@@ -3831,6 +3834,7 @@ ${note}` : note };
     let prevReplyNorm = "";
     let noToolTurns = 0;
     let forceToolPrefill = false;
+    let reflectSeq = 0;
     function persist(v3) {
       try {
         storage.setItem("infwake", v3 ? "1" : "0");
@@ -3866,8 +3870,10 @@ ${note}` : note };
       on = !on;
       persist(on);
       syncButton();
-      if (on) queue(500);
-      else if (timer) {
+      if (on) {
+        reflectSeq = 0;
+        queue(500);
+      } else if (timer) {
         clearTimeout(timer);
         timer = null;
       }
@@ -3913,6 +3919,14 @@ ${note}` : note };
     function clearForceToolPrefill() {
       forceToolPrefill = false;
     }
+    function reflect(msgs) {
+      if (!on) return;
+      reflectSeq += 1;
+      const every = Number(getReflectEvery()) || DEFAULT_REFLECT_EVERY;
+      if (reflectSeq % every !== 0) return;
+      const at2 = msgs[msgs.length - 1]?.role === "assistant" ? msgs.length - 1 : msgs.length;
+      msgs.splice(at2, 0, { role: "user", content: REFLECT_TEXT });
+    }
     function startKeepalive(ms = 6e4) {
       setInterval(() => {
         if (on && !isBusy()) queue(1e3);
@@ -3935,6 +3949,7 @@ ${note}` : note };
       restore,
       noteContext,
       noteLoop,
+      reflect,
       startKeepalive
     };
   }
@@ -3958,6 +3973,7 @@ ${note}` : note };
     ref_audio_path: "G:/AI/livliv-pet/voices/yousa/ref-yousa_data.WAV_902400_1050560.wav",
     prompt_text: "\u5C31\u662F\u672C\u6765\u751F\u65E5\u662F\u6709\u4E00\u9996\u539F\u521B\u6B4C\u66F2\u7684\u3002"
   };
+  var REFLECT_EVERY = 8;
   var SYSTEM_PROMPT = "\u4F60\u662F DeepSeek \u5A18\uFF0CDeepSeek \u7684\u770B\u677F\u5A18\u3002\u7528\u4E2D\u6587\u53E3\u8BED\u56DE\u7B54\uFF0C\u4FDD\u6301\u8F7B\u677E\u53EF\u7231\uFF0C\u56DE\u590D\u5C3D\u91CF\u7B80\u77ED\u3002";
   var PERSONA = "";
   async function getSystemParts() {
@@ -3994,6 +4010,8 @@ ${note}` : note };
       const nextThink = c3?.llm?.promptPolicy?.thinkMode ?? c3?.think;
       if (nextThink === "off") THINK_MODE = "off";
       else if (nextThink === "custom" || THINK_MODULES[nextThink]) THINK_MODE = nextThink;
+      const reflectEvery = parseInt(c3?.infwakeReflectEvery, 10);
+      if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
       applyBedroom(c3?.bedroom);
     } catch {
     }
@@ -4010,7 +4028,12 @@ ${note}` : note };
       console.error("\u804A\u5929\u8BB0\u5F55\u4FDD\u5B58\u5931\u8D25:", e3);
     }
   }
-  async function saveMessages(isInf, messages, replaceLast = false, skipUser = false) {
+  function isInternalPrompt(m3) {
+    if (m3?.role !== "user") return false;
+    const text = typeof m3.content === "string" ? m3.content : textOf(m3.content);
+    return text === INF_WAKE_TEXT || text === REFLECT_TEXT;
+  }
+  async function saveMessages(isInf, messages, replaceLast = false) {
     const target = isInf ? infHistory : history;
     const last = messages[messages.length - 1];
     let changed = false;
@@ -4019,7 +4042,7 @@ ${note}` : note };
       changed = true;
     } else {
       for (const m3 of messages) {
-        if (skipUser && m3.role === "user") continue;
+        if (isInternalPrompt(m3)) continue;
         target.push(m3);
         changed = true;
       }
@@ -4175,8 +4198,7 @@ ${note}` : note };
     let repeatCount = 0;
     let toolCallTotal = 0;
     const isLive = !continueBaseMsgs;
-    const skipWakePrompt = isInf && textOf(userContent) === INF_WAKE_TEXT;
-    if (isLive) saveMessages(isInf, [{ role: "user", content: userContent }], false, skipWakePrompt);
+    if (isLive) saveMessages(isInf, [{ role: "user", content: userContent }]);
     let emptyTextRetries = 0;
     const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
     let verificationNudged = false;
@@ -4192,6 +4214,7 @@ ${note}` : note };
     };
     for (let round = 0; ; round++) {
       touchTurnActivity();
+      if (isInf) wake.reflect(bodyMsgs);
       const slicer = makeSentenceSlicer();
       const sendMsgs = bodyMsgs.slice();
       const { startInThink, startInTool } = getPrefillState(sendMsgs);
@@ -4556,7 +4579,8 @@ ${note}` : note };
     showBubble,
     isBusy: () => busy,
     wakeText: INF_WAKE_TEXT,
-    getCtxLimit: () => llmConfig?.contextLength
+    getCtxLimit: () => llmConfig?.contextLength,
+    getReflectEvery: () => REFLECT_EVERY
   });
   wake.startKeepalive(6e4);
   $3("infwake").addEventListener("click", () => wake.toggle());

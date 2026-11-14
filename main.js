@@ -225,6 +225,7 @@ function serveStatic(req, res) {
           gsvIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
           ttsIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
           watchdog: cfg.watchdog ?? false,
+          infwakeReflectEvery: cfg.infwakeReflectEvery,
           llmProfile: publicLlm.activeProfile,
           llm: publicLlm,
         }));

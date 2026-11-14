@@ -3,8 +3,11 @@
 
 const CTX_ABORT_COUNT = 3;
 const DEFAULT_CTX_LIMIT = 64000;
+const DEFAULT_REFLECT_EVERY = 8;
 const TITLE_ON = '连续唤醒开：她一停下来就再唤醒（点击关闭）';
 const TITLE_OFF = '连续唤醒：她一停下来就再唤醒（无限模式）';
+export const REFLECT_TEXT = `【系统提醒】以下为定期自动注入内容：思考一下最近几轮有没有陷入死循环，有没有计划使用工具但是忘记的情况，有没有太老实什么也没做的情况，有没有忘记主人的要求。思考之后，如果你有错误马上改正。如果没有错误，继续之前的事情或做点新的事情。
+`;
 
 function normReply(s) {
   return String(s || '').replace(/<[^>]+>/g, '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 500);
@@ -27,7 +30,7 @@ function replySim(a, b) {
   return tot ? (2 * inter) / tot : 0;
 }
 
-export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, storage = window.localStorage }) {
+export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, storage = window.localStorage }) {
   let on = false;
   let timer = null;
   let lastCtxTokens = 0;
@@ -35,6 +38,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
   let prevReplyNorm = '';
   let noToolTurns = 0;
   let forceToolPrefill = false;
+  let reflectSeq = 0;
 
   function persist(v) {
     try { storage.setItem('infwake', v ? '1' : '0'); } catch {}
@@ -69,7 +73,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
     on = !on;
     persist(on);
     syncButton();
-    if (on) queue(500);
+    if (on) { reflectSeq = 0; queue(500); }
     else if (timer) { clearTimeout(timer); timer = null; }
   }
 
@@ -112,6 +116,16 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
 
   function clearForceToolPrefill() { forceToolPrefill = false; }
 
+  // 反思提醒：所有无限唤醒请求都计数；最后一条是 assistant 预填充时插在它之前，保持续写状态
+  function reflect(msgs) {
+    if (!on) return;
+    reflectSeq += 1;
+    const every = Number(getReflectEvery()) || DEFAULT_REFLECT_EVERY;
+    if (reflectSeq % every !== 0) return;
+    const at = msgs[msgs.length - 1]?.role === 'assistant' ? msgs.length - 1 : msgs.length;
+    msgs.splice(at, 0, { role: 'user', content: REFLECT_TEXT });
+  }
+
   // 循环万一因异常断了，兜底续上
   function startKeepalive(ms = 60000) {
     setInterval(() => { if (on && !isBusy()) queue(1000); }, ms);
@@ -128,6 +142,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
     restore,
     noteContext,
     noteLoop,
+    reflect,
     startKeepalive,
   };
 }
