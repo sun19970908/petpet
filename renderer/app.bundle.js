@@ -4010,7 +4010,7 @@ ${note}` : note };
       console.error("\u804A\u5929\u8BB0\u5F55\u4FDD\u5B58\u5931\u8D25:", e3);
     }
   }
-  async function saveMessages(isInf, messages, replaceLast = false) {
+  async function saveMessages(isInf, messages, replaceLast = false, skipUser = false) {
     const target = isInf ? infHistory : history;
     const last = messages[messages.length - 1];
     let changed = false;
@@ -4019,10 +4019,9 @@ ${note}` : note };
       changed = true;
     } else {
       for (const m3 of messages) {
-        if (!isInf || m3.role === "assistant") {
-          target.push(m3);
-          changed = true;
-        }
+        if (skipUser && m3.role === "user") continue;
+        target.push(m3);
+        changed = true;
       }
     }
     if (changed) return saveHistory(target, isInf);
@@ -4176,7 +4175,8 @@ ${note}` : note };
     let repeatCount = 0;
     let toolCallTotal = 0;
     const isLive = !continueBaseMsgs;
-    if (isLive) saveMessages(isInf, [{ role: "user", content: userContent }]);
+    const skipWakePrompt = isInf && textOf(userContent) === INF_WAKE_TEXT;
+    if (isLive) saveMessages(isInf, [{ role: "user", content: userContent }], false, skipWakePrompt);
     let emptyTextRetries = 0;
     const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
     let verificationNudged = false;

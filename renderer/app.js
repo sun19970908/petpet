@@ -65,7 +65,7 @@ const DEBUG_MODE = new URLSearchParams(location.search).has('debug');
 const ROLE = new URLSearchParams(location.search).get('role') || 'app'; // 'pet'=双窗里的桌宠窗（不画房间）
 const NO_INFWAKE = new URLSearchParams(location.search).has('noinfwake');
 const history = []; // 主对话内存缓存（只读背景源，无限唤醒不写入它）
-const infHistory = []; // 当前阶段无限唤醒记录（按截止时间分文件，只存纯 assistant 回复）
+const infHistory = []; // 当前阶段无限唤醒记录（按截止时间分文件，唤醒提示词本身不写入）
 function getHistMode(isInf = false) {
   if (isInf) return DEBUG_MODE ? 'debug-infwake' : 'infwake';
   return DEBUG_MODE ? 'debug' : undefined;
@@ -93,8 +93,8 @@ async function saveHistory(arr = history, isInf = false) {
     else await fetch('/api/history' + qs, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(arr) });
   } catch (e) { console.error('聊天记录保存失败:', e); }
 }
-// 写历史统一入口：主历史收 user/assistant，无限唤醒只收 assistant；replaceLast 用于续写同一轮回复
-async function saveMessages(isInf, messages, replaceLast = false) {
+// 写历史统一入口：无限唤醒只跳过唤醒提示词本身；replaceLast 用于续写同一轮回复
+async function saveMessages(isInf, messages, replaceLast = false, skipUser = false) {
   const target = isInf ? infHistory : history;
   const last = messages[messages.length - 1];
   let changed = false;
@@ -103,7 +103,8 @@ async function saveMessages(isInf, messages, replaceLast = false) {
     changed = true;
   } else {
     for (const m of messages) {
-      if (!isInf || m.role === 'assistant') { target.push(m); changed = true; }
+      if (skipUser && m.role === 'user') continue;
+      target.push(m); changed = true;
     }
   }
   if (changed) return saveHistory(target, isInf);
@@ -264,9 +265,10 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   let lastSig = null;
   let repeatCount = 0;
   let toolCallTotal = 0;
-  // 正常回合（非无限唤醒）：user 消息与每个工具轮都边跑边写进主历史；无限唤醒绝不写 user 占位进历史
+  // 正常回合（非无限唤醒）：user 消息与每个工具轮都边跑边写进主历史；无限唤醒只跳过唤醒提示词本身
   const isLive = !continueBaseMsgs;
-  if (isLive) saveMessages(isInf, [{ role: 'user', content: userContent }]);
+  const skipWakePrompt = isInf && textOf(userContent) === INF_WAKE_TEXT;
+  if (isLive) saveMessages(isInf, [{ role: 'user', content: userContent }], false, skipWakePrompt);
   let emptyTextRetries = 0;
   // 查证类任务（质询她做过什么/读过什么）且本轮零工具调用 → 自动补一轮提醒（防凭印象作答，每任务最多一次）
   const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
