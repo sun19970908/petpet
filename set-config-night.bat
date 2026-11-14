@@ -17,10 +17,7 @@ rem    on   = 常驻显存 (响应最快，但一直占显存)
 rem    off  = 完全静音
 set "TTS_MODE=off"
 
-rem 3. 语音闲置保持秒数 (仅在 auto 模式下有效，默认 120 秒)
-set "GSV_IDLE=120"
-
-rem 4. 是否同步开启看门狗守护进程：
+rem 3. 是否同步开启看门狗守护进程：
 rem    on  = 记录开启（只写配置，不主动拉起，避免顺带启动桌宠）
 rem    off = 立即关闭运行中的看门狗
 set "WATCHDOG=on"
@@ -39,7 +36,7 @@ if errorlevel 1 (
 "%NODE_CMD%" "%~dp0lib\apply-config.js" "%~f0"
 if errorlevel 1 (
   echo [WARN] Node 改写失败，尝试 PowerShell 备用通道...
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%~dp0config.json'; $c=Get-Content -Raw $p | ConvertFrom-Json; if('%LLM_PROFILE%') { $c.llmProfile='%LLM_PROFILE%' }; if('%TTS_MODE%') { $c.ttsMode='%TTS_MODE%' }; if('%GSV_IDLE%') { $c.ttsIdleSeconds=[int]'%GSV_IDLE%' }; $c.watchdog=('%WATCHDOG%' -eq 'on'); [IO.File]::WriteAllText($p, ($c | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false)); Write-Host '[OK] 已通过备用通道成功改写 config.json！'"
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%~dp0config.json'; $c=Get-Content -Raw $p | ConvertFrom-Json; if('%LLM_PROFILE%') { $c.llmProfile='%LLM_PROFILE%' }; if('%TTS_MODE%') { $c.ttsMode='%TTS_MODE%' }; $c.watchdog=('%WATCHDOG%' -eq 'on'); [IO.File]::WriteAllText($p, ($c | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false)); Write-Host '[OK] 已通过备用通道成功改写 config.json！'"
 )
 
 rem 看门狗只在 WATCHDOG=off 时关闭；on 只写配置，下次启动桌宠时生效

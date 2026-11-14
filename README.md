@@ -4,7 +4,7 @@ Electron + [livliv player](https://github.com/livliv-dev/player) 的本地 AI �
 
 - 形象：p01 "Kujira"（上善无形绘，CC BY-NC-SA 4.0，个人非商用）
 - 大脑：本地 Strata（经反代 11435，`strata-nothink` 关思考）
-- 语音：GPT-SoVITS v2 **泠鸢yousa**（真人歌手，HF yousaforever 训练包；9880，转发层 ffmpeg wav→mp3；权重在 `voices/yousa/`，原生请求参数在 `tts.config.json`，开关和启动参数在 `config.json`；芙宁娜套件保留在 `voices/` 和 `start-gsv-furina.bat` 备用）
+- 语音：GPT-SoVITS v2 **泠鸢yousa**（真人歌手，HF yousaforever 训练包；9880，转发层 ffmpeg wav→mp3；权重在 `voices/yousa/`；开关在 `config.json`，TTS 运行参数和原生请求在 `tts.config.json`；芙宁娜套件保留在 `voices/` 和 `start-gsv-furina.bat` 备用）
 - **全屏透明层架构**：Electron 窗口盖满工作区，默认 `setIgnoreMouseEvents(true, {forward:true})` 鼠标穿透——livliv 原生视线跟随/挑眉/微笑全屏生效；悬停人物画布（向内收 14%）或输入框/气泡时自动关闭穿透。拖她 = 挪人物位置（localStorage 记忆），不是挪窗口
 - 表情联动：回复含"大肥鱼"→angry+shake；害羞/讨厌→shy；哼/生气→angry；对不起→sad；默认 smile（所有表情 4 秒闪现回中性）
 - **语义记忆（Orama + 硅基流动）**：`@orama/orama` + `@orama/tokenizers/mandarin`（`createTokenizer()` 工厂，非默认导出）+ SF `BAAI/bge-m3`（1024 维，key 在 `config.json`，来自 st_memory_table）。索引文件 `history/memory.orama`（debug: `debug-memory.orama`），启动时回填存量聊天记录；每轮对话自动入索引；每条消息前 hybrid 检索 top-5 注入【相关回忆】；她的新工具 `search_memory` 可自查记忆。embedding 失败自动退化为纯词法检索
@@ -32,7 +32,7 @@ start-pet.bat          # 正常启动
 start-pet.bat debug    # 调试模式：独立调试历史
 ```
 
-TTS 开关和生命周期（`ttsMode`、`ttsIdleSeconds`、`ttsServer`、切句阈值）在 `config.json`；GPT-SoVITS 原生请求参数在 `tts.config.json`。也可使用目录下的配置卡片（`set-config*.bat`）。
+TTS 开关 `ttsMode` 在 `config.json`；TTS 运行参数（闲置、服务启动、切句阈值）和 GPT-SoVITS 原生请求参数都在 `tts.config.json` 的 `app` / `request` 两块。也可使用目录下的配置卡片（`set-config*.bat`）。
 
 ## 改代码
 

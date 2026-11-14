@@ -41,6 +41,7 @@ const SPLIT_WINDOWS = true;   // 双窗：卧室独立窗(锁副屏，不动) + 
 // 否则 Chromium 软件合成器或核显模式无法通过 DXGI / WGC 抓取接在独显上的主屏。
 // config.json 的 hwCompositing=false 可退回软件合成（占用 CPU、GPU 基本为 0）。
 const BOOT_CONFIG = loadConfig(APP_ROOT);
+const BOOT_TTS_CONFIG = loadTtsConfig(APP_ROOT);
 if (BOOT_CONFIG.hwCompositing === false) {
   app.commandLine.appendSwitch('disable-gpu-compositing');
 } else {
@@ -106,11 +107,11 @@ const getGsvModeLabel = () => {
   return m === 'always' ? 'on' : m === 'never' ? 'off' : 'auto';
 };
 
-const getGsvIdleTimeoutMs = () => loadConfig(APP_ROOT).ttsIdleSeconds * 1000;
+const getGsvIdleTimeoutMs = () => loadTtsConfig(APP_ROOT).app.idleSeconds * 1000;
 
 const { ensureGSV, stopGSV, ensureASR, stopASR, onLlmActivity, handleApi } = createVoiceAndApi({
   APP_ROOT, GSV_MODE: getGsvMode(), getGsvMode, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs,
-  ttsServer: BOOT_CONFIG.ttsServer, appendLine, createRotatingStream,
+  ttsServer: BOOT_TTS_CONFIG.app.server, appendLine, createRotatingStream,
 });
 
 const llmConfigMgr = createLlmConfigManager({
@@ -210,11 +211,11 @@ function serveStatic(req, res) {
           infwakeReflectEvery: cfg.infwakeReflectEvery,
           llmProfile: publicLlm.activeProfile,
           tts: {
-            url: cfg.ttsUrl,
-            request: ttsCfg,
-            shortTextLimit: cfg.ttsShortTextLimit,
-            splitShort: cfg.ttsSplitShort,
-            splitLong: cfg.ttsSplitLong,
+            url: ttsCfg.app.url,
+            request: ttsCfg.request,
+            shortTextLimit: ttsCfg.app.shortTextLimit,
+            splitShort: ttsCfg.app.splitShort,
+            splitLong: ttsCfg.app.splitLong,
           },
           llm: publicLlm,
         }));

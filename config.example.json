@@ -10,18 +10,5 @@
   "capMain": "main",
   "capRoom": "room",
   "llmProfile": "strata",
-  "ttsMode": "on",
-  "ttsIdleSeconds": 120,
-  "ttsUrl": "/api/tts",
-  "ttsServer": {
-    "dir": "G:\\GPT-SoVITS-v2pro-20250604",
-    "python": "runtime\\python.exe",
-    "config": "GPT_SoVITS/configs/tts_infer_yousa.yaml",
-    "gpu": "0",
-    "port": 9880,
-    "startTimeoutMs": 90000
-  },
-  "ttsShortTextLimit": 60,
-  "ttsSplitShort": "cut0",
-  "ttsSplitLong": "cut5"
+  "ttsMode": "on"
 }
