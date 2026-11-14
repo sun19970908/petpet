@@ -50,10 +50,6 @@ if (BOOT_CONFIG.hwCompositing === false) {
 }
 app.commandLine.appendSwitch('enable-features', 'WebRtcAllowWgcScreenCapturer');
 
-const THINK_MODE = ['pet_think', 'off'].includes((process.env.PET_THINK || '').toLowerCase())
-  ? process.env.PET_THINK.toLowerCase()
-  : 'pet_think';
-
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -117,7 +113,7 @@ const { ensureGSV, stopGSV, ensureASR, stopASR, onLlmActivity, handleApi } = cre
 const llmConfigMgr = createLlmConfigManager({
   APP_ROOT,
   getConfig,
-  envThinkMode: process.env.PET_THINK === 'off' ? 'off' : null,
+  envNoTail: process.env.PET_THINK === 'off',
 });
 const llmProxy = createLlmProxy({
   getServerConfig: () => llmConfigMgr.getServerConfig(),
@@ -199,7 +195,6 @@ function serveStatic(req, res) {
         const ttsCfg = loadTtsConfig(APP_ROOT);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
-          think: publicLlm.promptPolicy?.thinkMode || THINK_MODE,
           bedroom: Boolean(bedroomDisplay()),
           infwakeCutoff: getInfwakeCutoff().str,
           infwakePhase: getInfwakePhaseId(),

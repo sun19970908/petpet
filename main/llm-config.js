@@ -1,4 +1,5 @@
 // 通用 LLM 配置层（主进程）：只保存标准 OpenAI 兼容 API 字段与桌宠适配参数，不绑定特定厂商逻辑
+// llm.config.json 每个档案按 app（桌宠运行参数）与 llm（连接 + request 原生请求体）存放；这里展平成内部结构
 const { loadLlmConfig, readJson, configPath, resolveActiveProfile } = require('../lib/config-store');
 
 const DEFAULT_PROFILE = {
@@ -20,7 +21,6 @@ const DEFAULT_PROFILE = {
     prefixMode: 'continue_final_message',
   },
   promptPolicy: {
-    thinkMode: 'pet_think',
     tailMode: 'prefill_assistant',
     tailInstruction:
       '思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以"人设档案"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止思考自身身份（如deepseek娘）或思考语气（如傲娇嘴硬）等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n 不要用文字罗列“我用了哪些工具”来冒充调用记录，要用工具就必须真的输出<tool_call>！\n ',
@@ -57,7 +57,14 @@ function mergeProfile(base, override) {
   };
 }
 
-function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envThinkMode = null }) {
+function normalizeProfileShape(raw) {
+  const { app = {}, llm = {} } = raw || {};
+  const { request = {}, ...llmRest } = llm;
+  const { model, ...requestDefaults } = request;
+  return { ...app, ...llmRest, model, requestDefaults };
+}
+
+function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envNoTail = false }) {
   function getServerConfig() {
     const fileCfg = loadLlmConfig(APP_ROOT);
     const appCfg = typeof getConfig === 'function' ? (getConfig() || {}) : {};
@@ -70,14 +77,15 @@ function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envThi
       envProfile: process.env.PET_LLM_PROFILE,
     });
 
-    const fileProfile = fileCfg.profiles && typeof fileCfg.profiles === 'object' ? fileCfg.profiles[profileName] : null;
+    const fileProfileRaw = fileCfg.profiles && typeof fileCfg.profiles === 'object' ? fileCfg.profiles[profileName] : null;
     const appInline = appCfg.llm && typeof appCfg.llm === 'object' ? appCfg.llm : null;
+    const fileProfile = normalizeProfileShape(fileProfileRaw);
 
     let merged = mergeProfile(DEFAULT_PROFILE, fileProfile);
     if (appInline) merged = mergeProfile(merged, appInline);
 
-    if (envThinkMode === 'off') {
-      merged.promptPolicy.thinkMode = 'off';
+    if (envNoTail) {
+      merged.promptPolicy.tailMode = 'none';
     }
 
     let apiKey = String(merged.apiKey || '').trim();

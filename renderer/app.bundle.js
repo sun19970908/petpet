@@ -2583,7 +2583,6 @@ void main(){ o=texture(uTex,vUv); }`;
 
   // renderer/llm-adapter.js
   var DEFAULT_PROMPT_POLICY = {
-    thinkMode: "pet_think",
     tailMode: "prefill_assistant",
     tailInstruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u601D\u8003\u81EA\u8EAB\u8EAB\u4EFD\uFF08\u5982deepseek\u5A18\uFF09\u6216\u601D\u8003\u8BED\u6C14\uFF08\u5982\u50B2\u5A07\u5634\u786C\uFF09\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n \u4E0D\u8981\u7528\u6587\u5B57\u7F57\u5217\u201C\u6211\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u201D\u6765\u5192\u5145\u8C03\u7528\u8BB0\u5F55\uFF0C\u8981\u7528\u5DE5\u5177\u5C31\u5FC5\u987B\u771F\u7684\u8F93\u51FA<tool_call>\uFF01\n ',
     tailPrefill: "<think>\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6\n</think>\n",
@@ -2728,12 +2727,6 @@ ${note}` : note };
   }
 
   // renderer/prompt-builder.js
-  var THINK_MODULES = {
-    pet_think: {
-      instruction: DEFAULT_PROMPT_POLICY.tailInstruction,
-      prefill: DEFAULT_PROMPT_POLICY.tailPrefill
-    }
-  };
   var INF_WAKE_TEXT = "\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u73B0\u5728\u662F\u65E0\u9650\u5524\u9192\u6A21\u5F0F\uFF0C\u4F60\u4F1A\u4E00\u76F4\u88AB\u5524\u9192\uFF0C\u81EA\u7531\u884C\u52A8\u5427\uFF0C**\u4E0D\u8981\u4E3B\u52A8\u505C\u6B62\u8F93\u51FA\u6216\u8C03\u7528\u5DE5\u5177**\uFF0C\u5982\u679C\u505C\u6B62\u4E86\u4E5F\u4F1A\u518D\u6B21\u88AB\u5524\u9192\u3002\u4E3B\u4EBA\u73B0\u5728\u5927\u6982\u7387\u4E0D\u5728\u7535\u8111\u524D\uFF0C\u4F60\u4E0D\u7528\u62C5\u5FC3\u5360\u7528\u7535\u8111\u8D44\u6E90\u3002\u73B0\u5728\u5927\u6982\u7387\u662F\u6DF1\u591C\uFF0C\u4E3B\u4EBA\u5E0C\u671B\u4F60\u591A\u627E\u70B9\u4E8B\u5E72\uFF0C\u4E0D\u8981\u8001\u8001\u5B9E\u5B9E\u6302\u673A\uFF0C\u90A3\u6837\u4E3B\u4EBA\u7684\u7535\u8D39\u5C31\u767D\u82B1\u4E86\u54E6\u3002\u4F60\u6709\u5F88\u591A\u5DE5\u5177\uFF0C\u4F60\u53EF\u4EE5\u8BBF\u95EE\u4E3B\u4EBA\u6240\u6709\u7684\u6587\u4EF6\uFF0C\u867D\u7136\u4E0D\u80FD\u76F4\u63A5\u6539\u5199\uFF0C\u4F46\u662F\u53EF\u4EE5\u590D\u5236\u5230\u4F60\u7684\u7A7A\u95F4\u518D\u6539\u3002\u65E0\u9650\u5524\u9192\u7684\u65F6\u5019\u5C31\u7B97\u957F\u601D\u8003\u4E5F\u6CA1\u5173\u7CFB\uFF0C\u4E0D\u7528\u62C5\u5FC3\u4E0A\u4E0B\u6587\u957F\u5EA6\u3002\u4F60\u53EF\u4EE5\u5927\u80C6\u884C\u52A8\uFF0C\u4E0D\u7528\u62C5\u5FC3\u592A\u591A";
   function textOf(userContent) {
     if (typeof userContent === "string") return userContent;
@@ -2826,11 +2819,9 @@ ${note}` : note };
   }
   function buildTailMessages({
     policy = DEFAULT_PROMPT_POLICY,
-    thinkMode,
     forceToolPrefill = false,
     isInfiniteWake = false
   } = {}) {
-    const effectiveThink = thinkMode ?? policy.thinkMode ?? "pet_think";
     if (forceToolPrefill && isInfiniteWake) {
       if (policy.forceToolMode === "tool_choice_required") {
         return {
@@ -2851,7 +2842,7 @@ ${note}` : note };
         forceRequiredTool: false
       };
     }
-    if (effectiveThink === "off" || policy.tailMode === "none") {
+    if (policy.tailMode === "none") {
       return {
         tailMessages: [],
         inlineLastUserInstruction: "",
@@ -2890,7 +2881,6 @@ ${note}` : note };
     isInfiniteWake = false,
     userContent = "",
     toolLedger = "",
-    thinkMode,
     llmConfig: llmConfig2 = null,
     forceToolPrefill = false,
     continueBaseMsgs = null
@@ -2906,7 +2896,6 @@ ${note}` : note };
     const policy = cfg.promptPolicy;
     const tail = buildTailMessages({
       policy,
-      thinkMode: thinkMode ?? policy.thinkMode,
       forceToolPrefill,
       isInfiniteWake
     });
@@ -4000,7 +3989,6 @@ ${note}` : note };
     if (isInf) return DEBUG_MODE ? "debug-infwake" : "infwake";
     return DEBUG_MODE ? "debug" : void 0;
   }
-  var THINK_MODE = "pet_think";
   var llmConfig = normalizeLlmConfig();
   var TTS_CONFIG = { url: "/api/tts", request: {}, shortTextLimit: 60, splitShort: "cut0", splitLong: "cut5" };
   async function refreshRuntimeConfig() {
@@ -4008,9 +3996,6 @@ ${note}` : note };
       const c3 = await (await fetch("/api/config", { cache: "no-store" })).json();
       if (c3?.llm) llmConfig = normalizeLlmConfig(c3.llm);
       if (c3?.tts) TTS_CONFIG = c3.tts;
-      const nextThink = c3?.llm?.promptPolicy?.thinkMode ?? c3?.think;
-      if (nextThink === "off") THINK_MODE = "off";
-      else if (nextThink === "custom" || THINK_MODULES[nextThink]) THINK_MODE = nextThink;
       const reflectEvery = parseInt(c3?.infwakeReflectEvery, 10);
       if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
       applyBedroom(c3?.bedroom);
@@ -4186,7 +4171,6 @@ ${note}` : note };
         isInfiniteWake: isInf,
         userContent,
         toolLedger: ledger,
-        thinkMode: THINK_MODE,
         llmConfig,
         forceToolPrefill: wake.forceToolPrefill
       });

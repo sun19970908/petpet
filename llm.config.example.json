@@ -1,61 +1,67 @@
 {
   "profiles": {
     "strata": {
-      "baseUrl": "http://127.0.0.1:11435/v1/chat/completions",
-      "apiKey": "",
-      "model": "strata-nothink",
-      "wakeGpuLimit": 40,
-      "contextLength": 65536,
-      "customPrompt": "【关于模型】\n- 你的驱动是本地大模型，不用担心token\n- 主人的上下文长度为262k，模型prefill略慢，\n\n# 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n\n❌ <invoke name=\"read_file\"><parameter name=\"path\">G:/…/README.md</parameter></invoke>\n✅ <tool_call>\n   {\"name\": \"read_file\", \"arguments\": {\"path\": \"G:/AI/livliv-pet/pet_space/todo-for-master.md\"}}\n   </tool_call>",
-      "requestDefaults": {
-        "temperature": 0.8,
-        "max_tokens": 65536
+      "app": {
+        "wakeGpuLimit": 40,
+        "contextLength": 65536,
+        "customPrompt": "【关于模型】\n- 你的驱动是本地大模型，不用担心token\n- 主人的上下文长度为262k，模型prefill略慢，\n\n# 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n\n❌ <invoke name=\"read_file\"><parameter name=\"path\">G:/…/README.md</parameter></invoke>\n✅ <tool_call>\n   {\"name\": \"read_file\", \"arguments\": {\"path\": \"G:/AI/livliv-pet/pet_space/todo-for-master.md\"}}\n   </tool_call>",
+        "capabilities": {
+          "vision": true,
+          "nativeTools": true,
+          "keepVisionToolsWhenTextOnly": false,
+          "preserveReasoningInHistory": false,
+          "prefixMode": "continue_final_message"
+        },
+        "promptPolicy": {
+          "tailMode": "prefill_assistant",
+          "tailInstruction": "思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以\"人设档案\"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止思考自身身份（如deepseek娘）或思考语气（如傲娇嘴硬）等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n 不要用文字罗列“我用了哪些工具”来冒充调用记录，要用工具就必须真的输出<tool_call>！\n ",
+          "tailPrefill": "<think>跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度\n</think>\n",
+          "parseTextToolCalls": true,
+          "forceToolMode": "prefill_tag",
+          "forceToolPrefillText": "<tool_call>\n"
+        }
       },
-      "capabilities": {
-        "vision": true,
-        "nativeTools": true,
-        "keepVisionToolsWhenTextOnly": false,
-        "preserveReasoningInHistory": false,
-        "prefixMode": "continue_final_message"
-      },
-      "promptPolicy": {
-        "thinkMode": "pet_think",
-        "tailMode": "prefill_assistant",
-        "tailInstruction": "思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以\"人设档案\"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止思考自身身份（如deepseek娘）或思考语气（如傲娇嘴硬）等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n 不要用文字罗列“我用了哪些工具”来冒充调用记录，要用工具就必须真的输出<tool_call>！\n ",
-        "tailPrefill": "<think>跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度\n</think>\n",
-        "parseTextToolCalls": true,
-        "forceToolMode": "prefill_tag",
-        "forceToolPrefillText": "<tool_call>\n"
+      "llm": {
+        "baseUrl": "http://127.0.0.1:11435/v1/chat/completions",
+        "apiKey": "",
+        "request": {
+          "model": "strata-nothink",
+          "temperature": 0.8,
+          "max_tokens": 65536
+        }
       }
     },
     "cloud-api-example": {
-      "baseUrl": "https://api.deepseek.com/chat/completions",
-      "apiKey": "your-api-key-here",
-      "model": "deepseek-flash",
-      "wakeGpuLimit": 100,
-      "contextLength": 65536,
-      "customPrompt": "",
-      "requestDefaults": {
-        "max_tokens": 8192,
-        "thinking": {
-          "type": "disabled"
+      "app": {
+        "wakeGpuLimit": 100,
+        "contextLength": 65536,
+        "customPrompt": "",
+        "capabilities": {
+          "vision": true,
+          "nativeTools": true,
+          "keepVisionToolsWhenTextOnly": false,
+          "preserveReasoningInHistory": false,
+          "prefixMode": "none"
+        },
+        "promptPolicy": {
+          "tailMode": "user_instruction",
+          "tailInstruction": "请直接以“人设档案”中的第一人称身份和语气回应主人；需要查文件、看屏幕、改房间或检索记忆时请直接调用函数工具，不要口头假装已执行。",
+          "tailPrefill": "",
+          "parseTextToolCalls": false,
+          "forceToolMode": "tool_choice_required",
+          "forceToolPrefillText": ""
         }
       },
-      "capabilities": {
-        "vision": true,
-        "nativeTools": true,
-        "keepVisionToolsWhenTextOnly": false,
-        "preserveReasoningInHistory": false,
-        "prefixMode": "none"
-      },
-      "promptPolicy": {
-        "thinkMode": "custom",
-        "tailMode": "user_instruction",
-        "tailInstruction": "请直接以“人设档案”中的第一人称身份和语气回应主人；需要查文件、看屏幕、改房间或检索记忆时请直接调用函数工具，不要口头假装已执行。",
-        "tailPrefill": "",
-        "parseTextToolCalls": false,
-        "forceToolMode": "tool_choice_required",
-        "forceToolPrefillText": ""
+      "llm": {
+        "baseUrl": "https://api.deepseek.com/chat/completions",
+        "apiKey": "your-api-key-here",
+        "request": {
+          "model": "deepseek-flash",
+          "max_tokens": 8192,
+          "thinking": {
+            "type": "disabled"
+          }
+        }
       }
     }
   }

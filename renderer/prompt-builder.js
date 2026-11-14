@@ -2,13 +2,6 @@
 // 所有协议与模型相关参数均由 llmConfig.promptPolicy 驱动，不再硬编码某一家模型的标签规范。
 import { DEFAULT_PROMPT_POLICY, normalizeLlmConfig } from './llm-adapter.js';
 
-export const THINK_MODULES = {
-  pet_think: {
-    instruction: DEFAULT_PROMPT_POLICY.tailInstruction,
-    prefill: DEFAULT_PROMPT_POLICY.tailPrefill,
-  },
-};
-
 export const INF_WAKE_TEXT = '【系统提醒】现在是无限唤醒模式，你会一直被唤醒，自由行动吧，**不要主动停止输出或调用工具**，如果停止了也会再次被唤醒。主人现在大概率不在电脑前，你不用担心占用电脑资源。现在大概率是深夜，主人希望你多找点事干，不要老老实实挂机，那样主人的电费就白花了哦。你有很多工具，你可以访问主人所有的文件，虽然不能直接改写，但是可以复制到你的空间再改。无限唤醒的时候就算长思考也没关系，不用担心上下文长度。你可以大胆行动，不用担心太多';
 
 export function textOf(userContent) {
@@ -119,11 +112,9 @@ export function buildUserTurn(userContent, toolLedger = '', { vision = true, ext
 
 export function buildTailMessages({
   policy = DEFAULT_PROMPT_POLICY,
-  thinkMode,
   forceToolPrefill = false,
   isInfiniteWake = false,
 } = {}) {
-  const effectiveThink = thinkMode ?? policy.thinkMode ?? 'pet_think';
   if (forceToolPrefill && isInfiniteWake) {
     if (policy.forceToolMode === 'tool_choice_required') {
       return {
@@ -145,7 +136,7 @@ export function buildTailMessages({
     };
   }
 
-  if (effectiveThink === 'off' || policy.tailMode === 'none') {
+  if (policy.tailMode === 'none') {
     return {
       tailMessages: [],
       inlineLastUserInstruction: '',
@@ -188,7 +179,6 @@ export function assemblePrompt({
   isInfiniteWake = false,
   userContent = '',
   toolLedger = '',
-  thinkMode,
   llmConfig = null,
   forceToolPrefill = false,
   continueBaseMsgs = null,
@@ -205,7 +195,6 @@ export function assemblePrompt({
   const policy = cfg.promptPolicy;
   const tail = buildTailMessages({
     policy,
-    thinkMode: thinkMode ?? policy.thinkMode,
     forceToolPrefill,
     isInfiniteWake,
   });

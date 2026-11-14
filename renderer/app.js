@@ -1,7 +1,7 @@
 // DeepSeek 娘桌宠 - 渲染层：livliv player + 本地 Strata + GPT-SoVITS
 import { Player } from '@livliv-dev/player';
 import { createSpeech } from '@livliv-dev/player/voice';
-import { THINK_MODULES, INF_WAKE_TEXT, textOf, buildMemoryQuery, assemblePrompt } from './prompt-builder.js';
+import { INF_WAKE_TEXT, textOf, buildMemoryQuery, assemblePrompt } from './prompt-builder.js';
 import { buildChatPayload, getPrefillState, normalizeLlmConfig } from './llm-adapter.js';
 import { TOOLS, parseTextToolCalls } from './tools-schema.js';
 import { makeSentenceSlicer, rlog, createTtsController } from './tts.js';
@@ -68,7 +68,6 @@ function getHistMode(isInf = false) {
   return DEBUG_MODE ? 'debug' : undefined;
 }
 // 运行时配置（主进程 llm.config + config.json + tts.config.json → /api/config）：每轮前自动刷新
-let THINK_MODE = 'pet_think';
 let llmConfig = normalizeLlmConfig();
 let TTS_CONFIG = { url: '/api/tts', request: {}, shortTextLimit: 60, splitShort: 'cut0', splitLong: 'cut5' };
 async function refreshRuntimeConfig() {
@@ -76,9 +75,6 @@ async function refreshRuntimeConfig() {
     const c = await (await fetch('/api/config', { cache: 'no-store' })).json();
     if (c?.llm) llmConfig = normalizeLlmConfig(c.llm);
     if (c?.tts) TTS_CONFIG = c.tts;
-    const nextThink = c?.llm?.promptPolicy?.thinkMode ?? c?.think;
-    if (nextThink === 'off') THINK_MODE = 'off';
-    else if (nextThink === 'custom' || THINK_MODULES[nextThink]) THINK_MODE = nextThink;
     const reflectEvery = parseInt(c?.infwakeReflectEvery, 10);
     if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
     applyBedroom(c?.bedroom);
@@ -257,7 +253,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       isInfiniteWake: isInf,
       userContent,
       toolLedger: ledger,
-      thinkMode: THINK_MODE,
       llmConfig,
       forceToolPrefill: wake.forceToolPrefill,
     });
