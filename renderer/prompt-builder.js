@@ -4,7 +4,7 @@ import { DEFAULT_PROMPT_POLICY, normalizeLlmConfig } from './llm-adapter.js';
 
 export const THINK_MODULES = {
   pet_think: {
-    instruction: DEFAULT_PROMPT_POLICY.tailInstruction + DEFAULT_PROMPT_POLICY.toolPrompt,
+    instruction: DEFAULT_PROMPT_POLICY.tailInstruction,
     prefill: DEFAULT_PROMPT_POLICY.tailPrefill,
   },
 };
@@ -156,7 +156,7 @@ export function buildTailMessages({
     };
   }
 
-  const instruction = [policy.tailInstruction || '', policy.toolPrompt || ''].filter(Boolean).join('');
+  const instruction = policy.tailInstruction || '';
   if (policy.tailMode === 'user_instruction') {
     return {
       tailMessages: [],
