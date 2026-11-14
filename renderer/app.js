@@ -70,17 +70,19 @@ function getHistMode(isInf = false) {
 // 运行时配置（主进程 llm.config + config.json + tts.config.json → /api/config）：每轮前自动刷新
 let llmConfig = normalizeLlmConfig();
 let TTS_CONFIG = { url: '/api/tts', request: {}, shortTextLimit: 60, splitShort: 'cut0', splitLong: 'cut5' };
+let CHARACTER_PATH = '';
 async function refreshRuntimeConfig() {
   try {
     const c = await (await fetch('/api/config', { cache: 'no-store' })).json();
     if (c?.llm) llmConfig = normalizeLlmConfig(c.llm);
     if (c?.tts) TTS_CONFIG = c.tts;
+    CHARACTER_PATH = String(c?.characterPath || '').trim();
     const reflectEvery = parseInt(c?.infwakeReflectEvery, 10);
     if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
     applyBedroom(c?.bedroom);
   } catch {}
 }
-refreshRuntimeConfig();
+const initialConfigReady = refreshRuntimeConfig();
 if (DEBUG_MODE) $('dbgbadge').style.display = 'block';
 async function saveHistory(arr = history, isInf = false) {
   const mode = getHistMode(isInf);
@@ -1254,7 +1256,9 @@ speech.onIdle = () => {
 (async () => {
   try {
     syncHistoryFromDisk(); // 启动时同步历史（异步，不阻塞角色加载）
-    await player.load('/characters/p01/');
+    await initialConfigReady;
+    if (!CHARACTER_PATH) throw new Error('config.json 缺少 characterPath');
+    await player.load(CHARACTER_PATH);
     // 不设常驻表情：中性脸才能看到 livliv 原生的视线跟随/挑眉/浅笑（p01 的 smile 是闭眼大笑，会锁死整张脸）
     layoutChat();
     showBubble('你好呀，我上线啦！');

@@ -204,6 +204,7 @@ function serveStatic(req, res) {
           ttsIdleSeconds: Math.round(getGsvIdleTimeoutMs() / 1000),
           watchdog: cfg.watchdog ?? false,
           infwakeReflectEvery: cfg.infwakeReflectEvery,
+          characterPath: cfg.characterPath,
           llmProfile: publicLlm.activeProfile,
           tts: {
             url: ttsCfg.app.url,
@@ -338,7 +339,7 @@ function serveStatic(req, res) {
 
     let urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (urlPath === '/') urlPath = '/renderer/index.html';
-    const rel = urlPath.startsWith('/characters/') ? path.join('player-ref', urlPath) : urlPath;
+    const rel = urlPath.startsWith('/characters/') ? path.join('characters', urlPath) : urlPath;
     const fsPath = path.join(APP_ROOT, rel);
     if (!path.normalize(fsPath).startsWith(APP_ROOT)) {
       res.writeHead(403); res.end('forbidden'); return;

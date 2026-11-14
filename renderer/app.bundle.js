@@ -3991,18 +3991,20 @@ ${note}` : note };
   }
   var llmConfig = normalizeLlmConfig();
   var TTS_CONFIG = { url: "/api/tts", request: {}, shortTextLimit: 60, splitShort: "cut0", splitLong: "cut5" };
+  var CHARACTER_PATH = "";
   async function refreshRuntimeConfig() {
     try {
       const c3 = await (await fetch("/api/config", { cache: "no-store" })).json();
       if (c3?.llm) llmConfig = normalizeLlmConfig(c3.llm);
       if (c3?.tts) TTS_CONFIG = c3.tts;
+      CHARACTER_PATH = String(c3?.characterPath || "").trim();
       const reflectEvery = parseInt(c3?.infwakeReflectEvery, 10);
       if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
       applyBedroom(c3?.bedroom);
     } catch {
     }
   }
-  refreshRuntimeConfig();
+  var initialConfigReady = refreshRuntimeConfig();
   if (DEBUG_MODE) $3("dbgbadge").style.display = "block";
   async function saveHistory(arr = history, isInf = false) {
     const mode = getHistMode(isInf);
@@ -5188,7 +5190,9 @@ ${note}` : note };
   (async () => {
     try {
       syncHistoryFromDisk();
-      await player.load("/characters/p01/");
+      await initialConfigReady;
+      if (!CHARACTER_PATH) throw new Error("config.json \u7F3A\u5C11 characterPath");
+      await player.load(CHARACTER_PATH);
       layoutChat();
       showBubble("\u4F60\u597D\u5440\uFF0C\u6211\u4E0A\u7EBF\u5566\uFF01");
       setTimeout(() => {

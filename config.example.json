@@ -9,6 +9,7 @@
   "hwCompositing": true,
   "capMain": "main",
   "capRoom": "room",
+  "characterPath": "/characters/p01/",
   "llmProfile": "strata",
   "ttsMode": "on"
 }

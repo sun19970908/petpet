@@ -18,8 +18,8 @@ voice*/
 voices/
 voice-samples/
 
-# Reference player
-player-ref/
+# Character assets
+characters/
 
 # Sensitive local configuration
 config.json
