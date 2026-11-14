@@ -28,8 +28,6 @@ const DEFAULT_PROFILE = {
       '<think>跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度\n</think>\n',
     parseTextToolCalls: true,
     forceToolMode: 'prefill_tag',
-    forceToolNudge:
-      '（你上一轮只是在重复说"卡住了/这就去翻"却并没有真的调用工具。这一轮别再空谈，立刻调用一个合适的工具动手：read_file / list_dir / edit_file / file_tool 等。）',
     forceToolPrefillText: '<tool_call>\n',
   },
 };

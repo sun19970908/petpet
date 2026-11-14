@@ -476,14 +476,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
         // 思考块没收尾时别再补 <tool_call> 预填（会落进思考块里，把续写带偏）
         const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
-        const canPrefillTag = llmConfig.promptPolicy.forceToolMode === 'prefill_tag' && llmConfig.capabilities.prefixMode !== 'none';
-        if (hasToolIntent && !canPrefillTag) {
-          if (fullContent) bodyMsgs.push({ role: 'assistant', content: fullContent, ...reasoningExtra });
-          bodyMsgs.push({ role: 'user', content: llmConfig.promptPolicy.forceToolNudge });
-          if (llmConfig.promptPolicy.forceToolMode === 'tool_choice_required') forceRequiredTool = true;
-          showBubble('准备执行工具…');
-          continue;
-        }
         if (llmConfig.capabilities.prefixMode === 'none') {
           if (fullContent) bodyMsgs.push({ role: 'assistant', content: fullContent, ...reasoningExtra });
           bodyMsgs.push({ role: 'user', content: '请继续补充你的回答。' });
@@ -758,8 +750,6 @@ async function continueRequest() {
       const targetMsg = baseMsgs[baseMsgs.length - 1];
       if (canPrefillTag && targetMsg && targetMsg.role === 'assistant') {
         targetMsg.content = targetMsg.content.trimEnd() + '\n' + (llmConfig.promptPolicy.forceToolPrefillText || '<tool_call>\n').trimEnd();
-      } else if (!canPrefillTag) {
-        baseMsgs.push({ role: 'user', content: llmConfig.promptPolicy.forceToolNudge });
       }
     }
 

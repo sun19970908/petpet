@@ -2589,7 +2589,6 @@ void main(){ o=texture(uTex,vUv); }`;
     tailPrefill: "<think>\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6\n</think>\n",
     parseTextToolCalls: true,
     forceToolMode: "prefill_tag",
-    forceToolNudge: '\uFF08\u4F60\u4E0A\u4E00\u8F6E\u53EA\u662F\u5728\u91CD\u590D\u8BF4"\u5361\u4F4F\u4E86/\u8FD9\u5C31\u53BB\u7FFB"\u5374\u5E76\u6CA1\u6709\u771F\u7684\u8C03\u7528\u5DE5\u5177\u3002\u8FD9\u4E00\u8F6E\u522B\u518D\u7A7A\u8C08\uFF0C\u7ACB\u523B\u8C03\u7528\u4E00\u4E2A\u5408\u9002\u7684\u5DE5\u5177\u52A8\u624B\uFF1Aread_file / list_dir / edit_file / file_tool \u7B49\u3002\uFF09',
     forceToolPrefillText: "<tool_call>\n"
   };
   var DEFAULT_CAPABILITIES = {
@@ -2736,7 +2735,6 @@ ${note}` : note };
     }
   };
   var INF_WAKE_TEXT = "\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u73B0\u5728\u662F\u65E0\u9650\u5524\u9192\u6A21\u5F0F\uFF0C\u4F60\u4F1A\u4E00\u76F4\u88AB\u5524\u9192\uFF0C\u81EA\u7531\u884C\u52A8\u5427\uFF0C**\u4E0D\u8981\u4E3B\u52A8\u505C\u6B62\u8F93\u51FA\u6216\u8C03\u7528\u5DE5\u5177**\uFF0C\u5982\u679C\u505C\u6B62\u4E86\u4E5F\u4F1A\u518D\u6B21\u88AB\u5524\u9192\u3002\u4E3B\u4EBA\u73B0\u5728\u5927\u6982\u7387\u4E0D\u5728\u7535\u8111\u524D\uFF0C\u4F60\u4E0D\u7528\u62C5\u5FC3\u5360\u7528\u7535\u8111\u8D44\u6E90\u3002\u73B0\u5728\u5927\u6982\u7387\u662F\u6DF1\u591C\uFF0C\u4E3B\u4EBA\u5E0C\u671B\u4F60\u591A\u627E\u70B9\u4E8B\u5E72\uFF0C\u4E0D\u8981\u8001\u8001\u5B9E\u5B9E\u6302\u673A\uFF0C\u90A3\u6837\u4E3B\u4EBA\u7684\u7535\u8D39\u5C31\u767D\u82B1\u4E86\u54E6\u3002\u4F60\u6709\u5F88\u591A\u5DE5\u5177\uFF0C\u4F60\u53EF\u4EE5\u8BBF\u95EE\u4E3B\u4EBA\u6240\u6709\u7684\u6587\u4EF6\uFF0C\u867D\u7136\u4E0D\u80FD\u76F4\u63A5\u6539\u5199\uFF0C\u4F46\u662F\u53EF\u4EE5\u590D\u5236\u5230\u4F60\u7684\u7A7A\u95F4\u518D\u6539\u3002\u65E0\u9650\u5524\u9192\u7684\u65F6\u5019\u5C31\u7B97\u957F\u601D\u8003\u4E5F\u6CA1\u5173\u7CFB\uFF0C\u4E0D\u7528\u62C5\u5FC3\u4E0A\u4E0B\u6587\u957F\u5EA6\u3002\u4F60\u53EF\u4EE5\u5927\u80C6\u884C\u52A8\uFF0C\u4E0D\u7528\u62C5\u5FC3\u592A\u591A";
-  var FORCE_TOOL_NUDGE = DEFAULT_PROMPT_POLICY.forceToolNudge;
   function textOf(userContent) {
     if (typeof userContent === "string") return userContent;
     if (Array.isArray(userContent)) {
@@ -2836,13 +2834,13 @@ ${note}` : note };
     if (forceToolPrefill && isInfiniteWake) {
       if (policy.forceToolMode === "tool_choice_required") {
         return {
-          tailMessages: [{ role: "user", content: policy.forceToolNudge || FORCE_TOOL_NUDGE }],
+          tailMessages: [],
           inlineLastUserInstruction: "",
           consumedForceToolPrefill: true,
           forceRequiredTool: true
         };
       }
-      const tailMessages2 = [{ role: "user", content: policy.forceToolNudge || FORCE_TOOL_NUDGE }];
+      const tailMessages2 = [];
       if (policy.forceToolPrefillText) {
         tailMessages2.push({ role: "assistant", content: policy.forceToolPrefillText });
       }
@@ -4399,14 +4397,6 @@ ${note}` : note };
           const fullContent = content.trim();
           const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
           const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
-          const canPrefillTag = llmConfig.promptPolicy.forceToolMode === "prefill_tag" && llmConfig.capabilities.prefixMode !== "none";
-          if (hasToolIntent && !canPrefillTag) {
-            if (fullContent) bodyMsgs.push({ role: "assistant", content: fullContent, ...reasoningExtra });
-            bodyMsgs.push({ role: "user", content: llmConfig.promptPolicy.forceToolNudge });
-            if (llmConfig.promptPolicy.forceToolMode === "tool_choice_required") forceRequiredTool = true;
-            showBubble("\u51C6\u5907\u6267\u884C\u5DE5\u5177\u2026");
-            continue;
-          }
           if (llmConfig.capabilities.prefixMode === "none") {
             if (fullContent) bodyMsgs.push({ role: "assistant", content: fullContent, ...reasoningExtra });
             bodyMsgs.push({ role: "user", content: "\u8BF7\u7EE7\u7EED\u8865\u5145\u4F60\u7684\u56DE\u7B54\u3002" });
@@ -4689,8 +4679,6 @@ ${note}` : note };
         const targetMsg = baseMsgs[baseMsgs.length - 1];
         if (canPrefillTag && targetMsg && targetMsg.role === "assistant") {
           targetMsg.content = targetMsg.content.trimEnd() + "\n" + (llmConfig.promptPolicy.forceToolPrefillText || "<tool_call>\n").trimEnd();
-        } else if (!canPrefillTag) {
-          baseMsgs.push({ role: "user", content: llmConfig.promptPolicy.forceToolNudge });
         }
       }
       const isInf = Boolean(lastExchange.isInf);
