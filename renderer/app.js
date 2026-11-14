@@ -26,12 +26,6 @@ import { createInfiniteWake, REFLECT_TEXT } from './infinite-wake.js';
 window.__bundleVersion = 'v3-enter';
 
 const LLM_URL = '/api/llm'; // 主进程按 llm.config 转发到本机反代或远程 API
-const TTS_URL = '/api/tts'; // 主进程转发到 GPT-SoVITS 9880
-// GPT-SoVITS 参考音频（泠鸢yousa，真人歌声，训练集切片），路径以 GPT-SoVITS 服务端视角解析
-const TTS_REF = {
-  ref_audio_path: 'G:/AI/livliv-pet/voices/yousa/ref-yousa_data.WAV_902400_1050560.wav',
-  prompt_text: '就是本来生日是有一首原创歌曲的。',
-};
 
 // 无限唤醒反思间隔（config 注入；具体提醒逻辑在 infinite-wake.js）
 let REFLECT_EVERY = 8;
@@ -73,13 +67,15 @@ function getHistMode(isInf = false) {
   if (isInf) return DEBUG_MODE ? 'debug-infwake' : 'infwake';
   return DEBUG_MODE ? 'debug' : undefined;
 }
-// 运行时配置（主进程 llm.config + config.json → /api/config）：每轮前自动刷新，改配置下轮即生效
+// 运行时配置（主进程 llm.config + config.json + tts.config.json → /api/config）：每轮前自动刷新
 let THINK_MODE = 'pet_think';
 let llmConfig = normalizeLlmConfig();
+let TTS_CONFIG = { url: '/api/tts', request: {}, shortTextLimit: 60, splitShort: 'cut0', splitLong: 'cut5' };
 async function refreshRuntimeConfig() {
   try {
     const c = await (await fetch('/api/config', { cache: 'no-store' })).json();
     if (c?.llm) llmConfig = normalizeLlmConfig(c.llm);
+    if (c?.tts) TTS_CONFIG = c.tts;
     const nextThink = c?.llm?.promptPolicy?.thinkMode ?? c?.think;
     if (nextThink === 'off') THINK_MODE = 'off';
     else if (nextThink === 'custom' || THINK_MODULES[nextThink]) THINK_MODE = nextThink;
@@ -197,7 +193,7 @@ Player.prototype.play = function() {
 
 const player = new Player($('pet'));
 const speech = createSpeech(player);
-const { speakSegment, speak } = createTtsController({ ttsUrl: TTS_URL, ttsRef: TTS_REF, speech, touchTurnActivity });
+const { speakSegment, speak } = createTtsController({ getTtsConfig: () => TTS_CONFIG, speech, touchTurnActivity });
 window.__pet = { player, speech, showBubble, get clickThrough() { return clickThrough; }, interrupt, room: { applyBedroom, set: setRoomState, update: updateInRoom, get state() { return roomState; }, get inRoom() { return inRoom; } } }; // 调试句柄
 
 function showBubble(text, isError = false) {

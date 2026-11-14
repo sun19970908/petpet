@@ -14,7 +14,7 @@ const { createScreenTools } = require('./main/screen');
 const { createStorage } = require('./main/storage');
 const { createFsTools } = require('./main/fs-tools');
 const watchdogCtl = require('./lib/watchdog-ctl');
-const { loadConfig } = require('./lib/config-store');
+const { loadConfig, loadTtsConfig } = require('./lib/config-store');
 
 // 防护 Windows 下脱钩控制台/管道关闭时 console.log / pipe 触发的 EPIPE/EOF 未捕获异常弹窗
 if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on('error', () => {});
@@ -99,26 +99,18 @@ const normalizeGsvMode = (v) => {
   return 'auto';
 };
 
-const getGsvMode = () => {
-  const cfg = getConfig();
-  const raw = process.env.PET_GSV_MODE ?? cfg.ttsMode ?? cfg.gsvMode ?? 'auto';
-  return normalizeGsvMode(raw);
-};
+const getGsvMode = () => normalizeGsvMode(loadConfig(APP_ROOT).ttsMode);
 
 const getGsvModeLabel = () => {
   const m = getGsvMode();
   return m === 'always' ? 'on' : m === 'never' ? 'off' : 'auto';
 };
 
-const getGsvIdleTimeoutMs = () => {
-  const cfg = getConfig();
-  const raw = process.env.PET_GSV_IDLE ?? cfg.ttsIdleSeconds ?? cfg.gsvIdleSeconds;
-  const sec = parseInt(raw, 10);
-  return (Number.isFinite(sec) && sec > 0 ? sec : 600) * 1000;
-};
+const getGsvIdleTimeoutMs = () => loadConfig(APP_ROOT).ttsIdleSeconds * 1000;
 
 const { ensureGSV, stopGSV, ensureASR, stopASR, onLlmActivity, handleApi } = createVoiceAndApi({
-  APP_ROOT, GSV_MODE: getGsvMode(), getGsvMode, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs, appendLine, createRotatingStream,
+  APP_ROOT, GSV_MODE: getGsvMode(), getGsvMode, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs,
+  ttsServer: BOOT_CONFIG.ttsServer, appendLine, createRotatingStream,
 });
 
 const llmConfigMgr = createLlmConfigManager({
@@ -203,6 +195,7 @@ function serveStatic(req, res) {
       if (apiPath === '/api/config') {
         const publicLlm = llmConfigMgr.getPublicConfig();
         const cfg = getConfig();
+        const ttsCfg = loadTtsConfig(APP_ROOT);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           think: publicLlm.promptPolicy?.thinkMode || THINK_MODE,
@@ -216,6 +209,13 @@ function serveStatic(req, res) {
           watchdog: cfg.watchdog ?? false,
           infwakeReflectEvery: cfg.infwakeReflectEvery,
           llmProfile: publicLlm.activeProfile,
+          tts: {
+            url: cfg.ttsUrl,
+            request: ttsCfg,
+            shortTextLimit: cfg.ttsShortTextLimit,
+            splitShort: cfg.ttsSplitShort,
+            splitLong: cfg.ttsSplitLong,
+          },
           llm: publicLlm,
         }));
         return;

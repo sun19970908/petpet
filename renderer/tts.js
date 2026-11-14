@@ -183,25 +183,23 @@ export function createWavRunawayGuard(textLen) {
   };
 }
 
-export function createTtsController({ ttsUrl, ttsRef, speech, touchTurnActivity }) {
+export function createTtsController({ getTtsConfig, speech, touchTurnActivity }) {
   let gsvDownUntil = 0;
 
   function fetchTts(cleanText, signal) {
-    return fetch(ttsUrl, {
+    const cfg = getTtsConfig?.() || {};
+    const { url, request, shortTextLimit, splitShort, splitLong } = cfg;
+    const limit = Number(shortTextLimit) || 60;
+    const short = splitShort || 'cut0';
+    const long = splitLong || 'cut5';
+    return fetch(url || '/api/tts', {
       method: 'POST',
       signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        ...(request || {}),
         text: cleanText,
-        text_lang: 'zh',
-        prompt_lang: 'zh',
-        text_split_method: cleanText.length <= 60 ? 'cut0' : 'cut5',
-        media_type: 'wav',
-        streaming_mode: 2,
-        temperature: 0.4,
-        top_P: 0.7,
-        top_K: 3,
-        ...ttsRef,
+        text_split_method: cleanText.length <= limit ? short : long,
       }),
     });
   }

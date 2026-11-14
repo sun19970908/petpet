@@ -5,12 +5,14 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const net = require('net');
 
-function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, appendLine, createRotatingStream }) {
-  const GSV_DIR = process.env.PET_GSV_DIR || 'G:\\GPT-SoVITS-v2pro-20250604';
-  const GSV_PYTHON = path.join(GSV_DIR, 'runtime', 'python.exe');
-  const GSV_CONFIG = process.env.PET_GSV_CONFIG || 'GPT_SoVITS/configs/tts_infer_yousa.yaml';
-  const GSV_GPU = process.env.PET_GSV_GPU || '1';
-  const GSV_PORT = 9880;
+function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, ttsServer, appendLine, createRotatingStream }) {
+  const GSV = ttsServer || {};
+  const GSV_DIR = GSV.dir;
+  const GSV_PYTHON = path.isAbsolute(GSV.python) ? GSV.python : path.join(GSV_DIR, GSV.python);
+  const GSV_CONFIG = GSV.config;
+  const GSV_GPU = GSV.gpu;
+  const GSV_PORT = Number(GSV.port);
+  const GSV_START_TIMEOUT = Number(GSV.startTimeoutMs);
   const GSV_LOG = path.join(APP_ROOT, 'logs', 'gsv.log');
   const TTS_LOG = path.join(APP_ROOT, 'logs', 'tts.log');
 
@@ -93,7 +95,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
         });
 
         const startTs = Date.now();
-        while (Date.now() - startTs < 90000) {
+        while (Date.now() - startTs < GSV_START_TIMEOUT) {
           if (await isGsvPortOpen()) {
             console.log(`[gsv] GPT-SoVITS 已就绪（就绪耗时 ${Date.now() - startTs}ms）`);
             logTo(GSV_LOG, `=== 就绪，耗时 ${Date.now() - startTs}ms ===`);
@@ -101,8 +103,8 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
           }
           await new Promise((r) => setTimeout(r, 400));
         }
-        console.warn('[gsv] 启动等待超时（90s 内 9880 端口未响应）');
-        logTo(GSV_LOG, '=== 启动超时（90s） ===');
+        console.warn(`[gsv] 启动等待超时（${Math.round(GSV_START_TIMEOUT / 1000)}s 内 ${GSV_PORT} 端口未响应）`);
+        logTo(GSV_LOG, `=== 启动超时（${Math.round(GSV_START_TIMEOUT / 1000)}s） ===`);
         return false;
       } catch (e) {
         console.error('[gsv] 启动异常:', e.message);
@@ -266,7 +268,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
 
   function handleApi(req, res) {
     const routes = {
-      '/api/tts': { host: '127.0.0.1', port: 9880, path: '/tts' },
+      '/api/tts': { host: '127.0.0.1', port: GSV_PORT, path: '/tts' },
       '/api/asr': { host: '127.0.0.1', port: 9882, path: '/asr' },
     };
     const target = routes[req.url.split('?')[0]];
@@ -295,7 +297,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
       res.writeHead(404); res.end('unknown api'); return;
     }
 
-    const isTts = target.port === 9880;
+    const isTts = target.port === GSV_PORT;
     const isAsr = target.port === 9882;
 
     if (isTts) touchGsvActivity();

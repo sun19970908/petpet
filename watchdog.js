@@ -16,10 +16,9 @@ const PETBAT = path.join(ROOT, 'start-pet.bat');
 function getWatchdogGsvMode() {
   const cli = process.argv.slice(2).find((a) => ['auto', 'always', 'on', 'never', 'off'].includes(a.toLowerCase()));
   if (cli) return cli.toLowerCase();
-  if (process.env.PET_GSV_MODE) return process.env.PET_GSV_MODE.toLowerCase();
   try {
     const cfg = loadConfig(ROOT);
-    const m = cfg.ttsMode || cfg.gsvMode;
+    const m = cfg.ttsMode;
     if (m && ['auto', 'always', 'on', 'never', 'off'].includes(String(m).toLowerCase())) {
       return String(m).toLowerCase();
     }
@@ -125,7 +124,6 @@ function launchPet(why) {
       stdio: 'ignore',
       windowsHide: true,
       cwd: ROOT,
-      env: { ...process.env, PET_GSV_MODE: WATCHDOG_GSV_MODE },
     });
     p.unref();
   } catch (e) { log('重启失败：' + (e && e.message)); }

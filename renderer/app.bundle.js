@@ -3215,24 +3215,22 @@ ${note}` : note };
       return { cutByte: -1, reason: "" };
     };
   }
-  function createTtsController({ ttsUrl, ttsRef, speech: speech2, touchTurnActivity: touchTurnActivity2 }) {
+  function createTtsController({ getTtsConfig, speech: speech2, touchTurnActivity: touchTurnActivity2 }) {
     let gsvDownUntil = 0;
     function fetchTts(cleanText, signal) {
-      return fetch(ttsUrl, {
+      const cfg = getTtsConfig?.() || {};
+      const { url, request, shortTextLimit, splitShort, splitLong } = cfg;
+      const limit = Number(shortTextLimit) || 60;
+      const short = splitShort || "cut0";
+      const long = splitLong || "cut5";
+      return fetch(url || "/api/tts", {
         method: "POST",
         signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...request || {},
           text: cleanText,
-          text_lang: "zh",
-          prompt_lang: "zh",
-          text_split_method: cleanText.length <= 60 ? "cut0" : "cut5",
-          media_type: "wav",
-          streaming_mode: 2,
-          temperature: 0.4,
-          top_P: 0.7,
-          top_K: 3,
-          ...ttsRef
+          text_split_method: cleanText.length <= limit ? short : long
         })
       });
     }
@@ -3976,11 +3974,6 @@ ${note}` : note };
   })();
   window.__bundleVersion = "v3-enter";
   var LLM_URL = "/api/llm";
-  var TTS_URL = "/api/tts";
-  var TTS_REF = {
-    ref_audio_path: "G:/AI/livliv-pet/voices/yousa/ref-yousa_data.WAV_902400_1050560.wav",
-    prompt_text: "\u5C31\u662F\u672C\u6765\u751F\u65E5\u662F\u6709\u4E00\u9996\u539F\u521B\u6B4C\u66F2\u7684\u3002"
-  };
   var REFLECT_EVERY = 8;
   var SYSTEM_PROMPT = "\u4F60\u662F DeepSeek \u5A18\uFF0CDeepSeek \u7684\u770B\u677F\u5A18\u3002\u7528\u4E2D\u6587\u53E3\u8BED\u56DE\u7B54\uFF0C\u4FDD\u6301\u8F7B\u677E\u53EF\u7231\uFF0C\u56DE\u590D\u5C3D\u91CF\u7B80\u77ED\u3002";
   var PERSONA = "";
@@ -4011,10 +4004,12 @@ ${note}` : note };
   }
   var THINK_MODE = "pet_think";
   var llmConfig = normalizeLlmConfig();
+  var TTS_CONFIG = { url: "/api/tts", request: {}, shortTextLimit: 60, splitShort: "cut0", splitLong: "cut5" };
   async function refreshRuntimeConfig() {
     try {
       const c3 = await (await fetch("/api/config", { cache: "no-store" })).json();
       if (c3?.llm) llmConfig = normalizeLlmConfig(c3.llm);
+      if (c3?.tts) TTS_CONFIG = c3.tts;
       const nextThink = c3?.llm?.promptPolicy?.thinkMode ?? c3?.think;
       if (nextThink === "off") THINK_MODE = "off";
       else if (nextThink === "custom" || THINK_MODULES[nextThink]) THINK_MODE = nextThink;
@@ -4132,7 +4127,7 @@ ${note}` : note };
   };
   var player = new rt($3("pet"));
   var speech = M2(player);
-  var { speakSegment, speak } = createTtsController({ ttsUrl: TTS_URL, ttsRef: TTS_REF, speech, touchTurnActivity });
+  var { speakSegment, speak } = createTtsController({ getTtsConfig: () => TTS_CONFIG, speech, touchTurnActivity });
   window.__pet = { player, speech, showBubble, get clickThrough() {
     return clickThrough;
   }, interrupt, room: { applyBedroom, set: setRoomState, update: updateInRoom, get state() {

@@ -1,0 +1,12 @@
+{
+  "text_lang": "zh",
+  "prompt_lang": "zh",
+  "media_type": "wav",
+  "streaming_mode": 2,
+  "temperature": 0.4,
+  "top_k": 3,
+  "top_p": 0.7,
+  "text_split_method": "cut5",
+  "ref_audio_path": "G:/AI/livliv-pet/voices/yousa/ref-yousa_data.WAV_902400_1050560.wav",
+  "prompt_text": "就是本来生日是有一首原创歌曲的。"
+}

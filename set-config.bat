@@ -39,7 +39,7 @@ if errorlevel 1 (
 "%NODE_CMD%" "%~dp0lib\apply-config.js" "%~f0"
 if errorlevel 1 (
   echo [WARN] Node 改写失败，尝试 PowerShell 备用通道...
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%~dp0config.json'; $c=Get-Content -Raw $p | ConvertFrom-Json; if('%LLM_PROFILE%') { $c.llmProfile='%LLM_PROFILE%' }; if('%TTS_MODE%') { $c.ttsMode='%TTS_MODE%' }; if('%GSV_IDLE%') { $c.gsvIdleSeconds=[int]'%GSV_IDLE%' }; $c.watchdog=('%WATCHDOG%' -eq 'on'); [IO.File]::WriteAllText($p, ($c | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false)); Write-Host '[OK] 已通过备用通道成功改写 config.json！'"
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%~dp0config.json'; $c=Get-Content -Raw $p | ConvertFrom-Json; if('%LLM_PROFILE%') { $c.llmProfile='%LLM_PROFILE%' }; if('%TTS_MODE%') { $c.ttsMode='%TTS_MODE%' }; if('%GSV_IDLE%') { $c.ttsIdleSeconds=[int]'%GSV_IDLE%' }; $c.watchdog=('%WATCHDOG%' -eq 'on'); [IO.File]::WriteAllText($p, ($c | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false)); Write-Host '[OK] 已通过备用通道成功改写 config.json！'"
 )
 
 rem 看门狗只在 WATCHDOG=off 时关闭；on 只写配置，下次启动桌宠时生效
