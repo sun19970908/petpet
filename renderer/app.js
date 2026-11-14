@@ -93,6 +93,21 @@ async function saveHistory(arr = history, isInf = false) {
     else await fetch('/api/history' + qs, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(arr) });
   } catch (e) { console.error('聊天记录保存失败:', e); }
 }
+// 写历史统一入口：主历史收 user/assistant，无限唤醒只收 assistant；replaceLast 用于续写同一轮回复
+async function saveMessages(isInf, messages, replaceLast = false) {
+  const target = isInf ? infHistory : history;
+  const last = messages[messages.length - 1];
+  let changed = false;
+  if (replaceLast && last && target.length && target[target.length - 1].role === 'assistant') {
+    target[target.length - 1].content = last.content;
+    changed = true;
+  } else {
+    for (const m of messages) {
+      if (!isInf || m.role === 'assistant') { target.push(m); changed = true; }
+    }
+  }
+  if (changed) return saveHistory(target, isInf);
+}
 async function syncHistoryFromDisk(isInf = false) {
   const mode = getHistMode(isInf);
   const qs = mode ? '?mode=' + mode : '';
@@ -251,7 +266,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   let toolCallTotal = 0;
   // 正常回合（非无限唤醒）：user 消息与每个工具轮都边跑边写进主历史；无限唤醒绝不写 user 占位进历史
   const isLive = !continueBaseMsgs;
-  if (isLive && !isInf) { history.push({ role: 'user', content: userContent }); saveHistory(history, false); }
+  if (isLive) saveMessages(isInf, [{ role: 'user', content: userContent }]);
   let emptyTextRetries = 0;
   // 查证类任务（质询她做过什么/读过什么）且本轮零工具调用 → 自动补一轮提醒（防凭印象作答，每任务最多一次）
   const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
@@ -420,10 +435,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         // 不再把"（本轮使用了工具：…）"写进历史：她会模仿这句话冒充调用工具。
         // 有可见正文就记正文；纯工具轮不写历史条目（工具台账仍由 logs/fstool.log 注入）。
         const visible = (msgContentBeforeTools || '').trim();
-        if (visible) {
-          if (isInf) { infHistory.push({ role: 'assistant', content: visible }); saveHistory(infHistory, true); }
-          else { history.push({ role: 'assistant', content: visible }); saveHistory(history, false); }
-        }
+        if (visible) saveMessages(isInf, [{ role: 'assistant', content: visible }]);
       }
       turnUsedTools = true;
       toolCallTotal += toolCalls.length;
@@ -531,15 +543,8 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
     const recalled = await memory.recall(memQuery, 5, text);
     touchTurnActivity();
     const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
-    if (isInf) {
-      if (reply && String(reply).trim()) {
-        infHistory.push({ role: 'assistant', content: reply });
-        await saveHistory(infHistory, true);
-      }
-    } else {
-      history.push({ role: 'assistant', content: reply });
-      await saveHistory(history, false);
-    }
+    const hasReply = Boolean(reply && String(reply).trim());
+    if (!isInf || hasReply) await saveMessages(isInf, [{ role: 'assistant', content: reply }]);
     wake.noteLoop(reply, turnUsedTools);
     if (lastExchange) lastExchange.hadSavedHistory = true;
     showBubble(reply);
@@ -761,15 +766,13 @@ async function continueRequest() {
     const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs, isInf);
     const fullReply = oldReply ? (oldReply + '\n' + newReply) : newReply;
 
-    if (hadSaved && targetHist.length && targetHist[targetHist.length - 1].role === 'assistant') {
-      targetHist[targetHist.length - 1].content = fullReply;
-    } else if (isInf) {
-      if (fullReply && String(fullReply).trim()) targetHist.push({ role: 'assistant', content: fullReply });
-    } else {
-      targetHist.push({ role: 'user', content: userContent }, { role: 'assistant', content: fullReply });
-    }
+    const replaceLast = hadSaved && targetHist.length && targetHist[targetHist.length - 1].role === 'assistant';
+    const hasReply = Boolean(fullReply && String(fullReply).trim());
+    const messages = isInf
+      ? (hasReply || replaceLast ? [{ role: 'assistant', content: fullReply }] : [])
+      : [{ role: 'user', content: userContent }, { role: 'assistant', content: fullReply }];
     if (lastExchange) lastExchange.hadSavedHistory = true;
-    await saveHistory(targetHist, isInf);
+    await saveMessages(isInf, messages, replaceLast);
     showBubble(fullReply);
     replied = true;
     react(newReply);

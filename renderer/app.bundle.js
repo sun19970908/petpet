@@ -4010,6 +4010,23 @@ ${note}` : note };
       console.error("\u804A\u5929\u8BB0\u5F55\u4FDD\u5B58\u5931\u8D25:", e3);
     }
   }
+  async function saveMessages(isInf, messages, replaceLast = false) {
+    const target = isInf ? infHistory : history;
+    const last = messages[messages.length - 1];
+    let changed = false;
+    if (replaceLast && last && target.length && target[target.length - 1].role === "assistant") {
+      target[target.length - 1].content = last.content;
+      changed = true;
+    } else {
+      for (const m3 of messages) {
+        if (!isInf || m3.role === "assistant") {
+          target.push(m3);
+          changed = true;
+        }
+      }
+    }
+    if (changed) return saveHistory(target, isInf);
+  }
   async function syncHistoryFromDisk(isInf = false) {
     const mode = getHistMode(isInf);
     const qs = mode ? "?mode=" + mode : "";
@@ -4159,10 +4176,7 @@ ${note}` : note };
     let repeatCount = 0;
     let toolCallTotal = 0;
     const isLive = !continueBaseMsgs;
-    if (isLive && !isInf) {
-      history.push({ role: "user", content: userContent });
-      saveHistory(history, false);
-    }
+    if (isLive) saveMessages(isInf, [{ role: "user", content: userContent }]);
     let emptyTextRetries = 0;
     const wantsVerification = /(查证|核实|台账|fstool|读没读|读过|看过了|做了没|真的(读|看|做)了)/i.test(textOf(userContent));
     let verificationNudged = false;
@@ -4333,15 +4347,7 @@ ${note}` : note };
         }
         if (isLive) {
           const visible = (msgContentBeforeTools || "").trim();
-          if (visible) {
-            if (isInf) {
-              infHistory.push({ role: "assistant", content: visible });
-              saveHistory(infHistory, true);
-            } else {
-              history.push({ role: "assistant", content: visible });
-              saveHistory(history, false);
-            }
-          }
+          if (visible) saveMessages(isInf, [{ role: "assistant", content: visible }]);
         }
         turnUsedTools = true;
         toolCallTotal += toolCalls.length;
@@ -4442,15 +4448,8 @@ ${note}` : note };
       const recalled = await memory.recall(memQuery, 5, text);
       touchTurnActivity();
       const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
-      if (isInf) {
-        if (reply && String(reply).trim()) {
-          infHistory.push({ role: "assistant", content: reply });
-          await saveHistory(infHistory, true);
-        }
-      } else {
-        history.push({ role: "assistant", content: reply });
-        await saveHistory(history, false);
-      }
+      const hasReply = Boolean(reply && String(reply).trim());
+      if (!isInf || hasReply) await saveMessages(isInf, [{ role: "assistant", content: reply }]);
       wake.noteLoop(reply, turnUsedTools);
       if (lastExchange) lastExchange.hadSavedHistory = true;
       showBubble(reply);
@@ -4679,15 +4678,11 @@ ${note}` : note };
       const userContent = lastExchange.userContent || "\uFF08\u7EE7\u7EED\uFF09";
       const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs, isInf);
       const fullReply = oldReply ? oldReply + "\n" + newReply : newReply;
-      if (hadSaved && targetHist.length && targetHist[targetHist.length - 1].role === "assistant") {
-        targetHist[targetHist.length - 1].content = fullReply;
-      } else if (isInf) {
-        if (fullReply && String(fullReply).trim()) targetHist.push({ role: "assistant", content: fullReply });
-      } else {
-        targetHist.push({ role: "user", content: userContent }, { role: "assistant", content: fullReply });
-      }
+      const replaceLast = hadSaved && targetHist.length && targetHist[targetHist.length - 1].role === "assistant";
+      const hasReply = Boolean(fullReply && String(fullReply).trim());
+      const messages = isInf ? hasReply || replaceLast ? [{ role: "assistant", content: fullReply }] : [] : [{ role: "user", content: userContent }, { role: "assistant", content: fullReply }];
       if (lastExchange) lastExchange.hadSavedHistory = true;
-      await saveHistory(targetHist, isInf);
+      await saveMessages(isInf, messages, replaceLast);
       showBubble(fullReply);
       replied = true;
       react(newReply);
