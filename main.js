@@ -33,14 +33,14 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const APP_ROOT = __dirname;
-const PET_SPACE_DIR = 'G:\\AI\\livliv-pet\\pet_space';
-const PORT = 12400;
-const SPLIT_WINDOWS = true;   // 双窗：卧室独立窗(锁副屏，不动) + 桌宠窗(主屏)。设 false 回退单窗旧行为
+const PET_SPACE_DIR = path.join(APP_ROOT, 'pet_space');
 
 // GPU 策略：在多 GPU（如 AMD 核显 + NVIDIA 独显）跨卡多显环境下，必须启用独显上下文并首选高性能 GPU，
 // 否则 Chromium 软件合成器或核显模式无法通过 DXGI / WGC 抓取接在独显上的主屏。
 // config.json 的 hwCompositing=false 可退回软件合成（占用 CPU、GPU 基本为 0）。
 const BOOT_CONFIG = loadConfig(APP_ROOT);
+const PORT = Number(BOOT_CONFIG.serverPort) || 12400;
+const SPLIT_WINDOWS = BOOT_CONFIG.splitWindows !== false;
 const BOOT_TTS_CONFIG = loadTtsConfig(APP_ROOT);
 if (BOOT_CONFIG.hwCompositing === false) {
   app.commandLine.appendSwitch('disable-gpu-compositing');
@@ -98,7 +98,9 @@ const getGsvIdleTimeoutMs = () => loadTtsConfig(APP_ROOT).app.idleSeconds * 1000
 
 const { ensureGSV, stopGSV, ensureASR, stopASR, onLlmActivity, handleApi } = createVoiceAndApi({
   APP_ROOT, GSV_MODE: getGsvMode(), getGsvMode, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs,
-  ttsServer: BOOT_TTS_CONFIG.app.server, appendLine, createRotatingStream,
+  ttsServer: BOOT_TTS_CONFIG.app.server,
+  asrConfig: { python: BOOT_CONFIG.asrPython, modelDir: BOOT_CONFIG.asrModelDir, port: BOOT_CONFIG.asrPort },
+  appendLine, createRotatingStream,
 });
 
 const llmConfigMgr = createLlmConfigManager({
@@ -136,6 +138,7 @@ function maybeRoomChanged(call) {
 
 const { runFsTool } = createFsTools({
   APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged: maybeRoomChanged,
+  comfyHost: BOOT_CONFIG.comfyHost, comfyPort: BOOT_CONFIG.comfyPort, comfyInputDir: BOOT_CONFIG.comfyInputDir,
 });
 
 // ===== 看门狗同步策略（根据 config.json 中的 watchdog 配置） =====

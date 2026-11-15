@@ -68,7 +68,7 @@ function createStorage({ APP_ROOT, PET_SPACE_DIR, readLastLines }) {
 
   async function sfEmbed(texts) {
     const cfg = getConfig();
-    const res = await fetch('https://api.siliconflow.cn/v1/embeddings', {
+    const res = await fetch(cfg.embeddingUrl, {
       method: 'POST',
       signal: AbortSignal.timeout(8000),
       headers: { 'Authorization': 'Bearer ' + cfg.siliconflowKey, 'Content-Type': 'application/json' },

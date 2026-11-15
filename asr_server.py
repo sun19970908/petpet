@@ -18,9 +18,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODEL_DIR = r"G:\AI\Open-LLM-VTuber\models\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17"
+MODEL_DIR = os.environ.get("ASR_MODEL_DIR", "").strip()
+if not MODEL_DIR:
+    raise SystemExit("[asr] 未配置 ASR_MODEL_DIR（config.json 的 asrModelDir）")
 MODEL_PATH = os.path.join(MODEL_DIR, "model.int8.onnx")
 TOKENS_PATH = os.path.join(MODEL_DIR, "tokens.txt")
+PORT = int(os.environ.get("ASR_PORT", "9882"))
 
 print(f"[asr] 正在加载 SenseVoice 模型: {MODEL_PATH} ...", flush=True)
 recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
@@ -30,7 +33,7 @@ recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
     use_itn=True,
     debug=False
 )
-print("[asr] SenseVoice 模型加载完成，端口 9882 就绪！", flush=True)
+print(f"[asr] SenseVoice 模型加载完成，端口 {PORT} 就绪！", flush=True)
 
 def clean_tags(text: str) -> str:
     return re.sub(r'<\|.*?\|>', '', text).strip()
@@ -74,4 +77,4 @@ async def transcribe(request: Request):
         return Response(content=f'{{"ok": false, "error": "{str(e)}"}}', status_code=500, media_type="application/json")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=9882, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

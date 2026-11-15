@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const net = require('net');
 
-function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, ttsServer, appendLine, createRotatingStream }) {
+function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, ttsServer, asrConfig, appendLine, createRotatingStream }) {
   const GSV = ttsServer || {};
   const GSV_DIR = GSV.dir;
   const GSV_PYTHON = path.isAbsolute(GSV.python) ? GSV.python : path.join(GSV_DIR, GSV.python);
@@ -161,9 +161,11 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
   }, 10000);
 
   // ===== Sherpa-ONNX / SenseVoice ASR 生命周期管理器 =====
-  const ASR_PYTHON = 'G:\\AI\\Open-LLM-VTuber\\.venv\\Scripts\\python.exe';
+  const ASR = asrConfig || {};
+  const ASR_PYTHON = ASR.python || 'python';
+  const ASR_MODEL_DIR = ASR.modelDir || '';
   const ASR_SCRIPT = path.join(APP_ROOT, 'asr_server.py');
-  const ASR_PORT = 9882;
+  const ASR_PORT = Number(ASR.port) || 9882;
 
   let asrProc = null;
   let asrStartingPromise = null;
@@ -189,7 +191,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
         console.log(`[asr] 正在拉起 SenseVoice ASR (port ${ASR_PORT})...`);
         asrProc = spawn(ASR_PYTHON, [ASR_SCRIPT], {
           cwd: APP_ROOT,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', ASR_MODEL_DIR, ASR_PORT: String(ASR_PORT) },
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -220,7 +222,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
           }
           await new Promise((r) => setTimeout(r, 300));
         }
-        console.warn('[asr] 启动等待超时（35s 内 9882 端口未响应）');
+        console.warn(`[asr] 启动等待超时（35s 内 ${ASR_PORT} 端口未响应）`);
         return false;
       } catch (e) {
         console.error('[asr] 启动异常:', e.message);

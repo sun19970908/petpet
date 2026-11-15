@@ -3,7 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged }) {
+function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, comfyHost, comfyPort, comfyInputDir }) {
   function isPathInPetSpace(targetPath) {
     if (!targetPath || typeof targetPath !== 'string') return false;
     const resolved = path.resolve(targetPath);
@@ -19,8 +19,8 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
     return targetUpper !== spaceUpper && targetUpper.startsWith(spaceUpper + path.sep);
   }
 
-  const COMFY_HOST = '127.0.0.1', COMFY_PORT = 8188;
-  const COMFY_INPUT = process.env.STRATA_PET_COMFY_INPUT || 'G:/ComfyUI-Easy-Install/ComfyUI-Easy-Install/ComfyUI/input';
+  const COMFY_HOST = comfyHost || '127.0.0.1', COMFY_PORT = Number(comfyPort) || 8188;
+  const COMFY_INPUT = comfyInputDir || process.env.STRATA_PET_COMFY_INPUT || '';
 
   function comfyReq(method, urlPath, bodyObj) {
     return new Promise((resolve, reject) => {
@@ -61,7 +61,7 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
         const inPath = path.resolve(String(args.input_image));
         if (!isPathInPetSpace(inPath)) return { ok: false, error: 'input_image 必须在 ' + PET_SPACE_DIR + ' 内' };
         if (!fs.existsSync(inPath)) return { ok: false, error: 'input_image 不存在: ' + inPath };
-        if (!fs.existsSync(COMFY_INPUT)) return { ok: false, error: '找不到 ComfyUI input 目录: ' + COMFY_INPUT };
+        if (!COMFY_INPUT || !fs.existsSync(COMFY_INPUT)) return { ok: false, error: '找不到 ComfyUI input 目录: ' + (COMFY_INPUT || '(未配置 comfyInputDir)') };
         const ext = path.extname(inPath).toLowerCase() || '.png';
         const inName = 'pet_input' + ext;
         fs.copyFileSync(inPath, path.join(COMFY_INPUT, inName));
@@ -75,7 +75,7 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
         if (r.status !== 200) return { ok: false, error: 'ComfyUI /prompt HTTP ' + r.status + ': ' + JSON.stringify(r.json).slice(0, 300) };
         if (r.json && r.json.error) return { ok: false, error: 'ComfyUI 拒绝工作流: ' + JSON.stringify(r.json.error).slice(0, 250) + ' ' + JSON.stringify(r.json.node_errors || {}).slice(0, 300) };
         pid = r.json && r.json.prompt_id;
-      } catch (e) { return { ok: false, error: '连不上 ComfyUI(127.0.0.1:8188): ' + String(e.message || e) }; }
+      } catch (e) { return { ok: false, error: '连不上 ComfyUI(' + COMFY_HOST + ':' + COMFY_PORT + '): ' + String(e.message || e) }; }
       if (!pid) return { ok: false, error: 'ComfyUI 没返回 prompt_id' };
       const t0 = Date.now();
       let outs = null;

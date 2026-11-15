@@ -1,6 +1,6 @@
 // 桌宠看门狗：保活 + 无限唤醒中止检测。常驻用法：node watchdog.js（detached 启动，不注册自启，重启电脑即停）
 // 每 30s：
-//   - 探 127.0.0.1:12400；不在线 → 重拉 start-pet.bat（1 小时最多 5 次，防连环崩）；若端口被僵死进程占住则先杀再拉
+//   - 探 config.json 的 serverPort；不在线 → 重拉 start-pet.bat（1 小时最多 5 次，防连环崩）；若端口被僵死进程占住则先杀再拉
 //   - 在线但 .wake-state.json 显示"无限唤醒开着、心跳却停了 >180s"或"同轮次无任何活动进展 >600s" → 杀掉重拉（重启后自动恢复无限唤醒）
 const http = require('http'), fs = require('fs'), path = require('path'), { spawn, execSync } = require('child_process');
 const { appendLine } = require('./lib/logger');
@@ -9,6 +9,7 @@ if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on
 if (process.stderr && typeof process.stderr.on === 'function') process.stderr.on('error', () => {});
 
 const ROOT = __dirname;
+const APP_PORT = Number(loadConfig(ROOT).serverPort) || 12400;
 const STATE = path.join(ROOT, 'pet_space', '.wake-state.json');
 const LOG = path.join(ROOT, 'logs', 'watchdog.log');
 const PIDFILE = path.join(ROOT, 'logs', 'watchdog.pid');
@@ -57,7 +58,7 @@ try {
 function probe(cb) {
   let settled = false;
   const done = (ok, why) => { if (settled) return; settled = true; cb(ok, why); };
-  const req = http.get({ host: '127.0.0.1', port: 12400, path: '/api/config', timeout: 6000 }, (r) => {
+  const req = http.get({ host: '127.0.0.1', port: APP_PORT, path: '/api/config', timeout: 6000 }, (r) => {
     r.resume();
     done(r.statusCode === 200, 'http-' + r.statusCode);
   });
@@ -68,7 +69,7 @@ function probe(cb) {
 function petPid() {
   try {
     const out = execSync('netstat -ano -p tcp', { encoding: 'utf8' });
-    const line = out.split(/\r?\n/).find((l) => /:12400\b/.test(l) && /LISTEN/i.test(l));
+    const line = out.split(/\r?\n/).find((l) => l.includes(':' + APP_PORT) && /LISTEN/i.test(l));
     if (line) { const p = line.trim().split(/\s+/); return p[p.length - 1]; }
   } catch {}
   return null;
@@ -96,7 +97,7 @@ function checkInfwakeCutoff() {
   lastTickTs = now;
 }
 function stopInfwakeOnPet(cb) {
-  const req = http.request({ host: '127.0.0.1', port: 12400, path: '/api/infwake/stop', method: 'POST', timeout: 5000 }, (r) => {
+  const req = http.request({ host: '127.0.0.1', port: APP_PORT, path: '/api/infwake/stop', method: 'POST', timeout: 5000 }, (r) => {
     const chunks = [];
     r.on('data', (c) => chunks.push(c));
     r.on('end', () => {
@@ -144,15 +145,15 @@ function tick() {
       if (hungPid) {
         // 端口被占着却连续 >= 2 次探活失败（>=30s 假死/弹窗卡死）：先杀掉占端口的僵死进程再重启，否则 start-pet.bat 会 EADDRINUSE 秒退！
         if (offlineStreak >= 2 && Date.now() - lastLaunch >= 45000) {
-          if (!canRestart()) { log(`12400 端口被 pid=${hungPid} 占住且无响应 (${why})，但 1 小时内已重启 5 次，暂缓`); return; }
-          log(`12400 端口被 pid=${hungPid} 占住且连续 ${offlineStreak} 次无响应 (${why}) → 强杀僵死进程重拉`);
+          if (!canRestart()) { log(`${APP_PORT} 端口被 pid=${hungPid} 占住且无响应 (${why})，但 1 小时内已重启 5 次，暂缓`); return; }
+          log(`${APP_PORT} 端口被 pid=${hungPid} 占住且连续 ${offlineStreak} 次无响应 (${why}) → 强杀僵死进程重拉`);
           killPet();
           offlineStreak = 0;
-          setTimeout(() => launchPet('12400 假死无响应'), 1500);
+          setTimeout(() => launchPet(`${APP_PORT} 假死无响应`), 1500);
         }
         return;
       }
-      launchPet('12400 不在线 (' + why + ')');
+      launchPet(`${APP_PORT} 不在线 (` + why + ')');
       return;
     }
     offlineStreak = 0;
