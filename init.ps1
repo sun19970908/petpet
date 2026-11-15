@@ -1,11 +1,14 @@
 ﻿#requires -Version 5.1
-# 首次运行初始化：补齐缺失文件，安装依赖，并在缺失时克隆角色仓库；不覆盖已有配置或角色。
+# 首次运行初始化：补齐缺失文件，安装依赖，并在缺失时只克隆 p01/p02 角色。
+# p01/p02 来自 https://github.com/livliv-dev/player，采用 CC BY-NC-SA 4.0：
+# 必须署名、仅限非商业、修改后分发需同协议；不覆盖已有配置或角色。
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $playerRepo = 'https://github.com/livliv-dev/player.git'
 $electronExe = Join-Path $root 'node_modules/electron/dist/electron.exe'
 $characterRoot = Join-Path $root 'characters'
 $characterP01 = Join-Path $characterRoot 'characters/p01'
+$characterP02 = Join-Path $characterRoot 'characters/p02'
 
 function CopyIfMissing {
   param(
@@ -69,7 +72,11 @@ function InstallDependencies {
 
 function CloneCharacters {
   if (Test-Path -LiteralPath $characterP01) {
-    Write-Host "[skip]   characters/characters/p01 已存在"
+    if (-not (Test-Path -LiteralPath $characterP02)) {
+      Write-Host "[warn]   characters/characters/p02 缺失；不覆盖现有 characters/ 目录。"
+    } else {
+      Write-Host "[skip]   characters/characters/p01、p02 已存在"
+    }
     return
   }
   if (Test-Path -LiteralPath $characterRoot) {
@@ -92,14 +99,31 @@ function CloneCharacters {
 
   $tmp = Join-Path $env:TEMP ("livliv-characters-" + [guid]::NewGuid().ToString('N'))
   $moved = $false
-  Write-Host "[run]    git clone --depth 1 $playerRepo characters"
+  Write-Host "[run]    git clone --depth 1 --filter=blob:none --no-checkout $playerRepo (仅 p01/p02)"
   try {
-    & $gitExe clone --depth 1 $playerRepo $tmp
+    & $gitExe clone --depth 1 --filter=blob:none --no-checkout $playerRepo $tmp
     if ($LASTEXITCODE -ne 0) {
       throw "git clone 失败，退出码：$LASTEXITCODE"
     }
+
+    & $gitExe -C $tmp sparse-checkout init --no-cone
+    if ($LASTEXITCODE -ne 0) {
+      throw "git sparse-checkout init 失败，退出码：$LASTEXITCODE"
+    }
+    & $gitExe -C $tmp sparse-checkout set '/characters/p01/' '/characters/p02/' '/characters/LICENSE.md' '/characters/CREDITS.md' '/LICENSE' '/NOTICE'
+    if ($LASTEXITCODE -ne 0) {
+      throw "git sparse-checkout set 失败，退出码：$LASTEXITCODE"
+    }
+    & $gitExe -C $tmp checkout
+    if ($LASTEXITCODE -ne 0) {
+      throw "git checkout 失败，退出码：$LASTEXITCODE"
+    }
+
     if (-not (Test-Path -LiteralPath (Join-Path $tmp 'characters/p01'))) {
       throw "角色仓库中未找到 characters/p01。"
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $tmp 'characters/p02'))) {
+      throw "角色仓库中未找到 characters/p02。"
     }
     Move-Item -LiteralPath $tmp -Destination $characterRoot
     $moved = $true
@@ -111,10 +135,18 @@ function CloneCharacters {
   if (-not (Test-Path -LiteralPath $characterP01)) {
     throw "角色克隆完成，但未找到 characters/characters/p01。"
   }
-  Write-Host "[done]   角色仓库已克隆到 characters/"
+  if (-not (Test-Path -LiteralPath $characterP02)) {
+    throw "角色克隆完成，但未找到 characters/characters/p02。"
+  }
+  Write-Host "[done]   角色 p01/p02 已克隆到 characters/"
+  Write-Host "[license] 来源：$playerRepo"
+  Write-Host "[license] p01/p02 为 CC BY-NC-SA 4.0：必须署名、仅限非商业、修改后同协议分发。"
 }
 
 Write-Host "初始化 livliv-pet：$root"
+Write-Host ""
+Write-Host "[license] 角色仅拉取 p01/p02，来源：$playerRepo"
+Write-Host "[license] p01/p02 为 CC BY-NC-SA 4.0：必须署名、仅限非商业、修改后同协议分发。"
 Write-Host ""
 
 CopyIfMissing 'pet_space.example' 'pet_space' 'pet_space/' -Directory
@@ -133,6 +165,9 @@ CloneCharacters
 Write-Host ""
 if (-not (Test-Path -LiteralPath $characterP01)) {
   Write-Host "[warn]   缺少角色资源 characters/characters/p01/，角色无法加载。"
+}
+if (-not (Test-Path -LiteralPath $characterP02)) {
+  Write-Host "[warn]   缺少角色资源 characters/characters/p02/。"
 }
 if (-not (Test-Path -LiteralPath (Join-Path $root 'tools/ScreenCap.exe'))) {
   Write-Host "[warn]   tools/ScreenCap.exe 不存在，截图会回退到 Electron desktopCapturer。"

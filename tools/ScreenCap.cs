@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 livliv-pet contributors
+// First-party helper; see LICENSE and tools/README.md in the repository root.
 using System;
 using System.Collections.Generic;
 using System.Drawing;

@@ -21,9 +21,18 @@ Electron + [livliv player](https://github.com/livliv-dev/player) 的本地 AI �
 - **上下文注入规则（2026-11-09 修正）**：【工具调用台账】（尾部10条）和 pet_think 强度指令**只在拼请求时临时挂到最后一条 user 上，不进聊天历史**——历史存干净文本，杜绝全量发送时旧台账反复累积（曾实测 34 条消息注入 8 次）。历史/请求解耦：`send()` 存干净文本，`askLLM` 拼请求时由 `getToolLedger()`+`DEFAULT_PROMPT_POLICY.tailInstruction` 临时挂载
 - **聊天历史**：**明文文件 `history/聊天记录.json` 是唯一事实源**（UTF-8，可直接编辑/备份；**在写沙箱外，她无权改写**）——**每次发消息前先从磁盘同步**：删除文件=真失忆、手动编辑=直接改记忆；之后追加本轮并整份重写。**每次请求全量发送**（用户决策，压缩/摘要后置）。**图片自动抽取**：写盘时把 dataURL 解码到 `history/img/` 独立文件，JSON 只留 `/history/img/...` 相对路径（可预览）——记录不膨胀
 
+## License / Assets
+
+- **代码**：自有源代码使用 MIT，见根目录 [`LICENSE`](LICENSE)。第三方依赖和资源的授权见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+- **角色**：角色资源不随仓库分发。`init.ps1` 只从 [livliv-dev/player](https://github.com/livliv-dev/player) 拉取 `p01`、`p02`；它们是 **CC BY-NC-SA 4.0**，必须署名、仅限非商业用途，修改后分发需使用同一协议。署名和完整条款见拉取后的 `characters/characters/LICENSE.md`、`characters/characters/CREDITS.md`。`p03`（Pen）上游未授予权利，`init.ps1` 不会拉取，也不应擅自分发。
+- **语音和模型**：`voices/`、`voice-samples/`、GPT-SoVITS 权重、SenseVoice/ASR 模型、ComfyUI 模型都不在仓库中；TTS 默认关闭。需要时请自行取得并遵守对应模型/声音权利人的许可，尤其是真人歌手音色。
+- **ScreenCap**：`tools/ScreenCap.cs` / `ScreenCap.exe` 是自有代码，按根 MIT 许可；构建说明见 [`tools/README.md`](tools/README.md)。
+- **示例房间**：`pet_space.example/room/bedroom.png` 是示例图片，不自动纳入 MIT；公开再分发前请确认来源或替换为可自由分发的素材。
+- **商标**：本项目是非官方项目，与 DeepSeek、LivLiv 没有隶属、赞助或认可关系；相关名称和角色形象归各自权利人。
+
 ## 启动
 
-首次运行可以直接执行初始化脚本；它会补齐缺失文件、安装依赖，并在 `characters/` 不存在时从 [livliv player](https://github.com/livliv-dev/player) 克隆角色仓库。已有配置或角色目录不会被覆盖：
+首次运行可以直接执行初始化脚本；它会补齐缺失文件、安装依赖，并在 `characters/` 不存在时从 [livliv player](https://github.com/livliv-dev/player) 只拉取 `p01`、`p02`。已有配置或角色目录不会被覆盖：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\init.ps1
