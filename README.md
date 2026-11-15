@@ -31,6 +31,10 @@ Copy-Item pet_space.example pet_space -Recurse
 
 `pet_space.example` 含最小默认：`persona.txt`、`room/index.html`、`room/landmarks.json`、`room/bedroom.png`；默认房间只有窗帘、灯光和左下角摇铃，不含额外装饰或备份页。`renderer/index.html` 已随仓库提供，不需要复制。
 
+`config.json` 的 `hasBedroom` 控制是否有卧室：设为 `false` 时不创建卧室窗，只创建主屏桌宠窗，没有副屏也能运行；改动后重启生效。默认 `true`。
+
+TTS 配置参考 `tts.config.example.json`，首次使用复制为 `tts.config.json`；本地的 `tts.config.json` 不再提交到仓库。
+
 前置服务：Strata(8081) → 反代(11435)。
 
 双击运行 `start-pet.bat`，启动参数只保留 `debug`（进入独立调试历史）：

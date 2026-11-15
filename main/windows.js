@@ -12,6 +12,7 @@ function createWindowManager({ APP_ROOT, winLog, getConfig, getNoInfwake, getSpl
   const respawnTimes = { pet: [], bedroom: [] };
 
   function bedroomDisplay() {
+    if (getConfig().hasBedroom === false) return null;
     const primary = screen.getPrimaryDisplay();
     return screen.getAllDisplays().find((d) => d.id !== primary.id) || null;
   }

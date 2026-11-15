@@ -5,6 +5,7 @@
   "infwakeCutoff": "12:00",
   "infwakeReflectEvery": 8,
   "watchdog": false,
+  "hasBedroom": true,
   "petOnlyBedroom": false,
   "hwCompositing": true,
   "capMain": "main",

@@ -24,6 +24,7 @@ characters/
 # Sensitive local configuration
 config.json
 llm.config.json
+tts.config.json
 .env
 .env.*
 
