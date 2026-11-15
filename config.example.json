@@ -16,9 +16,7 @@
   "characterPath": "/characters/p01/",
   "llmProfile": "default",
   "ttsMode": "off",
-  "asrPython": "python",
   "asrModelDir": "",
-  "asrPort": 9882,
   "comfyHost": "127.0.0.1",
   "comfyPort": 8188,
   "comfyInputDir": ""

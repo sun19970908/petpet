@@ -81,6 +81,12 @@ else
 fi
 
 echo
+if [ ! -d voices ]; then
+  echo '[hint]   TTS 默认关闭；以后开启 TTS 时需要 voices/ 和 GPT-SoVITS。'
+fi
+if [ ! -d models ]; then
+  echo '[hint]   ASR 可选：SenseVoice 模型和官方下载链接见 README 的 SenseVoice ASR 一节。'
+fi
 echo '初始化完成。下一步：'
 echo '  1. 编辑 config.json / llm.config.json / tts.config.json'
 echo '  2. llm.config.json 的 baseUrl 默认为空，配置端点后才能聊天'

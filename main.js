@@ -23,9 +23,9 @@ process.on('uncaughtException', (err) => {
   const code = err && err.code;
   const msg = (err && (err.stack || err.message)) || String(err);
   appendLine(path.join(__dirname, 'logs', 'main-err.log'), `[uncaughtException] code=${code || 'none'} ${msg}`, { maxBytes: 2 * 1024 * 1024 });
-  if (code === 'EOF' || code === 'EPIPE' || code === 'ECONNRESET' || code === 'ERR_STREAM_DESTROYED' || code === 'ERR_STREAM_WRITE_AFTER_END') {
-    return;
-  }
+  const benign = code === 'EOF' || code === 'EPIPE' || code === 'ECONNRESET' || code === 'ERR_STREAM_DESTROYED' || code === 'ERR_STREAM_WRITE_AFTER_END';
+  if (benign) return;
+  app.exit(1);
 });
 process.on('unhandledRejection', (reason) => {
   const msg = (reason && (reason.stack || reason.message)) || String(reason);
@@ -34,6 +34,14 @@ process.on('unhandledRejection', (reason) => {
 
 const APP_ROOT = __dirname;
 const PET_SPACE_DIR = path.join(APP_ROOT, 'pet_space');
+let shutdownStarted = false;
+let shutdownDone = false;
+
+// 单实例：第二个进程在加载配置/启动 TTS、ASR、watchdog 之前就退出。
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
 
 // GPU 策略：在多 GPU（如 AMD 核显 + NVIDIA 独显）跨卡多显环境下，必须启用独显上下文并首选高性能 GPU，
 // 否则 Chromium 软件合成器或核显模式无法通过 DXGI / WGC 抓取接在独显上的主屏。
@@ -81,6 +89,15 @@ const windows = createWindowManager({
   getSplitWindows: () => SPLIT_WINDOWS,
 });
 
+app.on('second-instance', () => {
+  const win = windows.petWin || windows.bedroomWin;
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.showInactive();
+  win.show();
+  win.focus();
+});
+
 const normalizeGsvMode = (v) => {
   const m = String(v || 'auto').toLowerCase().trim();
   if (['always', 'on', 'true', '1'].includes(m)) return 'always';
@@ -100,8 +117,8 @@ const getGsvIdleTimeoutMs = () => loadTtsConfig(APP_ROOT).app.idleSeconds * 1000
 const { ensureGSV, stopGSV, ensureASR, stopASR, onLlmActivity, handleApi } = createVoiceAndApi({
   APP_ROOT, GSV_MODE: getGsvMode(), getGsvMode, GSV_IDLE_TIMEOUT: getGsvIdleTimeoutMs(), getGsvIdleTimeoutMs,
   ttsServer: BOOT_TTS_CONFIG.app.server,
-  asrConfig: { python: BOOT_CONFIG.asrPython, modelDir: BOOT_CONFIG.asrModelDir, port: BOOT_CONFIG.asrPort },
-  appendLine, createRotatingStream,
+  asrConfig: { modelDir: BOOT_CONFIG.asrModelDir },
+  appendLine, createRotatingStream, getAppQuitting: () => shutdownStarted,
 });
 
 const llmConfigMgr = createLlmConfigManager({
@@ -181,10 +198,19 @@ function applyWatchdogPolicy() {
 
 // ===== 窗口管理、显示器与跨屏置顶守卫已抽至 main/windows.js =====
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (shutdownDone) return;
+  event.preventDefault();
+  if (shutdownStarted) return;
+  shutdownStarted = true;
   windows.beginQuit();
-  stopGSV().catch(() => {});
-  stopASR();
+  Promise.race([
+    Promise.allSettled([stopGSV(), stopASR()]),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ]).finally(() => {
+    shutdownDone = true;
+    app.exit(0);
+  });
 });
 
 // ===== 应用初始化与 IPC 绑定 =====

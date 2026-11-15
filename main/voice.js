@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const net = require('net');
 
-function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, ttsServer, asrConfig, appendLine, createRotatingStream }) {
+function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 600000, getGsvIdleTimeoutMs, ttsServer, asrConfig, appendLine, createRotatingStream, getAppQuitting }) {
   const GSV = ttsServer || {};
   const GSV_DIR = GSV.dir;
   const GSV_PYTHON = path.isAbsolute(GSV.python) ? GSV.python : path.join(GSV_DIR, GSV.python);
@@ -20,13 +20,30 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
     appendLine(file, msg, { maxBytes: file === GSV_LOG ? 5 * 1024 * 1024 : 2 * 1024 * 1024 });
   }
 
+  const isAppQuitting = () => typeof getAppQuitting === 'function' && getAppQuitting();
+
   function killChildProcess(proc) {
-    if (!proc || !proc.pid || proc.killed) return;
+    if (!proc || !proc.pid || proc.killed) return Promise.resolve();
     if (process.platform === 'win32') {
-      exec(`taskkill /F /T /PID ${proc.pid}`, () => {});
-      return;
+      return new Promise((resolve) => {
+        let done = false;
+        let timer = null;
+        const finish = () => { if (!done) { done = true; if (timer) clearTimeout(timer); resolve(); } };
+        timer = setTimeout(finish, 3000);
+        try { exec(`taskkill /F /T /PID ${proc.pid}`, finish); } catch { finish(); }
+      });
     }
-    try { process.kill(proc.pid, 'SIGTERM'); } catch {}
+    return new Promise((resolve) => {
+      let done = false;
+      let timer = null;
+      const finish = () => { if (!done) { done = true; if (timer) clearTimeout(timer); resolve(); } };
+      timer = setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch {}
+        finish();
+      }, 1500);
+      proc.once('exit', finish);
+      try { proc.kill('SIGTERM'); } catch { finish(); }
+    });
   }
 
   let gsvProc = null;
@@ -64,6 +81,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
 
   async function ensureGSV() {
     if (resolveGsvMode() === 'never') return false;
+    if (isAppQuitting()) return false;
     touchGsvActivity();
 
     if (await isGsvPortOpen()) return true;
@@ -96,6 +114,12 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
         });
         if (gsvProc.stdout) gsvProc.stdout.on('error', () => {});
         if (gsvProc.stderr) gsvProc.stderr.on('error', () => {});
+
+        if (isAppQuitting()) {
+          await killChildProcess(gsvProc);
+          gsvProc = null;
+          return false;
+        }
 
         gsvProc.on('exit', (code, sig) => {
           console.log(`[gsv] 进程已退出 (code=${code}, sig=${sig})`);
@@ -142,7 +166,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
 
     await new Promise((r) => setTimeout(r, 800));
     if (gsvProc && !gsvProc.killed) {
-      killChildProcess(gsvProc);
+      await killChildProcess(gsvProc);
     }
     gsvProc = null;
     console.log('[gsv] GPT-SoVITS 已关闭');
@@ -167,87 +191,208 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
     }
   }, 10000);
 
-  // ===== Sherpa-ONNX / SenseVoice ASR 生命周期管理器 =====
+  // ===== SenseVoice ASR：主进程内通过 sherpa-onnx-node 运行 =====
   const ASR = asrConfig || {};
-  const ASR_PYTHON = ASR.python || (process.platform === 'win32' ? 'python' : 'python3');
-  const ASR_MODEL_DIR = ASR.modelDir || '';
-  const ASR_SCRIPT = path.join(APP_ROOT, 'asr_server.py');
-  const ASR_PORT = Number(ASR.port) || 9882;
+  const ASR_MODEL_DIR = ASR.modelDir ? path.resolve(APP_ROOT, ASR.modelDir) : '';
+  const ASR_MODEL_PATH = ASR_MODEL_DIR ? path.join(ASR_MODEL_DIR, 'model.int8.onnx') : '';
+  const ASR_TOKENS_PATH = ASR_MODEL_DIR ? path.join(ASR_MODEL_DIR, 'tokens.txt') : '';
+  const ASR_MAX_BYTES = 20 * 1024 * 1024;
 
-  let asrProc = null;
-  let asrStartingPromise = null;
+  let asrRecognizer = null;
+  let asrLoadingPromise = null;
+  let asrMissingWarned = false;
 
-  function isAsrPortOpen() {
-    return new Promise((resolve) => {
-      const s = net.createConnection({ host: '127.0.0.1', port: ASR_PORT }, () => {
-        s.destroy();
-        resolve(true);
-      });
-      s.setTimeout(350);
-      s.on('timeout', () => { s.destroy(); resolve(false); });
-      s.on('error', () => { s.destroy(); resolve(false); });
-    });
+  function loadSherpa() {
+    if (process.platform === 'linux' || process.platform === 'darwin') {
+      const pkg = `sherpa-onnx-${process.platform}-${process.arch}`;
+      const libDir = path.join(APP_ROOT, 'node_modules', pkg);
+      if (fs.existsSync(libDir)) {
+        const envName = process.platform === 'darwin' ? 'DYLD_LIBRARY_PATH' : 'LD_LIBRARY_PATH';
+        const old = process.env[envName] || '';
+        if (!old.split(path.delimiter).includes(libDir)) {
+          process.env[envName] = libDir + (old ? path.delimiter + old : '');
+        }
+      }
+    }
+    return require('sherpa-onnx-node');
+  }
+
+  function asrModelAvailable() {
+    return Boolean(ASR_MODEL_DIR && fs.existsSync(ASR_MODEL_PATH) && fs.existsSync(ASR_TOKENS_PATH));
   }
 
   async function ensureASR() {
-    if (await isAsrPortOpen()) return true;
-    if (asrStartingPromise) return asrStartingPromise;
+    if (isAppQuitting()) return null;
+    if (asrRecognizer) return asrRecognizer;
+    if (asrLoadingPromise) return asrLoadingPromise;
+    if (!asrModelAvailable()) {
+      if (!asrMissingWarned) {
+        console.warn('[asr] 未配置可用模型，跳过启动（需要 model.int8.onnx 和 tokens.txt）');
+        asrMissingWarned = true;
+      }
+      return null;
+    }
 
-    asrStartingPromise = (async () => {
+    asrLoadingPromise = (async () => {
       try {
-        console.log(`[asr] 正在拉起 SenseVoice ASR (port ${ASR_PORT})...`);
-        asrProc = spawn(ASR_PYTHON, [ASR_SCRIPT], {
-          cwd: APP_ROOT,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', ASR_MODEL_DIR, ASR_PORT: String(ASR_PORT) },
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
+        console.log(`[asr] 正在加载 SenseVoice 模型: ${ASR_MODEL_DIR}`);
+        const sherpa = loadSherpa();
+        const recognizer = await sherpa.OfflineRecognizer.createAsync({
+          featConfig: { sampleRate: 16000, featureDim: 80 },
+          modelConfig: {
+            senseVoice: { model: ASR_MODEL_PATH, useInverseTextNormalization: 1 },
+            tokens: ASR_TOKENS_PATH,
+            numThreads: 2,
+            provider: 'cpu',
+            debug: 0,
+          },
         });
-
-        asrProc.on('error', (err) => {
-          console.error(`[asr] 进程启动/运行错误: ${err.message}`);
-          asrProc = null;
-        });
-        if (asrProc.stdout) {
-          asrProc.stdout.on('error', () => {});
-          asrProc.stdout.on('data', (d) => console.log(d.toString('utf8').trim()));
+        if (!isAppQuitting()) {
+          asrRecognizer = recognizer;
+          console.log('[asr] SenseVoice 模型加载完成');
+          return asrRecognizer;
         }
-        if (asrProc.stderr) {
-          asrProc.stderr.on('error', () => {});
-          asrProc.stderr.on('data', (d) => console.error(d.toString('utf8').trim()));
-        }
-
-        asrProc.on('exit', (code, sig) => {
-          console.log(`[asr] 进程已退出 (code=${code}, sig=${sig})`);
-          asrProc = null;
-        });
-
-        const startTs = Date.now();
-        while (Date.now() - startTs < 35000) {
-          if (await isAsrPortOpen()) {
-            console.log(`[asr] SenseVoice ASR 已就绪（就绪耗时 ${Date.now() - startTs}ms）`);
-            return true;
-          }
-          await new Promise((r) => setTimeout(r, 300));
-        }
-        console.warn(`[asr] 启动等待超时（35s 内 ${ASR_PORT} 端口未响应）`);
-        return false;
+        return null;
       } catch (e) {
-        console.error('[asr] 启动异常:', e.message);
-        asrProc = null;
-        return false;
+        console.error('[asr] 模型加载失败:', e.message);
+        asrRecognizer = null;
+        return null;
       } finally {
-        asrStartingPromise = null;
+        asrLoadingPromise = null;
       }
     })();
 
-    return asrStartingPromise;
+    return asrLoadingPromise;
   }
 
-  function stopASR() {
-    if (asrProc && !asrProc.killed) {
-      console.log('[asr] 正在关闭 ASR 进程...');
-      killChildProcess(asrProc);
-      asrProc = null;
+  async function stopASR() {
+    asrRecognizer = null;
+  }
+
+  function readWavSamples(buf) {
+    if (!Buffer.isBuffer(buf) || buf.length < 44) {
+      throw Object.assign(new Error('音频数据过短或为空'), { statusCode: 400 });
+    }
+    if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') {
+      throw Object.assign(new Error('不是有效的 WAV 文件'), { statusCode: 400 });
+    }
+
+    let fmt = null;
+    let dataOffset = -1;
+    let dataSize = 0;
+    let offset = 12;
+    while (offset + 8 <= buf.length) {
+      const id = buf.toString('ascii', offset, offset + 4);
+      const size = buf.readUInt32LE(offset + 4);
+      const body = offset + 8;
+      if (id === 'fmt ' && size >= 16) {
+        fmt = {
+          audioFormat: buf.readUInt16LE(body),
+          channels: buf.readUInt16LE(body + 2),
+          sampleRate: buf.readUInt32LE(body + 4),
+          bits: buf.readUInt16LE(body + 14),
+        };
+      } else if (id === 'data') {
+        dataOffset = body;
+        dataSize = Math.min(size, buf.length - body);
+      }
+      offset = body + size + (size & 1);
+    }
+
+    if (!fmt || fmt.audioFormat !== 1 || fmt.bits !== 16) {
+      throw Object.assign(new Error('只支持 16-bit PCM WAV'), { statusCode: 400 });
+    }
+    if (fmt.channels < 1 || !fmt.sampleRate || dataOffset < 0 || dataSize < 2) {
+      throw Object.assign(new Error('WAV 音频数据为空'), { statusCode: 400 });
+    }
+
+    const frameCount = Math.floor(dataSize / (2 * fmt.channels));
+    if (!frameCount) {
+      throw Object.assign(new Error('WAV 音频数据为空'), { statusCode: 400 });
+    }
+    const samples = new Float32Array(frameCount);
+    for (let i = 0; i < frameCount; i++) {
+      samples[i] = buf.readInt16LE(dataOffset + i * 2 * fmt.channels) / 32768;
+    }
+    return { sampleRate: fmt.sampleRate, samples };
+  }
+
+  function cleanAsrText(text) {
+    return String(text || '').replace(/<\|.*?\|>/g, '').trim();
+  }
+
+  function readBodyLimited(req, maxBytes) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      let total = 0;
+      let done = false;
+      const fail = (err) => {
+        if (done) return;
+        done = true;
+        reject(err);
+      };
+      req.on('data', (chunk) => {
+        if (done) return;
+        total += chunk.length;
+        if (total > maxBytes) {
+          fail(Object.assign(new Error('音频数据过大'), { statusCode: 413 }));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => {
+        if (done) return;
+        done = true;
+        resolve(Buffer.concat(chunks));
+      });
+      req.on('error', (err) => { fail(err); });
+    });
+  }
+
+  function sendJson(res, status, data) {
+    try {
+      if (!res.headersSent) res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(data));
+    } catch {}
+  }
+
+  async function handleAsrRequest(req, res) {
+    if (isAppQuitting()) {
+      sendJson(res, 503, { ok: false, error: '应用正在退出' });
+      return;
+    }
+    const contentLength = Number(req.headers['content-length'] || 0);
+    if (Number.isFinite(contentLength) && contentLength > ASR_MAX_BYTES) {
+      req.resume();
+      sendJson(res, 413, { ok: false, error: '音频数据过大' });
+      return;
+    }
+
+    let body;
+    try {
+      body = await readBodyLimited(req, ASR_MAX_BYTES);
+    } catch (e) {
+      sendJson(res, e.statusCode || 400, { ok: false, error: e.message || '读取音频失败' });
+      return;
+    }
+
+    try {
+      const wave = readWavSamples(body);
+      const recognizer = await ensureASR();
+      if (!recognizer) {
+        sendJson(res, 503, { ok: false, error: 'SenseVoice ASR 未就绪' });
+        return;
+      }
+      const stream = recognizer.createStream();
+      stream.acceptWaveform({ sampleRate: wave.sampleRate, samples: wave.samples });
+      const result = await recognizer.decodeAsync(stream);
+      const text = cleanAsrText(result && result.text);
+      console.log(`[asr] 识别完成: ${text}`);
+      sendJson(res, 200, { ok: true, text });
+    } catch (e) {
+      console.error('[asr] 识别失败:', e.message);
+      sendJson(res, e.statusCode || 500, { ok: false, error: e.message || '识别失败' });
     }
   }
 
@@ -274,11 +419,15 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
   }
 
   function handleApi(req, res) {
+    const pathname = req.url.split('?')[0];
+    if (pathname === '/api/asr' && req.method === 'POST') {
+      handleAsrRequest(req, res);
+      return;
+    }
     const routes = {
       '/api/tts': { host: '127.0.0.1', port: GSV_PORT, path: '/tts' },
-      '/api/asr': { host: '127.0.0.1', port: ASR_PORT, path: '/asr' },
     };
-    const target = routes[req.url.split('?')[0]];
+    const target = routes[pathname];
     if (!target || req.method !== 'POST') {
       if (req.url === '/api/dbg' && req.method === 'POST') {
         const chunks = [];
@@ -305,7 +454,6 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
     }
 
     const isTts = target.path === '/tts';
-    const isAsr = target.path === '/asr';
 
     if (isTts) touchGsvActivity();
 
@@ -350,19 +498,10 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
         }
       }
 
-      if (isAsr) {
-        const ok = await ensureASR();
-        if (!ok) {
-          if (!res.headersSent) res.writeHead(502);
-          res.end('SenseVoice ASR not ready');
-          return;
-        }
-      }
-
       const forwardHeaders = {
         ...req.headers,
         'content-length': String(fullBody.length),
-        'content-type': isAsr ? (req.headers['content-type'] || 'audio/wav') : 'application/json',
+        'content-type': 'application/json',
         host: `${target.host}:${target.port}`,
       };
       delete forwardHeaders.origin;

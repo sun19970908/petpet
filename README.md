@@ -10,7 +10,7 @@ Windows、Linux 和 macOS 的本地 AI 桌宠。Electron + [livliv player](https
 - **房间与副屏**：可选卧室窗口；`hasBedroom=false` 时只开主屏，没有副屏也能运行。
 - **对话**：兼容 OpenAI Chat Completions 的本地或云端端点；按 `llm.config.json` 档案切换模型、上下文和采样参数。
 - **记忆**：Orama 语义检索 + 可选 embedding；聊天记录保存为明文 JSON，可直接编辑或备份。
-- **语音**：可选 GPT-SoVITS TTS 与 SenseVoice ASR；默认关闭，外部服务单独安装。
+- **语音**：GPT-SoVITS TTS 默认关闭；SenseVoice ASR 在 Electron 主进程内通过 `sherpa-onnx-node` 运行，不需要 Python/FastAPI，模型需单独下载。
 - **工具**：读取文件和目录、截屏、改房间、检索记忆；写入只允许 `pet_space/`。
 - **唤醒**：手动铃铛、定时唤醒、无限唤醒；带 GPU 占用和上下文长度护栏。
 - **多模态**：输入框粘贴图片，或点击按钮截屏后发给模型。
@@ -41,6 +41,8 @@ bash init.sh
 - 创建 `logs/`、`history/`；
 - 安装 npm 依赖；
 - 从 [livliv-dev/player](https://github.com/livliv-dev/player) 只拉取 `p01`、`p02`（CC BY-NC-SA 4.0）。
+
+初始化脚本不会下载 SenseVoice 模型；需要 ASR 时按下面的 [SenseVoice ASR](#sensevoice-asr可选) 一节手动下载。
 
 已有配置或 `characters/` 不会被覆盖。
 
@@ -111,7 +113,43 @@ LLM 档案最小结构：
 }
 ```
 
-TTS、ASR 和 ComfyUI 的外部服务地址也在 `config.json` 中配置；不填 `asrModelDir` 时不会启动 ASR。
+TTS 和 ComfyUI 是外部服务，地址在 `config.json` 中配置。ASR 不再依赖外部服务：`sherpa-onnx-node` 随 `npm install` 安装，只填写 `asrModelDir` 即可；模型目录需要包含 `model.int8.onnx` 和 `tokens.txt`。
+
+### SenseVoice ASR（可选）
+
+官方 int8 模型（中英日韩粤，2025-09-09；下载约 158 MB，解压后约 237 MB）：
+
+```text
+https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2
+```
+
+Windows：
+
+```powershell
+New-Item -ItemType Directory -Force .\models
+Invoke-WebRequest -Uri "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2" -OutFile .\models\sensevoice.tar.bz2
+C:\Windows\System32\tar.exe -xjf .\models\sensevoice.tar.bz2 -C .\models
+Remove-Item .\models\sensevoice.tar.bz2
+```
+
+Linux / macOS：
+
+```bash
+mkdir -p models
+curl -L "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2" -o models/sensevoice.tar.bz2
+tar -xjf models/sensevoice.tar.bz2 -C models
+rm models/sensevoice.tar.bz2
+```
+
+然后在 `config.json` 中填写：
+
+```json
+{
+  "asrModelDir": "models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09"
+}
+```
+
+`models/` 已被 git 忽略。未配置或模型文件缺失时 ASR 自动禁用，不影响聊天；`/api/asr` 接收 16 kHz 单声道 16-bit PCM WAV，限制 20 MB。
 
 ## 项目结构
 
@@ -125,8 +163,8 @@ TTS、ASR 和 ComfyUI 的外部服务地址也在 `config.json` 中配置；不�
 | `init.ps1` / `init.sh` | Windows / Unix 初始化脚本 |
 | `start-pet.bat` / `start-pet.sh` | Windows / Unix 启动脚本 |
 | `characters/` | 角色资源；被 git 忽略，由初始化脚本下载 p01/p02 |
+| `models/` | 可选的 SenseVoice ASR 模型；被 git 忽略，按需下载 |
 | `tools/ScreenCap.exe` | Windows 多显示器截屏辅助工具；Unix 自动回退到 `desktopCapturer` |
-| `asr_server.py` | 可选的 SenseVoice ASR 服务 |
 
 ## 开发
 
@@ -142,7 +180,7 @@ npm start
 
 - **代码**：自有源代码使用 MIT，见根目录 [`LICENSE`](LICENSE)。第三方依赖和资源的授权见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 - **角色**：角色资源不随仓库分发。`init.ps1` / `init.sh` 只从 [livliv-dev/player](https://github.com/livliv-dev/player) 拉取 `p01`、`p02`；它们是 **CC BY-NC-SA 4.0**，必须署名、仅限非商业用途，修改后分发需使用同一协议。署名和完整条款见拉取后的 `characters/characters/LICENSE.md`、`characters/characters/CREDITS.md`。`p03`（Pen）上游未授予权利，初始化脚本不会拉取，也不应擅自分发。
-- **语音和模型**：`voices/`、`voice-samples/`、GPT-SoVITS 权重、SenseVoice/ASR 模型、ComfyUI 模型都不在仓库中；TTS 默认关闭。需要时请自行取得并遵守对应模型/声音权利人的许可，尤其是真人歌手音色。
+- **语音和模型**：`voices/`、`voice-samples/`、GPT-SoVITS 权重、SenseVoice/ASR 模型、ComfyUI 模型都不在仓库中；TTS 默认关闭。ASR 的 Node 运行时依赖是 Apache-2.0 的 [`sherpa-onnx-node`](https://github.com/k2-fsa/sherpa-onnx)，模型需从上面的官方链接单独下载并遵守上游 SenseVoice/FunASR 的许可。尤其注意真人歌手音色的授权。
 - **ScreenCap**：`tools/ScreenCap.cs` / `ScreenCap.exe` 是自有代码，按根 MIT 许可；构建说明见 [`tools/README.md`](tools/README.md)。
 - **示例房间**：`pet_space.example/room/bedroom.png` 是示例图片，不自动纳入 MIT；公开再分发前请确认来源或替换为可自由分发的素材。
 - **商标**：本项目是非官方项目，与 LivLiv 没有隶属、赞助或认可关系；相关名称和角色形象归各自权利人。
@@ -154,4 +192,5 @@ npm start
 - Unix 分支已完成代码适配和启动脚本，但当前开发环境只在 Windows 上做过完整启动验证；首次在 Linux/macOS 运行请先确认 Electron 依赖和屏幕捕获权限。
 - 本地 HTTP API 没有额外的 token 鉴权；外部网页的跨站请求已被拦截，但本机进程仍可访问。不要把端口暴露到局域网或公网。
 - `read_file` 默认可读取本机任意文件；`write_file` 限制在 `pet_space/`。使用工具时注意隐私和密钥文件。
-- TTS、ASR 和 ComfyUI 都是外部服务，仓库不附带模型、权重或语音样本；未安装时相关功能不会工作。
+- TTS 和 ComfyUI 是外部服务，仓库不附带它们的模型、权重或语音样本；ASR 运行时在仓库依赖内，但 SenseVoice 模型需要单独下载。未安装或未配置时相关功能不会工作。
+- ASR 的 Node 运行时已在 Windows 的 Electron 主进程中实测；Linux/macOS 只做了原生库路径适配，尚未实机验证，完整麦克风录制链路也需要在目标平台再跑一次。

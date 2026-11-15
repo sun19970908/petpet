@@ -17,6 +17,7 @@ repository. Their own licenses apply:
 | `esbuild` | MIT | https://github.com/evanw/esbuild |
 | `@orama/orama` | Apache-2.0 | https://github.com/oramasearch/orama |
 | `@orama/tokenizers` | Apache-2.0 | https://github.com/oramasearch/orama |
+| `sherpa-onnx-node` | Apache-2.0 | https://github.com/k2-fsa/sherpa-onnx |
 
 Transitive dependencies and their license texts are recorded by the npm
 packages in `node_modules` after installation and by `package-lock.json`.
@@ -53,17 +54,29 @@ The following are not included in this repository:
 - SenseVoice/ASR model files
 - ComfyUI models or workflows
 
-`ttsMode` defaults to `off`. If you enable TTS, ASR, or ComfyUI, you must obtain
-the models and voice samples separately and comply with their own licenses and
-the rights of the voice/model providers. Do not redistribute a real person's
-voice model or reference audio without permission.
+`sherpa-onnx-node` (Apache-2.0) is installed through `npm install`; it provides
+the in-process ASR runtime. It does not include the SenseVoice model.
+
+The official SenseVoice int8 model can be downloaded from:
+
+https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2
+
+The model files are not covered by this repository's MIT License. Their use and
+redistribution are governed by the upstream SenseVoice/FunASR project and the
+model's own license/terms; verify them before redistribution. `ttsMode` defaults
+to `off`. If you enable TTS, ASR, or ComfyUI, you must obtain the models and voice
+samples separately and comply with their own licenses and the rights of the
+voice/model providers. Do not redistribute a real person's voice model or
+reference audio without permission.
 
 ## External services
 
-GPT-SoVITS, ComfyUI, SenseVoice, and any local LLM/embedding service are
-external dependencies. They are not part of this repository and are governed by
-their own licenses and terms. This repository only contains client-side
-configuration and code that calls them.
+GPT-SoVITS, ComfyUI, and any local LLM/embedding service are external
+dependencies. They are not part of this repository and are governed by their own
+licenses and terms. SenseVoice ASR runs inside the Electron main process through
+the `sherpa-onnx-node` npm package; its model files are still separate. This
+repository only contains client-side configuration and code that calls these
+services.
 
 ## ScreenCap
 

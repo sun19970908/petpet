@@ -175,6 +175,9 @@ if (-not (Test-Path -LiteralPath (Join-Path $root 'tools/ScreenCap.exe'))) {
 if (-not (Test-Path -LiteralPath (Join-Path $root 'voices'))) {
   Write-Host "[hint]   TTS 默认关闭；以后开启 TTS 时需要 voices/ 和 GPT-SoVITS。"
 }
+if (-not (Test-Path -LiteralPath (Join-Path $root 'models'))) {
+  Write-Host "[hint]   ASR 可选：SenseVoice 模型和官方下载链接见 README 的 SenseVoice ASR 一节。"
+}
 
 Write-Host ""
 Write-Host "初始化完成。下一步："

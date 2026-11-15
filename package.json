@@ -1,7 +1,7 @@
 {
   "name": "livliv-pet",
   "version": "0.1.0",
-  "description": "本地 AI 桌宠：livliv player + 本地 LLM + 可选 GPT-SoVITS",
+  "description": "本地 AI 桌宠：livliv player + 本地 LLM + 可选 GPT-SoVITS / SenseVoice",
   "main": "main.js",
   "scripts": {
     "build": "esbuild renderer/app.js --bundle --outfile=renderer/app.bundle.js",
@@ -11,7 +11,8 @@
   "dependencies": {
     "@livliv-dev/player": "^0.5.0",
     "@orama/orama": "^3.1.18",
-    "@orama/tokenizers": "^3.1.18"
+    "@orama/tokenizers": "^3.1.18",
+    "sherpa-onnx-node": "^2.0.1"
   },
   "devDependencies": {
     "electron": "^45.2.3",
