@@ -23,6 +23,14 @@ Electron + [livliv player](https://github.com/livliv-dev/player) 的本地 AI �
 
 ## 启动
 
+首次运行先把默认空间复制出来（已有 `pet_space/` 时不要重复执行，避免嵌套目录）：
+
+```powershell
+Copy-Item pet_space.example pet_space -Recurse
+```
+
+`pet_space.example` 含最小默认：`persona.txt`、`room/index.html`、`room/landmarks.json`、`room/bedroom.png`；默认房间只有窗帘、灯光和左下角摇铃，不含额外装饰或备份页。`renderer/index.html` 已随仓库提供，不需要复制。
+
 前置服务：Strata(8081) → 反代(11435)。
 
 双击运行 `start-pet.bat`，启动参数只保留 `debug`（进入独立调试历史）：
