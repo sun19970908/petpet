@@ -22,7 +22,7 @@
         }
       },
       "llm": {
-        "baseUrl": "http://127.0.0.1:11435/v1/chat/completions",
+        "baseUrl": "",
         "apiKey": "",
         "request": {
           "model": "strata-nothink",

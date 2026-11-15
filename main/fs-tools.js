@@ -4,19 +4,56 @@ const fs = require('fs');
 const path = require('path');
 
 function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, comfyHost, comfyPort, comfyInputDir }) {
+  function realPathOrNull(p) {
+    try { return fs.realpathSync(p); } catch { return null; }
+  }
+  function isInsidePath(root, target) {
+    const rel = path.relative(root, target);
+    return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + path.sep));
+  }
+  function nearestRealPath(p) {
+    let cur = p;
+    while (true) {
+      const real = realPathOrNull(cur);
+      if (real) return real;
+      const parent = path.dirname(cur);
+      if (parent === cur) return null;
+      cur = parent;
+    }
+  }
+  // 目标路径或它的任意已有组件是 symlink/junction 时直接拒绝，避免 realpath 解析到沙箱外
+  function hasLinkUnder(root, target) {
+    let cur = root;
+    try { if (fs.lstatSync(cur).isSymbolicLink()) return true; } catch { return false; }
+    const rel = path.relative(root, target);
+    if (!rel) return false;
+    for (const part of rel.split(path.sep)) {
+      cur = path.join(cur, part);
+      try {
+        if (fs.lstatSync(cur).isSymbolicLink()) return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
   function isPathInPetSpace(targetPath) {
     if (!targetPath || typeof targetPath !== 'string') return false;
     const resolved = path.resolve(targetPath);
-    const spaceUpper = path.resolve(PET_SPACE_DIR).toUpperCase();
-    const targetUpper = resolved.toUpperCase();
-    return targetUpper === spaceUpper || targetUpper.startsWith(spaceUpper + path.sep);
+    const spacePath = path.resolve(PET_SPACE_DIR);
+    if (!isInsidePath(spacePath, resolved)) return false;
+    const appReal = realPathOrNull(APP_ROOT);
+    const spaceReal = realPathOrNull(spacePath);
+    if (!appReal || !spaceReal || !isInsidePath(appReal, spaceReal)) return false;
+    if (hasLinkUnder(spacePath, resolved)) return false;
+    const real = realPathOrNull(resolved) || nearestRealPath(resolved);
+    return Boolean(real && isInsidePath(spaceReal, real));
   }
   function isFileStrictlyInPetSpace(targetPath) {
     if (!targetPath || typeof targetPath !== 'string') return false;
     const resolved = path.resolve(targetPath);
     const spaceUpper = path.resolve(PET_SPACE_DIR).toUpperCase();
-    const targetUpper = resolved.toUpperCase();
-    return targetUpper !== spaceUpper && targetUpper.startsWith(spaceUpper + path.sep);
+    return resolved.toUpperCase() !== spaceUpper && isPathInPetSpace(targetPath);
   }
 
   const COMFY_HOST = comfyHost || '127.0.0.1', COMFY_PORT = Number(comfyPort) || 8188;

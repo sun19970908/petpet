@@ -3,7 +3,7 @@
 const { loadLlmConfig, readJson, configPath, resolveActiveProfile } = require('../lib/config-store');
 
 const DEFAULT_PROFILE = {
-  baseUrl: 'http://127.0.0.1:11435/v1/chat/completions',
+  baseUrl: '',
   apiKey: '',
   model: 'strata-nothink',
   customPrompt: '',

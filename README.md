@@ -23,7 +23,13 @@ Electron + [livliv player](https://github.com/livliv-dev/player) 的本地 AI �
 
 ## 启动
 
-首次运行先把默认空间复制出来（已有 `pet_space/` 时不要重复执行，避免嵌套目录）：
+首次运行可以直接执行初始化脚本；它会补齐缺失文件、安装依赖，并在 `characters/` 不存在时从 [livliv player](https://github.com/livliv-dev/player) 克隆角色仓库。已有配置或角色目录不会被覆盖：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\init.ps1
+```
+
+也可以手动把默认空间复制出来（已有 `pet_space/` 时不要重复执行，避免嵌套目录）：
 
 ```powershell
 Copy-Item pet_space.example pet_space -Recurse
@@ -39,11 +45,11 @@ Copy-Item renderer/system-prompt.example.txt renderer/system-prompt.txt
 
 `pet_space.example` 含最小默认：`persona.txt`、`room/index.html`、`room/landmarks.json`、`room/bedroom.png`；默认房间只有窗帘、灯光和左下角摇铃，不含额外装饰或备份页。`renderer/index.html` 已随仓库提供，不需要复制。
 
-`config.json` 的 `hasBedroom` 控制是否有卧室：设为 `false` 时不创建卧室窗，只创建主屏桌宠窗，没有副屏也能运行；改动后重启生效。默认 `true`。
+`config.json` 的 `hasBedroom` 控制是否有卧室：设为 `false` 时不创建卧室窗，只创建主屏桌宠窗，没有副屏也能运行；改动后重启生效。默认 `false`。
 
-TTS 配置参考 `tts.config.example.json`，首次使用复制为 `tts.config.json`；本地的 `tts.config.json` 不再提交到仓库。
+TTS 配置参考 `tts.config.example.json`，首次使用复制为 `tts.config.json`；默认 `ttsMode` 为 `off`，本地 `tts.config.json` 不再提交到仓库。
 
-前置服务：Strata(8081) → 反代(11435)。
+如使用本地 Strata 档案，前置服务：Strata(8081) → 反代(11435)。
 
 双击运行 `start-pet.bat`，启动参数只保留 `debug`（进入独立调试历史）：
 
@@ -54,7 +60,7 @@ start-pet.bat debug    # 调试模式：独立调试历史
 
 TTS 开关 `ttsMode` 在 `config.json`；TTS 运行参数（闲置、服务启动、切句阈值）和 GPT-SoVITS 原生请求参数都在 `tts.config.json` 的 `app` / `request` 两块。也可使用目录下的通用配置卡片 `set-config.bat`。
 
-LLM 档案在 `llm.config.json`：每个档案分 `app`（上下文/唤醒阈值、能力与提示策略）和 `llm`（端点、密钥，以及 `request` 里的模型名与原生采样参数）；`config.json.llmProfile` 选择档案。
+LLM 档案在 `llm.config.json`：每个档案分 `app`（上下文/唤醒阈值、能力与提示策略）和 `llm`（端点、密钥，以及 `request` 里的模型名与原生采样参数）；`config.json.llmProfile` 选择档案。示例档案的 `baseUrl` 默认为空，填好实际端点后才能聊天。
 
 语音识别和 ComfyUI 的路径/端口也在 `config.json`：`asrPython`、`asrModelDir`、`asrPort`，以及 `comfyHost`、`comfyPort`、`comfyInputDir`。ASR 不填 `asrModelDir` 不会启动；`embeddingUrl` 可替换默认的硅基流动 embedding 地址。
 

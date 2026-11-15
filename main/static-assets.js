@@ -22,6 +22,23 @@ function isStaticAssetAllowed(relPath) {
   return STATIC_FILES.has(relPath) || STATIC_DIRS.some((dir) => relPath.startsWith(dir));
 }
 
+function realPathOrNull(p) {
+  try { return fs.realpathSync(p); } catch { return null; }
+}
+
+function isInsidePath(root, target) {
+  const rel = path.relative(root, target);
+  return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + path.sep));
+}
+
+// characters/ 的逻辑路径实际落在 characters/characters/，其余目录按原路径
+function staticBaseRel(relPath) {
+  if (relPath.startsWith('characters/')) return path.join('characters', 'characters');
+  if (relPath.startsWith('renderer/')) return 'renderer';
+  if (relPath.startsWith('pet_space/room/')) return path.join('pet_space', 'room');
+  return relPath;
+}
+
 function serveStaticAsset(req, res, APP_ROOT) {
   try {
     let urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
@@ -39,10 +56,17 @@ function serveStaticAsset(req, res, APP_ROOT) {
     if (relToRoot.startsWith('..') || path.isAbsolute(relToRoot)) {
       res.writeHead(403); res.end('forbidden'); return;
     }
-    fs.readFile(fsPath, (err, data) => {
+    const appReal = realPathOrNull(APP_ROOT);
+    const baseReal = realPathOrNull(path.join(APP_ROOT, staticBaseRel(relPath)));
+    const fileReal = realPathOrNull(fsPath);
+    if (!appReal || !baseReal || !fileReal ||
+        !isInsidePath(appReal, baseReal) || !isInsidePath(baseReal, fileReal)) {
+      res.writeHead(403); res.end('forbidden'); return;
+    }
+    fs.readFile(fileReal, (err, data) => {
       if (err) { res.writeHead(404); res.end('not found: ' + urlPath); return; }
       res.writeHead(200, {
-        'Content-Type': MIME[path.extname(fsPath).toLowerCase()] || 'application/octet-stream',
+        'Content-Type': MIME[path.extname(fileReal).toLowerCase()] || 'application/octet-stream',
         'Cache-Control': 'no-cache',
       });
       res.end(data);
