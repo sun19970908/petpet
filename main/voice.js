@@ -271,7 +271,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
   function handleApi(req, res) {
     const routes = {
       '/api/tts': { host: '127.0.0.1', port: GSV_PORT, path: '/tts' },
-      '/api/asr': { host: '127.0.0.1', port: 9882, path: '/asr' },
+      '/api/asr': { host: '127.0.0.1', port: ASR_PORT, path: '/asr' },
     };
     const target = routes[req.url.split('?')[0]];
     if (!target || req.method !== 'POST') {
@@ -299,8 +299,8 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
       res.writeHead(404); res.end('unknown api'); return;
     }
 
-    const isTts = target.port === GSV_PORT;
-    const isAsr = target.port === 9882;
+    const isTts = target.path === '/tts';
+    const isAsr = target.path === '/asr';
 
     if (isTts) touchGsvActivity();
 

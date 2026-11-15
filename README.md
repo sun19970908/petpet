@@ -13,7 +13,7 @@ Electron + [livliv player](https://github.com/livliv-dev/player) 的本地 AI �
 - **自动唤醒**：🔔 旁的数字输入框 = 间隔（分钟，**0 = 关闭**），存 localStorage，到点调 `wakeNow()`（GPU 前置条件、忙时跳过自动继承）；回车应用
 - **无限唤醒上下文护栏**：每轮 `usage.prompt_tokens` ≥ 当前档案的 `app.contextLength`（`llm.config.json` 每档案可调，缺省 65536；renderer 回退 64000）累计 3 次 → 自动停无限唤醒；换档案即换阈值
 - **唤醒前置条件**：主卡（GPU 0）占用率 > 当前档案 `app.wakeGpuLimit`（`llm.config.json`，默认 40；≥100 跳过判定）时跳过本次唤醒并提示；`nvidia-smi` 不可用则放行；GPU 查询走 IPC `/api/gpuutil`
-- **文件工具**（原生 tool calls，实测通过）：`read_file`/`list_dir` 任意路径只读（**不截断**——为将来整份读聊天记录做上下文压缩预留；超大文件会自然撑爆请求，属可接受边界），`write_file` 仅限 `G:\AI\livliv-pet\pet_space\` 沙箱（200KB 上限）。主进程执行器 `runFsTool`（调用日志在 `logs/fstool.log`），IPC 与 `/api/fstool` HTTP 兜底共用。工具循环**无轮次上限**，唯一护栏：同一调用原样重复 3 次=卡死，收走工具逼文本回答；参数 JSON 解析失败会回喂准确错误让她自行重试（实测她能自我纠错）。历史只存最终问答，工具交换不落历史
+- **文件工具**（原生 tool calls，实测通过）：`read_file`/`list_dir` 任意路径只读（**不截断**——为将来整份读聊天记录做上下文压缩预留；超大文件会自然撑爆请求，属可接受边界），`write_file` 仅限 `pet_space/` 沙箱（200KB 上限）。主进程执行器 `runFsTool`（调用日志在 `logs/fstool.log`），IPC 与 `/api/fstool` HTTP 兜底共用。工具循环**无轮次上限**，唯一护栏：同一调用原样重复 3 次=卡死，收走工具逼文本回答；参数 JSON 解析失败会回喂准确错误让她自行重试（实测她能自我纠错）。历史只存最终问答，工具交换不落历史
 - **两层提示词解耦**：`renderer/system-prompt.txt`（宪法：身份/行为规则/**文件工具规则**，**在写沙箱外，只有用户能改**）+ `pet_space/persona.txt`（性格档案，**在她的写沙箱内，她可自己重写**——系统提示词里教了她何时/如何改）。系统消息 = system-prompt + persona，每次发送前都重新读取，改完下一条即生效。工具规则已并入 system-prompt.txt，代码里不再有硬编码提示词
 - **多模态**：输入框 Ctrl+V 粘贴图片 / 📷 按钮全屏截图（desktopCapturer），OpenAI `image_url` 格式进 Strata（实测图上数字识别正确）；历史图片折叠成 `[图片]` 占位
 - **LLM 参数**：`max_tokens: 2000`（曾为 300——长内容工具调用的参数在 300 token 处被截断，模型反复重试烧上下文，实锤于代理日志）；截断（`finish_reason: length`）时工具结果会回喂明确错误提示她精简或分次写
@@ -47,6 +47,8 @@ start-pet.bat debug    # 调试模式：独立调试历史
 TTS 开关 `ttsMode` 在 `config.json`；TTS 运行参数（闲置、服务启动、切句阈值）和 GPT-SoVITS 原生请求参数都在 `tts.config.json` 的 `app` / `request` 两块。也可使用目录下的通用配置卡片 `set-config.bat`。
 
 LLM 档案在 `llm.config.json`：每个档案分 `app`（上下文/唤醒阈值、能力与提示策略）和 `llm`（端点、密钥，以及 `request` 里的模型名与原生采样参数）；`config.json.llmProfile` 选择档案。
+
+语音识别和 ComfyUI 的路径/端口也在 `config.json`：`asrPython`、`asrModelDir`、`asrPort`，以及 `comfyHost`、`comfyPort`、`comfyInputDir`。ASR 不填 `asrModelDir` 不会启动；`embeddingUrl` 可替换默认的硅基流动 embedding 地址。
 
 ## 改代码
 

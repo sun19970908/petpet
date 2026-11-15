@@ -29,8 +29,7 @@ rem =======================================================
 set "NODE_CMD=node"
 where node >nul 2>&1
 if errorlevel 1 (
-  if exist "D:\Program Files\nodejs\node.exe" set "NODE_CMD=D:\Program Files\nodejs\node.exe"
-  if exist "C:\Program Files\nodejs\node.exe" set "NODE_CMD=C:\Program Files\nodejs\node.exe"
+  if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_CMD=%ProgramFiles%\nodejs\node.exe"
 )
 
 "%NODE_CMD%" "%~dp0lib\apply-config.js" "%~f0"
