@@ -360,6 +360,8 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
         'content-type': isAsr ? (req.headers['content-type'] || 'audio/wav') : 'application/json',
         host: `${target.host}:${target.port}`,
       };
+      delete forwardHeaders.origin;
+      delete forwardHeaders['sec-fetch-site'];
 
       let activeFf = null;
       const upstream = http.request({

@@ -3,6 +3,22 @@ const http = require('http');
 const { loadTtsConfig } = require('../lib/config-store');
 const { serveStaticAsset } = require('./static-assets');
 
+function isApiRequestAllowed(req) {
+  const port = String(req.socket.localPort || '');
+  const host = String(req.headers.host || '').toLowerCase();
+  if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return false;
+
+  const origin = req.headers.origin;
+  if (origin) {
+    const o = String(origin).toLowerCase();
+    if (o !== `http://127.0.0.1:${port}` && o !== `http://localhost:${port}`) return false;
+  }
+
+  const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  if (site && site !== 'same-origin' && site !== 'none') return false;
+  return true;
+}
+
 function createHttpServer(deps) {
   const {
     APP_ROOT,
@@ -43,6 +59,11 @@ function createHttpServer(deps) {
   }
 
   function handleApiRequest(req, res) {
+    if (!isApiRequestAllowed(req)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden');
+      return;
+    }
     const apiPath = req.url.split('?')[0];
     if (apiPath === '/api/config') {
       const publicLlm = llmConfigMgr.getPublicConfig();
@@ -195,4 +216,4 @@ function createHttpServer(deps) {
   return http.createServer(handleRequest);
 }
 
-module.exports = { createHttpServer };
+module.exports = { createHttpServer, isApiRequestAllowed };

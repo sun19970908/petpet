@@ -12,8 +12,8 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -24,6 +24,20 @@ if not MODEL_DIR:
 MODEL_PATH = os.path.join(MODEL_DIR, "model.int8.onnx")
 TOKENS_PATH = os.path.join(MODEL_DIR, "tokens.txt")
 PORT = int(os.environ.get("ASR_PORT", "9882"))
+MAX_ASR_BYTES = int(os.environ.get("ASR_MAX_BYTES", str(20 * 1024 * 1024)))
+
+@app.middleware("http")
+async def local_only(request: Request, call_next):
+    if request.url.path == "/asr":
+        host = request.headers.get("host", "").lower()
+        if host not in (f"127.0.0.1:{PORT}", f"localhost:{PORT}"):
+            return Response(status_code=403)
+        if request.headers.get("origin") is not None:
+            return Response(status_code=403)
+        if request.headers.get("sec-fetch-site") is not None:
+            return Response(status_code=403)
+    return await call_next(request)
+
 
 print(f"[asr] 正在加载 SenseVoice 模型: {MODEL_PATH} ...", flush=True)
 recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
@@ -44,7 +58,18 @@ async def health():
 
 @app.post("/asr")
 async def transcribe(request: Request):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            size = int(content_length)
+        except ValueError:
+            return Response(content='{"error": "Content-Length 无效"}', status_code=400, media_type="application/json")
+        if size > MAX_ASR_BYTES:
+            return Response(content='{"error": "音频数据过大"}', status_code=413, media_type="application/json")
+
     body = await request.body()
+    if len(body) > MAX_ASR_BYTES:
+        return Response(content='{"error": "音频数据过大"}', status_code=413, media_type="application/json")
     if not body or len(body) < 44:
         return Response(content='{"error": "音频数据过短或为空"}', status_code=400, media_type="application/json")
     
