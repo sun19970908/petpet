@@ -26,7 +26,7 @@ public class PetTop {
       var c = new StringBuilder(256); GetClassNameW(h, c, 256);
       if (c.ToString() != "Chrome_WidgetWin_1") return true;
       var t = new StringBuilder(256); GetWindowTextW(h, t, 256);
-      if (t.ToString().StartsWith("DeepSeek")) { found = h; return false; }
+      if (t.ToString().StartsWith("livliv-pet")) { found = h; return false; }
       return true;
     }, IntPtr.Zero);
     return found;

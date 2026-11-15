@@ -57,7 +57,7 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
   }
 
   const COMFY_HOST = comfyHost || '127.0.0.1', COMFY_PORT = Number(comfyPort) || 8188;
-  const COMFY_INPUT = comfyInputDir || process.env.STRATA_PET_COMFY_INPUT || '';
+  const COMFY_INPUT = comfyInputDir || process.env.PET_COMFY_INPUT || '';
 
   function comfyReq(method, urlPath, bodyObj) {
     return new Promise((resolve, reject) => {

@@ -13,6 +13,9 @@ history/
 pet_space/
 notes/
 
+# Author-only notes and drafts
+author doc/
+
 # Voice models and audio samples
 voice*/
 voices/

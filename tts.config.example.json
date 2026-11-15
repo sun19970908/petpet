@@ -3,8 +3,8 @@
     "idleSeconds": 120,
     "url": "/api/tts",
     "server": {
-      "dir": "D:\\GPT-SoVITS-v2pro-20250604",
-      "python": "runtime\\python.exe",
+      "dir": "/path/to/GPT-SoVITS",
+      "python": "python3",
       "config": "GPT_SoVITS/configs/tts_infer.yaml",
       "gpu": "0",
       "port": 9880,
@@ -23,7 +23,7 @@
     "top_k": 3,
     "top_p": 0.7,
     "text_split_method": "cut5",
-    "ref_audio_path": "D:/GPT-SoVITS/voices/your-voice/ref.wav",
+    "ref_audio_path": "/path/to/ref.wav",
     "prompt_text": "参考音频对应的文本"
   }
 }

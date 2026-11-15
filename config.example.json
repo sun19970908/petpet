@@ -14,7 +14,7 @@
   "capMain": "main",
   "capRoom": "room",
   "characterPath": "/characters/p01/",
-  "llmProfile": "strata",
+  "llmProfile": "default",
   "ttsMode": "off",
   "asrPython": "python",
   "asrModelDir": "",

@@ -80,6 +80,6 @@ this repository, or replace it with an asset you are free to redistribute.
 
 ## Trademarks
 
-DeepSeek, LivLiv, Kujira, and other names and character likenesses belong to
-their respective rights holders. This project is unofficial and is not
-endorsed, sponsored, or affiliated with DeepSeek or LivLiv.
+LivLiv, Kujira, and other names and character likenesses belong to their
+respective rights holders. This project is unofficial and is not endorsed,
+sponsored, or affiliated with LivLiv.

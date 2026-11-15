@@ -3,8 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
+const IS_WIN = process.platform === 'win32';
+
 function createScreenTools({ APP_ROOT, capMainCfg, capRoomCfg, getBedroomWin, screen, desktopCapturer, winLog }) {
-  const SCREENCAP_EXE = path.join(APP_ROOT, 'tools', 'ScreenCap.exe');
+  const SCREENCAP_EXE = IS_WIN ? path.join(APP_ROOT, 'tools', 'ScreenCap.exe') : '';
   let capTmpSeq = 0;
   const inFlightCapture = {};
 
@@ -32,7 +34,7 @@ function createScreenTools({ APP_ROOT, capMainCfg, capRoomCfg, getBedroomWin, sc
   }
 
   async function captureWithScreenCap(targetArg, which) {
-    if (!fs.existsSync(SCREENCAP_EXE)) return null;
+    if (!IS_WIN || !fs.existsSync(SCREENCAP_EXE)) return null;
     const logDir = path.join(APP_ROOT, 'logs');
     fs.mkdirSync(logDir, { recursive: true });
     const tmpPath = path.join(logDir, `.tmp_cap_${which}_${process.pid}_${++capTmpSeq}.jpg`);
@@ -159,7 +161,7 @@ function createScreenTools({ APP_ROOT, capMainCfg, capRoomCfg, getBedroomWin, sc
 
   async function getScreensInfo() {
     const getPhys = new Promise((resolve) => {
-      if (!fs.existsSync(SCREENCAP_EXE)) return resolve([]);
+      if (!IS_WIN || !fs.existsSync(SCREENCAP_EXE)) return resolve([]);
       const p = spawn(SCREENCAP_EXE, ['list'], { windowsHide: true });
       let out = '';
       p.stdout.on('data', (d) => { out += d; });

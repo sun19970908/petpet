@@ -97,6 +97,7 @@ function createWindowManager({ APP_ROOT, winLog, getConfig, getNoInfwake, getSpl
   }
 
   function startTopmostGuard() {
+    if (process.platform !== 'win32') return;
     if (topmostGuard) return;
     try {
       const ps1 = path.join(APP_ROOT, 'topmost-guard.ps1');

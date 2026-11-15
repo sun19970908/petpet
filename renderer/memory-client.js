@@ -9,7 +9,7 @@ export function createMemoryClient({ debugMode = false } = {}) {
     try {
       const items = [
         { text: '[用户] ' + textOf(userContent), role: 'user', kind: 'chat', ts: Date.now() },
-        { text: '[DeepSeek娘] ' + reply, role: 'assistant', kind: 'chat', ts: Date.now() + 1 },
+        { text: '[桌宠] ' + reply, role: 'assistant', kind: 'chat', ts: Date.now() + 1 },
       ];
       if (window.petWindow) await window.petWindow.memoryAdd(items, mode());
       else await fetch('/api/memory-add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, mode: mode() }) });

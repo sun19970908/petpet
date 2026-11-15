@@ -1,6 +1,6 @@
 // 桌宠看门狗：保活 + 无限唤醒中止检测。常驻用法：node watchdog.js（detached 启动，不注册自启，重启电脑即停）
 // 每 30s：
-//   - 探 config.json 的 serverPort；不在线 → 重拉 start-pet.bat（1 小时最多 5 次，防连环崩）；若端口被僵死进程占住则先杀再拉
+//   - 探 config.json 的 serverPort；不在线 → 重拉 start-pet（1 小时最多 5 次，防连环崩）；若端口被僵死进程占住则先杀再拉
 //   - 在线但 .wake-state.json 显示"无限唤醒开着、心跳却停了 >180s"或"同轮次无任何活动进展 >600s" → 杀掉重拉（重启后自动恢复无限唤醒）
 const http = require('http'), fs = require('fs'), path = require('path'), { spawn, execSync } = require('child_process');
 const { appendLine } = require('./lib/logger');
@@ -9,11 +9,12 @@ if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on
 if (process.stderr && typeof process.stderr.on === 'function') process.stderr.on('error', () => {});
 
 const ROOT = __dirname;
+const IS_WIN = process.platform === 'win32';
 const APP_PORT = Number(loadConfig(ROOT).serverPort) || 12400;
 const STATE = path.join(ROOT, 'pet_space', '.wake-state.json');
 const LOG = path.join(ROOT, 'logs', 'watchdog.log');
 const PIDFILE = path.join(ROOT, 'logs', 'watchdog.pid');
-const PETBAT = path.join(ROOT, 'start-pet.bat');
+const PET_CMD = path.join(ROOT, IS_WIN ? 'start-pet.bat' : 'start-pet.sh');
 function getWatchdogGsvMode() {
   const cli = process.argv.slice(2).find((a) => ['auto', 'always', 'on', 'never', 'off'].includes(a.toLowerCase()));
   if (cli) return cli.toLowerCase();
@@ -68,9 +69,14 @@ function probe(cb) {
 
 function petPid() {
   try {
-    const out = execSync('netstat -ano -p tcp', { encoding: 'utf8' });
-    const line = out.split(/\r?\n/).find((l) => l.includes(':' + APP_PORT) && /LISTEN/i.test(l));
-    if (line) { const p = line.trim().split(/\s+/); return p[p.length - 1]; }
+    if (IS_WIN) {
+      const out = execSync('netstat -ano -p tcp', { encoding: 'utf8' });
+      const line = out.split(/\r?\n/).find((l) => l.includes(':' + APP_PORT) && /LISTEN/i.test(l));
+      if (line) { const p = line.trim().split(/\s+/); return p[p.length - 1]; }
+    } else {
+      const out = execSync(`lsof -ti tcp:${APP_PORT} -sTCP:LISTEN`, { encoding: 'utf8' });
+      return out.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || null;
+    }
   } catch {}
   return null;
 }
@@ -116,11 +122,11 @@ function launchPet(why) {
   if (Date.now() - lastLaunch < 45000) return; // 冷却：避免上一轮刚拉起尚未就绪又叠着拉一次
   if (!canRestart()) { log('需要重启但 1 小时内已 5 次，暂缓（防连环崩）：' + why); return; }
   restarts.push(Date.now()); lastLaunch = Date.now();
-  const args = ['/c', PETBAT];
+  const args = IS_WIN ? ['/c', PET_CMD] : [PET_CMD];
   if (pendingStopInfwake) args.push('--no-infwake');
-  log(`重启宠物 start-pet.bat${pendingStopInfwake ? ' --no-infwake' : ''}（gsv=${WATCHDOG_GSV_MODE}，原因：${why}）`);
+  log(`重启宠物 ${path.basename(PET_CMD)}${pendingStopInfwake ? ' --no-infwake' : ''}（gsv=${WATCHDOG_GSV_MODE}，原因：${why}）`);
   try {
-    const p = spawn('cmd', args, {
+    const p = spawn(IS_WIN ? 'cmd' : 'bash', args, {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
@@ -133,7 +139,11 @@ function killPet() {
   const pid = petPid();
   if (!pid) return;
   log('杀宠物进程 pid=' + pid);
-  try { execSync('taskkill /PID ' + pid + ' /T /F'); } catch (e) { log('taskkill 失败：' + (e && e.message)); }
+  if (IS_WIN) {
+    try { execSync('taskkill /PID ' + pid + ' /T /F'); } catch (e) { log('taskkill 失败：' + (e && e.message)); }
+    return;
+  }
+  try { process.kill(Number(pid), 'SIGTERM'); } catch (e) { log('kill 失败：' + (e && e.message)); }
 }
 
 function tick() {
@@ -143,7 +153,7 @@ function tick() {
       offlineStreak += 1;
       const hungPid = petPid();
       if (hungPid) {
-        // 端口被占着却连续 >= 2 次探活失败（>=30s 假死/弹窗卡死）：先杀掉占端口的僵死进程再重启，否则 start-pet.bat 会 EADDRINUSE 秒退！
+        // 端口被占着却连续 >= 2 次探活失败（>=30s 假死/弹窗卡死）：先杀掉占端口的僵死进程再重启，否则 start-pet 会 EADDRINUSE 秒退！
         if (offlineStreak >= 2 && Date.now() - lastLaunch >= 45000) {
           if (!canRestart()) { log(`${APP_PORT} 端口被 pid=${hungPid} 占住且无响应 (${why})，但 1 小时内已重启 5 次，暂缓`); return; }
           log(`${APP_PORT} 端口被 pid=${hungPid} 占住且连续 ${offlineStreak} 次无响应 (${why}) → 强杀僵死进程重拉`);

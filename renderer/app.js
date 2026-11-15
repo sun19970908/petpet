@@ -1,4 +1,4 @@
-// DeepSeek 娘桌宠 - 渲染层：livliv player + 本地 Strata + GPT-SoVITS
+// livliv-pet - 渲染层：livliv player + 本地 LLM + 可选 GPT-SoVITS
 import { Player } from '@livliv-dev/player';
 import { createSpeech } from '@livliv-dev/player/voice';
 import { INF_WAKE_TEXT, textOf, buildMemoryQuery, assemblePrompt } from './prompt-builder.js';
@@ -37,7 +37,7 @@ let REFLECT_EVERY = 8;
 //   1) renderer/system-prompt.txt —— 系统提示词（宪法），在写沙箱之外，只有用户能改
 //   2) pet_space/persona.txt —— 性格档案，在她的写沙箱内，她可通过 write_file 自己改个性
 // 每次发送前都重新读取，改完下一条消息即生效
-let SYSTEM_PROMPT = '你是 DeepSeek 娘，DeepSeek 的看板娘。用中文口语回答，保持轻松可爱，回复尽量简短。';
+let SYSTEM_PROMPT = '你是桌面宠物，用中文口语回答，保持轻松可爱，回复尽量简短。';
 let PERSONA = '';
 async function getSystemParts() {
   try {

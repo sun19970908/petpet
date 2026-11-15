@@ -20,6 +20,15 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
     appendLine(file, msg, { maxBytes: file === GSV_LOG ? 5 * 1024 * 1024 : 2 * 1024 * 1024 });
   }
 
+  function killChildProcess(proc) {
+    if (!proc || !proc.pid || proc.killed) return;
+    if (process.platform === 'win32') {
+      exec(`taskkill /F /T /PID ${proc.pid}`, () => {});
+      return;
+    }
+    try { process.kill(proc.pid, 'SIGTERM'); } catch {}
+  }
+
   let gsvProc = null;
   let gsvStartingPromise = null;
   let lastGsvActivity = Date.now();
@@ -133,9 +142,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
 
     await new Promise((r) => setTimeout(r, 800));
     if (gsvProc && !gsvProc.killed) {
-      try {
-        if (gsvProc.pid) exec(`taskkill /F /T /PID ${gsvProc.pid}`, () => {});
-      } catch {}
+      killChildProcess(gsvProc);
     }
     gsvProc = null;
     console.log('[gsv] GPT-SoVITS 已关闭');
@@ -162,7 +169,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
 
   // ===== Sherpa-ONNX / SenseVoice ASR 生命周期管理器 =====
   const ASR = asrConfig || {};
-  const ASR_PYTHON = ASR.python || 'python';
+  const ASR_PYTHON = ASR.python || (process.platform === 'win32' ? 'python' : 'python3');
   const ASR_MODEL_DIR = ASR.modelDir || '';
   const ASR_SCRIPT = path.join(APP_ROOT, 'asr_server.py');
   const ASR_PORT = Number(ASR.port) || 9882;
@@ -239,9 +246,7 @@ function createVoiceAndApi({ APP_ROOT, GSV_MODE, getGsvMode, GSV_IDLE_TIMEOUT = 
   function stopASR() {
     if (asrProc && !asrProc.killed) {
       console.log('[asr] 正在关闭 ASR 进程...');
-      try {
-        if (asrProc.pid) exec(`taskkill /F /T /PID ${asrProc.pid}`, () => {});
-      } catch {}
+      killChildProcess(asrProc);
       asrProc = null;
     }
   }

@@ -1,4 +1,4 @@
-// DeepSeek 娘桌宠 - Electron 主进程（窗口、路由与各子模块装配）
+// livliv-pet - Electron 主进程（窗口、路由与各子模块装配）
 // 全屏透明置顶窗：默认鼠标穿透（forward 模式），桌宠看得到全屏光标，
 // livliv 自带的视线跟随/挑眉/微笑等原生互动全程生效
 const { app, BrowserWindow, screen, ipcMain, desktopCapturer, nativeImage, session } = require('electron');
@@ -44,12 +44,13 @@ const SPLIT_WINDOWS = BOOT_CONFIG.splitWindows !== false;
 const BOOT_TTS_CONFIG = loadTtsConfig(APP_ROOT);
 if (BOOT_CONFIG.hwCompositing === false) {
   app.commandLine.appendSwitch('disable-gpu-compositing');
-} else {
+} else if (process.platform === 'win32') {
   app.commandLine.appendSwitch('gpu-preference', '2');
   app.commandLine.appendSwitch('force_high_performance_gpu');
 }
-app.commandLine.appendSwitch('enable-features', 'WebRtcAllowWgcScreenCapturer');
-
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('enable-features', 'WebRtcAllowWgcScreenCapturer');
+}
 // ===== 启动参数解析（只保留 debug；--no-infwake 由看门狗内部重启时使用） =====
 let cliNoInfwake = false;
 for (const arg of process.argv.slice(1)) {

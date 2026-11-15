@@ -75,7 +75,7 @@ export function buildMemoryQuery({
   for (const m of combined) {
     const t = textOf(m?.content).trim();
     if (!t) continue;
-    const tag = m.role === 'assistant' ? '[DeepSeek娘]' : '[用户]';
+    const tag = m.role === 'assistant' ? '[桌宠]' : '[用户]';
     lines.push(`${tag} ${t}`);
   }
   if (currentText && (!isInfiniteWake || !lines.length)) {

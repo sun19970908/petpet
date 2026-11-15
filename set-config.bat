@@ -8,7 +8,7 @@ rem  [通用配置卡片] 用记事本修改下方参数，保存后双击运行
 rem  (此脚本只改写 config.json：不重启、也不启动桌宠)
 rem  =======================================================
 
-rem 1. 当前 LLM 档案名称 (对应 llm.config.json 中的 profile 名称，例如：硅基流动 或 strata)
+rem 1. 当前 LLM 档案名称 (对应 llm.config.json 中的 profile 名称，例如：硅基流动 或 default)
 set "LLM_PROFILE=硅基流动"
 
 rem 2. 语音合成模式：
