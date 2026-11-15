@@ -25,6 +25,7 @@ characters/
 config.json
 llm.config.json
 tts.config.json
+renderer/system-prompt.txt
 .env
 .env.*
 

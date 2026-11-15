@@ -29,6 +29,14 @@ Electron + [livliv player](https://github.com/livliv-dev/player) 的本地 AI �
 Copy-Item pet_space.example pet_space -Recurse
 ```
 
+首次使用还需要复制系统提示词：
+
+```powershell
+Copy-Item renderer/system-prompt.example.txt renderer/system-prompt.txt
+```
+
+`renderer/system-prompt.txt` 属于本地文件，已在 `.gitignore` 中忽略。
+
 `pet_space.example` 含最小默认：`persona.txt`、`room/index.html`、`room/landmarks.json`、`room/bedroom.png`；默认房间只有窗帘、灯光和左下角摇铃，不含额外装饰或备份页。`renderer/index.html` 已随仓库提供，不需要复制。
 
 `config.json` 的 `hasBedroom` 控制是否有卧室：设为 `false` 时不创建卧室窗，只创建主屏桌宠窗，没有副屏也能运行；改动后重启生效。默认 `true`。
