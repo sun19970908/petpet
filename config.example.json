@@ -14,6 +14,15 @@
   "capMain": "main",
   "capRoom": "room",
   "characterPath": "/characters/p01/",
+  "// petReadScope": "读取范围：space=仅 pet_space（默认）；all=整机可读",
+  "petReadScope": "space",
+  "// petReadBlacklist": "读取黑名单：绝对路径或相对 APP_ROOT 的路径；命中路径及其子路径都会被拒绝",
+  "petReadBlacklist": [
+    "config.json",
+    "llm.config.json",
+    "tts.config.json",
+    ".git"
+  ],
   "llmProfile": "default",
   "ttsMode": "off",
   "asrModelDir": "",

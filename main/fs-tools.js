@@ -3,7 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, comfyHost, comfyPort, comfyInputDir }) {
+function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, petReadScope, petReadBlacklist, comfyHost, comfyPort, comfyInputDir }) {
   function realPathOrNull(p) {
     try { return fs.realpathSync(p); } catch { return null; }
   }
@@ -54,6 +54,37 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
     const resolved = path.resolve(targetPath);
     const spaceUpper = path.resolve(PET_SPACE_DIR).toUpperCase();
     return resolved.toUpperCase() !== spaceUpper && isPathInPetSpace(targetPath);
+  }
+
+  const PET_READ_SCOPE = ['all', 'global', '全部', '全部可读', '全盘'].includes(String(petReadScope ?? '').trim().toLowerCase()) ? 'all' : 'space';
+  const PET_READ_BLACKLIST = (Array.isArray(petReadBlacklist) ? petReadBlacklist : [])
+    .map((p) => String(p ?? '').trim())
+    .filter(Boolean)
+    .map((p) => path.resolve(APP_ROOT, p));
+
+  function isBlacklistedPath(targetPath) {
+    if (!PET_READ_BLACKLIST.length) return false;
+    const resolved = path.resolve(targetPath);
+    const real = realPathOrNull(resolved) || nearestRealPath(resolved);
+    return PET_READ_BLACKLIST.some((blocked) => {
+      const blockedReal = realPathOrNull(blocked) || nearestRealPath(blocked);
+      return isInsidePath(blocked, resolved) || Boolean(blockedReal && real && isInsidePath(blockedReal, real));
+    });
+  }
+
+  function hasBlacklistedUnder(rootPath) {
+    const resolved = path.resolve(rootPath);
+    return PET_READ_BLACKLIST.some((blocked) => isInsidePath(resolved, blocked));
+  }
+
+  function readPathError(targetPath) {
+    if (!targetPath || typeof targetPath !== 'string') return '参数错误：缺少 path';
+    const resolved = path.resolve(targetPath);
+    if (PET_READ_SCOPE !== 'all' && !isPathInPetSpace(resolved)) {
+      return '拒绝：读取范围仅限 ' + PET_SPACE_DIR + '（config.json 的 petReadScope 设为 all 才开放其他路径）';
+    }
+    if (isBlacklistedPath(resolved)) return '拒绝：路径命中读取黑名单';
+    return '';
   }
 
   const COMFY_HOST = comfyHost || '127.0.0.1', COMFY_PORT = Number(comfyPort) || 8188;
@@ -211,10 +242,15 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
           if (!args.src_path || !args.dest_path) return Promise.resolve({ ok: false, error: '参数错误：缺少 src_path 或 dest_path' });
           const srcResolved = path.resolve(args.src_path);
           const destResolved = path.resolve(args.dest_path);
+          const readErr = readPathError(srcResolved);
+          if (readErr) return Promise.resolve({ ok: false, error: readErr });
           if (!isPathInPetSpace(destResolved)) return Promise.resolve({ ok: false, error: '拒绝：复制目标仅允许在 ' + PET_SPACE_DIR + ' 沙盒内' });
           if (!fs.existsSync(srcResolved)) return Promise.resolve({ ok: false, error: '源文件不存在: ' + srcResolved });
-          fs.mkdirSync(path.dirname(destResolved), { recursive: true });
           const stat = fs.statSync(srcResolved);
+          if (stat.isDirectory() && hasBlacklistedUnder(srcResolved)) {
+            return Promise.resolve({ ok: false, error: '拒绝：源目录包含读取黑名单路径' });
+          }
+          fs.mkdirSync(path.dirname(destResolved), { recursive: true });
           if (stat.isDirectory()) {
             fs.cpSync(srcResolved, destResolved, { recursive: true });
             return Promise.resolve({ ok: true, result: '已复制目录: ' + srcResolved + ' -> ' + destResolved });
@@ -243,6 +279,8 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
       }
       if (name === 'read_file') {
         const resolved = path.resolve(args.path);
+        const readErr = readPathError(resolved);
+        if (readErr) return Promise.resolve({ ok: false, error: readErr });
         const data = fs.readFileSync(resolved, 'utf8');
         const hasStart = args.start_line !== undefined && args.start_line !== null && args.start_line !== '';
         const hasEnd = args.end_line !== undefined && args.end_line !== null && args.end_line !== '';
@@ -308,7 +346,14 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
         return Promise.resolve({ ok: true, result: `[文件: ${resolved} | 共 ${total} 行 | 当前第 ${s}-${e} 行]\n${slice}` });
       }
       if (name === 'list_dir') {
-        const entries = fs.readdirSync(path.resolve(args.path), { withFileTypes: true })
+        const resolved = path.resolve(args.path);
+        const readErr = readPathError(resolved);
+        if (readErr) return Promise.resolve({ ok: false, error: readErr });
+        const entries = fs.readdirSync(resolved, { withFileTypes: true })
+          .filter((d) => {
+            const child = path.join(resolved, d.name);
+            return !isBlacklistedPath(child) && !hasBlacklistedUnder(child);
+          })
           .map((d) => (d.isDirectory() ? '[目录] ' : '[文件] ') + d.name);
         return Promise.resolve({ ok: true, result: entries.join('\n') || '(空目录)' });
       }

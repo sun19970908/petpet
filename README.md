@@ -74,11 +74,11 @@ bash start-pet.sh debug
 
 | 文件 | 作用 |
 | --- | --- |
-| `config.json` | 应用配置：角色路径、卧室开关、端口、唤醒阈值、TTS/ASR/ComfyUI |
+| `config.json` | 应用配置：角色路径、卧室开关、读取范围/黑名单、端口、唤醒阈值、TTS/ASR/ComfyUI |
 | `llm.config.json` | LLM 档案：`app` 放上下文/唤醒/提示策略，`llm` 放端点、鉴权和 `request` 原生参数 |
 | `tts.config.json` | 可选 GPT-SoVITS：`app` 是服务启动/切句，`request` 是原生请求 |
 
-默认值：`characterPath=/characters/p01/`、`hasBedroom=false`、`ttsMode=off`、`llm.baseUrl` 为空。
+默认值：`characterPath=/characters/p01/`、`hasBedroom=false`、`ttsMode=off`、`petReadScope=space`（仅 `pet_space/`）、`llm.baseUrl` 为空。`petReadBlacklist` 默认屏蔽 `config.json`、`llm.config.json`、`tts.config.json` 和 `.git`。`config.example.json` 用 `// 字段名` 键放说明；JSON 不支持真正的 `//` 注释，程序会忽略这些说明键。
 
 LLM 档案最小结构：
 
@@ -191,6 +191,6 @@ npm start
 - Unix 截屏依赖桌面环境：Linux 需要 X11 或 PipeWire，macOS 需要授予屏幕录制权限；无法截屏时请检查系统权限。
 - Unix 分支已完成代码适配和启动脚本，但当前开发环境只在 Windows 上做过完整启动验证；首次在 Linux/macOS 运行请先确认 Electron 依赖和屏幕捕获权限。
 - 本地 HTTP API 没有额外的 token 鉴权；外部网页的跨站请求已被拦截，但本机进程仍可访问。不要把端口暴露到局域网或公网。
-- `read_file` 默认可读取本机任意文件；`write_file` 限制在 `pet_space/`。使用工具时注意隐私和密钥文件。
+- `read_file` 默认只能读 `pet_space/`；把 `config.json` 的 `petReadScope` 设为 `all` 才开放整机读取，`petReadBlacklist` 仍会拦截配置、密钥、`.git` 等路径。`write_file` 同样限制在 `pet_space/`。
 - TTS 和 ComfyUI 是外部服务，仓库不附带它们的模型、权重或语音样本；ASR 运行时在仓库依赖内，但 SenseVoice 模型需要单独下载。未安装或未配置时相关功能不会工作。
 - ASR 的 Node 运行时已在 Windows 的 Electron 主进程中实测；Linux/macOS 只做了原生库路径适配，尚未实机验证，完整麦克风录制链路也需要在目标平台再跑一次。

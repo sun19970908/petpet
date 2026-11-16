@@ -156,6 +156,7 @@ function maybeRoomChanged(call) {
 
 const { runFsTool, checkComfy } = createFsTools({
   APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged: maybeRoomChanged,
+  petReadScope: BOOT_CONFIG.petReadScope, petReadBlacklist: BOOT_CONFIG.petReadBlacklist,
   comfyHost: BOOT_CONFIG.comfyHost, comfyPort: BOOT_CONFIG.comfyPort, comfyInputDir: BOOT_CONFIG.comfyInputDir,
 });
 

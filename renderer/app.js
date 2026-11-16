@@ -435,7 +435,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     // 查证兜底
     if (wantsVerification && toolCallTotal === 0 && !verificationNudged && isLive && !continueBaseMsgs) {
       verificationNudged = true;
-      bodyMsgs.push({ role: 'user', content: '（系统提示：这条任务涉及需要核实的事实，但你本轮没有调用任何工具。请先调用工具查证——例如 read_file 读相关文件，或读 logs/fstool.log 核对自己的操作记录——再给出最终回答。）' });
+      bodyMsgs.push({ role: 'user', content: '（系统提示：这条任务涉及需要核实的事实，但你本轮没有调用任何工具。请先调用工具查证——例如 read_file 读你可读范围内的相关文件，或结合已注入的工具调用台账——再给出最终回答。）' });
       showBubble('提醒她先查证…');
       continue;
     }
