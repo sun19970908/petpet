@@ -19,9 +19,9 @@ export function createPetTools({ ROLE, getDisplayInfo, isBedroomMode, isOnlyBedr
       const said = parsed.where ? '「' + parsed.where + '」' : '(' + fx + ',' + fy + ')';
       if (!special && (fx == null || fy == null)) {
         let lm = null;
-        try { lm = await (await fetch('/pet_space/room/landmarks.json?t=' + Date.now(), { cache: 'no-store' })).json(); } catch {}
+        try { lm = await (await fetch('/pet_space/scenes/room/landmarks.json?t=' + Date.now(), { cache: 'no-store' })).json(); } catch {}
         if (!lm || !lm[where] || typeof lm[where].x !== 'number') {
-          result = '找不到地标 "' + (parsed.where || '') + '"：pet_space/room/landmarks.json 里没有它。现有地标：' + (lm ? Object.keys(lm).filter((k) => k[0] !== '_').join('、') : '(文件读不到)') + '。' + (ROLE === 'pet' ? (onlyBedroom ? '也可以用 where="room" 回卧室。' : '也可以用 where="primary" 去主屏、where="room" 回卧室。') : '换背景后请把坐标写进这份文件。');
+          result = '找不到地标 "' + (parsed.where || '') + '"：pet_space/scenes/room/landmarks.json 里没有它。现有地标：' + (lm ? Object.keys(lm).filter((k) => k[0] !== '_').join('、') : '(文件读不到)') + '。' + (ROLE === 'pet' ? (onlyBedroom ? '也可以用 where="room" 回卧室。' : '也可以用 where="primary" 去主屏、where="room" 回卧室。') : '换背景后请把坐标写进这份文件。');
         } else {
           fx = lm[where].x;
           fy = lm[where].y;

@@ -3,9 +3,9 @@
 <style>html,body{margin:0;height:100%;overflow:hidden;background:#0e1628}#rf{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
 </head>
 <body>
-  <iframe id="rf" sandbox="allow-scripts" src="/pet_space/room/index.html"></iframe>
+  <iframe id="rf" sandbox="allow-scripts" src="/pet_space/scenes/room/index.html"></iframe>
   <script>
-    // 独立卧室窗的宿主：只渲染房间 iframe，并用 /api/room-state 双向同步窗帘/灯（和桌宠窗里的 room_control 通过文件同步）
+    // 独立卧室窗的宿主：只渲染房间 iframe，并用 /api/room-state 双向同步窗帘/灯（和桌宠窗里的装修层 iframe 通过文件同步）
     const rf = document.getElementById('rf');
     let last = '';
     function push(state) { try { rf.contentWindow.postMessage({ type: 'set-room-state', state }, '*'); } catch {} }

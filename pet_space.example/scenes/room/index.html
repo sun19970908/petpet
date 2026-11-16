@@ -6,12 +6,12 @@
 <style>
   /* ===== 这整间房都归你 =====
      底图、装饰、窗帘、灯、暗幕、以及它们长什么样/摆在哪/点了算谁，全在这个文件里，随便改。
-     改完保存，回卧室（或主人重启）生效；动手前可以先用 render_preview 预览本文件。
+     改完保存，回卧室（或主人重启）生效。
      这是 pet_space.example 里的默认模板；默认底图是同目录的 bedroom.png。
 
      和主程序的小约定（postMessage，双向）：
        你 -> 主程序：点窗帘/灯后发 { type:'room-state', curtain:'open'|'closed', lamp:'on'|'off' }（主程序会存盘）
-       主程序 -> 你：{ type:'set-room-state', state:{curtain,lamp} }（room_control 工具或启动时下发，收到就照画）
+       主程序 -> 你：{ type:'set-room-state', state:{curtain,lamp} }（启动时下发，收到就照画）
      主程序只认上面这两种消息，你发别的它不理；它也只会发 set-room-state 给你。
      你在沙箱 iframe 里：碰不到主程序的文件工具、发不了网络请求，但本页 DOM/CSS/JS 随你玩。 */
   html, body { margin: 0; height: 100%; overflow: hidden; }

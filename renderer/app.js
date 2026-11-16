@@ -259,7 +259,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   }).map((tool) => {
     if (!onlyBedroom || tool.function?.name !== 'walk_to') return tool;
     const copy = JSON.parse(JSON.stringify(tool));
-    copy.function.description = '让你自己在卧室里走过去（平滑滑行，没有迈腿动画）。where="room" 回卧室默认位置（可再带 x,y 指定屏内位置，0~1，x=0 最左、y=1 最下；不带就站底部中间）；也可以用房间地标名（如 window/desk/bed/door/center，由 pet_space/room/landmarks.json 决定），或只给 x,y（0~1，按卧室画面比例，脚下位置）。';
+    copy.function.description = '让你自己在卧室里走过去（平滑滑行，没有迈腿动画）。where="room" 回卧室默认位置（可再带 x,y 指定屏内位置，0~1，x=0 最左、y=1 最下；不带就站底部中间）；也可以用房间地标名（如 window/desk/bed/door/center，由 pet_space/scenes/room/landmarks.json 决定），或只给 x,y（0~1，按卧室画面比例，脚下位置）。';
     copy.function.parameters.properties.where.description = 'room=回卧室，或地标名如 window/desk/bed/door/center';
     copy.function.parameters.properties.x.description = '可选：横向比例 0~1。配合 room 时是屏内位置；单独用时是卧室画面比例';
     copy.function.parameters.properties.y.description = '可选：脚下纵向比例 0~1。配合 room 时是屏内位置';
@@ -1175,7 +1175,7 @@ speech.onIdle = () => {
     const awParam = new URLSearchParams(location.search).get('autowake');
     if (awParam) {
       let awText = awParam === '1' ? '（自动测试）主人想你了，随便说一句' : awParam;
-      if (awParam === 'editprobe') awText = '（测试）请在你的房间页面 pet_space/room/index.html 里加一行 HTML 注释 <!-- probe -->，改完调用 look_at_room 看一眼房间确认效果。';
+      if (awParam === 'editprobe') awText = '（测试）请在你的房间页面 pet_space/scenes/room/index.html 里加一行 HTML 注释 <!-- probe -->，改完调用 look_at_room 看一眼房间确认效果。';
       setTimeout(() => { if (!busy) wakeNow(awText); }, 6000);
       rlog('autowake', awText.slice(0, 40));
     }

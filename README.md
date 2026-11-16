@@ -187,7 +187,7 @@ npm start
 - **角色**：角色资源不随仓库分发。`init.ps1` / `init.sh` 只从 [livliv-dev/player](https://github.com/livliv-dev/player) 拉取 `p01`、`p02`；它们是 **CC BY-NC-SA 4.0**，必须署名、仅限非商业用途，修改后分发需使用同一协议。署名和完整条款见拉取后的 `characters/characters/LICENSE.md`、`characters/characters/CREDITS.md`。`p03`（Pen）上游未授予权利，初始化脚本不会拉取，也不应擅自分发。
 - **语音和模型**：`voices/`、`voice-samples/`、GPT-SoVITS 权重、SenseVoice/ASR 模型、ComfyUI 模型都不在仓库中；TTS 默认关闭。ASR 的 Node 运行时依赖是 Apache-2.0 的 [`sherpa-onnx-node`](https://github.com/k2-fsa/sherpa-onnx)，模型需从上面的官方链接单独下载并遵守上游 SenseVoice/FunASR 的许可。尤其注意真人歌手音色的授权。
 - **ScreenCap**：`tools/ScreenCap.cs` / `ScreenCap.exe` 是自有代码，按根 MIT 许可；构建说明见 [`tools/README.md`](tools/README.md)。
-- **示例房间**：`pet_space.example/room/bedroom.png` 是示例图片，不自动纳入 MIT；公开再分发前请确认来源或替换为可自由分发的素材。
+- **示例房间**：`pet_space.example/scenes/room/bedroom.png` 是示例图片，不自动纳入 MIT；公开再分发前请确认来源或替换为可自由分发的素材。
 - **商标**：本项目是非官方项目，与 LivLiv 没有隶属、赞助或认可关系；相关名称和角色形象归各自权利人。
 
 ## 已知限制

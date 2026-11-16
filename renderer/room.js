@@ -76,9 +76,9 @@ export function createRoomController({
   // 而且页面加载时 self report 的状态会覆盖窗帘/灯存盘。
   if (role === 'pet' && roomFrame) { try { roomFrame.src = 'about:blank'; } catch {} }
 
-  // 她改了 pet_space/room/ 下的文件：只重载房间 iframe（带缓存戳），不用重启 app
+  // 她改了 pet_space/scenes/ 下的文件：只重载房间 iframe（带缓存戳），不用重启 app
   window.petWindow?.onRoomChanged?.(() => {
-    if (roomFrame) roomFrame.src = '/pet_space/room/index.html?t=' + Date.now();
+    if (roomFrame) roomFrame.src = '/pet_space/scenes/room/index.html?t=' + Date.now();
   });
 
   (async () => {

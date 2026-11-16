@@ -15,7 +15,7 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
 };
 
-const STATIC_DIRS = ['renderer/', 'characters/', 'pet_space/room/'];
+const STATIC_DIRS = ['renderer/', 'characters/', 'pet_space/scenes/'];
 const STATIC_FILES = new Set(['pet_space/persona.txt']);
 
 function isStaticAssetAllowed(relPath) {
@@ -35,7 +35,7 @@ function isInsidePath(root, target) {
 function staticBaseRel(relPath) {
   if (relPath.startsWith('characters/')) return path.join('characters', 'characters');
   if (relPath.startsWith('renderer/')) return 'renderer';
-  if (relPath.startsWith('pet_space/room/')) return path.join('pet_space', 'room');
+  if (relPath.startsWith('pet_space/scenes/')) return path.join('pet_space', 'scenes');
   return relPath;
 }
 

@@ -139,9 +139,9 @@ function maybeRoomChanged(call) {
   const name = (call && call.name) || '';
   if (!/^(file_tool|write_file|append_file|edit_file|copy_file|delete_file|resize_image)$/.test(name)) return;
   const a = (call && call.args) || {};
-  const roomDir = path.resolve(PET_SPACE_DIR, 'room').toUpperCase();
+  const sceneDir = path.resolve(PET_SPACE_DIR, 'scenes').toUpperCase();
   const cands = [a.path, a.dest_path, a.out_path].filter(Boolean).map((p) => path.resolve(String(p)).toUpperCase());
-  if (!cands.some((p) => p === roomDir || p.startsWith(roomDir + path.sep))) return;
+  if (!cands.some((p) => p === sceneDir || p.startsWith(sceneDir + path.sep))) return;
   try {
     const t = (SPLIT_WINDOWS && windows.bedroomWin && !windows.bedroomWin.isDestroyed()) ? windows.bedroomWin : windows.petWin;
     if (!t || t.isDestroyed()) return;

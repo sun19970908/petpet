@@ -115,14 +115,14 @@
   #close:hover { background: rgba(200, 60, 60, 0.8); color: white; }
   /* 卧室（副屏）：底图 + 代码交互层，位置尺寸由 JS 按副屏矩形设定 */
   #room { position: absolute; inset: 0; display: none; overflow: hidden; }
-  /* 卧室装修层：沙箱 iframe 加载 pet_space/room/index.html（她可自由改，脚本被沙箱隔离） */
+  /* 卧室装修层：沙箱 iframe 加载 pet_space/scenes/room/index.html（她可自由改，脚本被沙箱隔离） */
   #roomframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-  /* 窗帘/灯/暗幕及其热区已交给 pet_space/room/index.html 自己画、自己点 */
+  /* 窗帘/灯/暗幕及其热区已交给 pet_space/scenes/room/index.html 自己画、自己点 */
 </style>
 </head>
 <body>
   <div id="room">
-    <iframe id="roomframe" sandbox="allow-scripts" src="/pet_space/room/index.html"></iframe>
+    <iframe id="roomframe" sandbox="allow-scripts" src="/pet_space/scenes/room/index.html"></iframe>
   </div>
   <div id="petwrap">
     <canvas id="pet"></canvas>
