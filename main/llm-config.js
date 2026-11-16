@@ -27,6 +27,7 @@ const DEFAULT_PROFILE = {
     tailPrefill:
       '跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度',
     tailPrefillField: 'reasoning_content',
+    toolResultNote: '',
     parseTextToolCalls: true,
     forceToolMode: 'prefill_tag',
     forceToolPrefillText: '<tool_call>\n',

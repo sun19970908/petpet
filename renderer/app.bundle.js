@@ -2587,6 +2587,7 @@ void main(){ o=texture(uTex,vUv); }`;
     tailInstruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u601D\u8003\u81EA\u8EAB\u8EAB\u4EFD\u6216\u601D\u8003\u8BED\u6C14\uFF08\u5982\u50B2\u5A07\u5634\u786C\uFF09\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n \u4E0D\u8981\u7528\u6587\u5B57\u7F57\u5217\u201C\u6211\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u201D\u6765\u5192\u5145\u8C03\u7528\u8BB0\u5F55\uFF0C\u8981\u7528\u5DE5\u5177\u5C31\u5FC5\u987B\u771F\u7684\u8F93\u51FA<tool_call>\uFF01\n ',
     tailPrefill: "\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6",
     tailPrefillField: "reasoning_content",
+    toolResultNote: "",
     parseTextToolCalls: true,
     forceToolMode: "prefill_tag",
     forceToolPrefillText: "<tool_call>\n"
@@ -4040,7 +4041,14 @@ ${note}` : note };
   }
 
   // renderer/tool-runner.js
-  function createToolRunner({ petTools: petTools2, showBubble: showBubble2, touchTurnActivity: touchTurnActivity2 }) {
+  function createToolRunner({ petTools: petTools2, showBubble: showBubble2, touchTurnActivity: touchTurnActivity2, getToolResultNote }) {
+    const withResultNote = (content) => {
+      const note = String((typeof getToolResultNote === "function" ? getToolResultNote() : "") || "").trim();
+      if (!note) return content;
+      return `${String(content ?? "")}
+
+${note}`;
+    };
     async function run(call, bodyMsgs, { round, truncated }) {
       let parsed = {};
       let parseOk = true;
@@ -4050,16 +4058,16 @@ ${note}` : note };
         parseOk = false;
       }
       if (!parseOk) {
-        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: "\u9519\u8BEF\uFF1A\u5DE5\u5177\u53C2\u6570\u4E0D\u662F\u5408\u6CD5 JSON\uFF08\u901A\u5E38\u662F\u6587\u672C\u91CC\u7684\u6362\u884C\u6216\u5F15\u53F7\u6CA1\u6709\u6B63\u786E\u8F6C\u4E49\uFF09\u3002\u8BF7\u91CD\u65B0\u751F\u6210 arguments \u4E3A\u5408\u6CD5 JSON \u540E\u91CD\u8BD5\u3002" });
+        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: withResultNote("\u9519\u8BEF\uFF1A\u5DE5\u5177\u53C2\u6570\u4E0D\u662F\u5408\u6CD5 JSON\uFF08\u901A\u5E38\u662F\u6587\u672C\u91CC\u7684\u6362\u884C\u6216\u5F15\u53F7\u6CA1\u6709\u6B63\u786E\u8F6C\u4E49\uFF09\u3002\u8BF7\u91CD\u65B0\u751F\u6210 arguments \u4E3A\u5408\u6CD5 JSON \u540E\u91CD\u8BD5\u3002") });
         return;
       }
       showBubble2(round === 0 ? "\u770B\u5C4F\u5E55\u4E2D\u2026" : "\u7EE7\u7EED\u7FFB\u2026");
       if (call.function?.name === "search_memory") {
-        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: await petTools2.searchMemory(parsed) });
+        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: withResultNote(await petTools2.searchMemory(parsed)) });
         return;
       }
       if (call.function?.name === "walk_to") {
-        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: await petTools2.walkTo(parsed) });
+        bodyMsgs.push({ role: "tool", tool_call_id: call.id, content: withResultNote(await petTools2.walkTo(parsed)) });
         return;
       }
       touchTurnActivity2();
@@ -4068,7 +4076,7 @@ ${note}` : note };
       bodyMsgs.push({
         role: "tool",
         tool_call_id: call.id,
-        content: out.ok ? String(out.result) : truncated ? "\u9519\u8BEF\uFF1A\u8FD9\u6B21\u8F93\u51FA\u5728 max_tokens \u5904\u88AB\u622A\u65AD\uFF0C\u5DE5\u5177\u53C2\u6570\u4E0D\u5B8C\u6574\u3002\u8BF7\u7CBE\u7B80\u8981\u5199\u5165\u7684\u5185\u5BB9\uFF0C\u6216\u5206\u6210\u591A\u6B21\u8C03\u7528\u3002" : "\u9519\u8BEF\uFF1A" + out.error
+        content: withResultNote(out.ok ? String(out.result) : truncated ? "\u9519\u8BEF\uFF1A\u8FD9\u6B21\u8F93\u51FA\u5728 max_tokens \u5904\u88AB\u622A\u65AD\uFF0C\u5DE5\u5177\u53C2\u6570\u4E0D\u5B8C\u6574\u3002\u8BF7\u7CBE\u7B80\u8981\u5199\u5165\u7684\u5185\u5BB9\uFF0C\u6216\u5206\u6210\u591A\u6B21\u8C03\u7528\u3002" : "\u9519\u8BEF\uFF1A" + out.error)
       });
       if (out.image) {
         bodyMsgs.push({
@@ -4416,7 +4424,7 @@ ${note}` : note };
     walkToFraction,
     memoryRecall: memory.recall
   });
-  var toolRunner = createToolRunner({ petTools, showBubble, touchTurnActivity });
+  var toolRunner = createToolRunner({ petTools, showBubble, touchTurnActivity, getToolResultNote: () => llmConfig.promptPolicy.toolResultNote });
   var lastExchange = null;
   async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
     await refreshRuntimeConfig();

@@ -1,20 +1,26 @@
 // 单次工具调用执行：参数解析、桌宠内置工具、主进程文件工具
-export function createToolRunner({ petTools, showBubble, touchTurnActivity }) {
+export function createToolRunner({ petTools, showBubble, touchTurnActivity, getToolResultNote }) {
+  const withResultNote = (content) => {
+    const note = String((typeof getToolResultNote === 'function' ? getToolResultNote() : '') || '').trim();
+    if (!note) return content;
+    return `${String(content ?? '')}\n\n${note}`;
+  };
+
   async function run(call, bodyMsgs, { round, truncated }) {
     let parsed = {};
     let parseOk = true;
     try { parsed = JSON.parse(call.function?.arguments || '{}'); } catch { parseOk = false; }
     if (!parseOk) {
-      bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: '错误：工具参数不是合法 JSON（通常是文本里的换行或引号没有正确转义）。请重新生成 arguments 为合法 JSON 后重试。' });
+      bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: withResultNote('错误：工具参数不是合法 JSON（通常是文本里的换行或引号没有正确转义）。请重新生成 arguments 为合法 JSON 后重试。') });
       return;
     }
     showBubble(round === 0 ? '看屏幕中…' : '继续翻…');
     if (call.function?.name === 'search_memory') {
-      bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: await petTools.searchMemory(parsed) });
+      bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: withResultNote(await petTools.searchMemory(parsed)) });
       return;
     }
     if (call.function?.name === 'walk_to') {
-      bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: await petTools.walkTo(parsed) });
+      bodyMsgs.push({ role: 'tool', tool_call_id: call.id, content: withResultNote(await petTools.walkTo(parsed)) });
       return;
     }
     touchTurnActivity();
@@ -24,11 +30,11 @@ export function createToolRunner({ petTools, showBubble, touchTurnActivity }) {
     touchTurnActivity();
     bodyMsgs.push({
       role: 'tool', tool_call_id: call.id,
-      content: out.ok
+      content: withResultNote(out.ok
         ? String(out.result)
         : (truncated
           ? '错误：这次输出在 max_tokens 处被截断，工具参数不完整。请精简要写入的内容，或分成多次调用。'
-          : '错误：' + out.error),
+          : '错误：' + out.error)),
     });
     if (out.image) {
       bodyMsgs.push({

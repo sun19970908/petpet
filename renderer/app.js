@@ -242,7 +242,7 @@ const petTools = createPetTools({
   walkToFraction,
   memoryRecall: memory.recall,
 });
-const toolRunner = createToolRunner({ petTools, showBubble, touchTurnActivity });
+const toolRunner = createToolRunner({ petTools, showBubble, touchTurnActivity, getToolResultNote: () => llmConfig.promptPolicy.toolResultNote });
 
 let lastExchange = null; // 记录最近一次底层请求与响应（供“继续”按钮使用）
 

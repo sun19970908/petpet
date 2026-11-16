@@ -164,6 +164,7 @@
 | `tailInstruction` | string | 见示例 | 尾缀说明文本。 |
 | `tailPrefill` | string | 见示例 | assistant 预填充文本。默认放在 `reasoning_content`，不要写 `<think>` / `</think>` 标签，模板会补。 |
 | `tailPrefillField` | string | `reasoning_content` | `tailPrefill` 放进 assistant 的哪个字段：`reasoning_content` 会替换模板的空思考块；`content` 作为正文预填充。 |
+| `toolResultNote` | string | 空 | 追加到每个 tool 返回内容末尾的提示词。留空不追加；它属于 tool 消息正文，纯 JSON 工具结果可能因此不再是合法 JSON。 |
 | `parseTextToolCalls` | boolean | `true` | 是否解析 `<tool_call>` / `<invoke>` 文本工具调用。适合不支持原生工具调用的本地模型。 |
 | `forceToolMode` | string | `prefill_tag` | 强制工具调用方式：`prefill_tag` 使用文本预填充；`tool_choice_required` 使用原生 `tool_choice: required`。 |
 | `forceToolPrefillText` | string | `<tool_call>\n` | 文本预填充工具调用时使用的开头。 |
