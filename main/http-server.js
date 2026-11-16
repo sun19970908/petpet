@@ -43,6 +43,7 @@ function createHttpServer(deps) {
     runFsTool,
     checkComfy,
     checkPython,
+    checkSearch,
     onLlmActivity,
     llmProxy,
     handleApi,
@@ -106,6 +107,15 @@ function createHttpServer(deps) {
     }
     if (apiPath === '/api/python-status') {
       Promise.resolve(checkPython ? checkPython() : false)
+        .then((ok) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: Boolean(ok) }));
+        })
+        .catch((e) => { res.writeHead(500); res.end(String(e)); });
+      return;
+    }
+    if (apiPath === '/api/search-status') {
+      Promise.resolve(checkSearch ? checkSearch() : false)
         .then((ok) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: Boolean(ok) }));

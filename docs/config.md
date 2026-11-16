@@ -6,7 +6,7 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `config.json` | 桌宠运行配置：界面、窗口、语音、ComfyUI、Python、读取权限等 |
+| `config.json` | 桌宠运行配置：界面、窗口、语音、ComfyUI、联网搜索、Python、读取权限等 |
 | `llm.config.json` | LLM 档案：连接地址、模型、请求参数、提示策略 |
 | `tts.config.json` | GPT-SoVITS TTS 的启动参数和原生请求参数 |
 
@@ -65,6 +65,17 @@
 | `comfyInputDir` | string | 空 | ComfyUI 的 `input` 目录。工作流包含 `LoadImage` 且传入 `input_image` 时必须能访问该目录。 |
 
 桌宠会通过 `GET /system_stats` 探测 ComfyUI。连不上时不会把 `comfy_run` 工具下发给模型；ComfyUI 启动后，下一轮对话会重新探测。`comfyInputDir` 为空或不存在的配置不会影响不包含 `LoadImage` 的工作流。
+
+### 联网搜索与网页读取
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `webSearchApiUrl` | string | 空 | 搜索 API 基础地址，例如 `http://127.0.0.1:8888`。为空时不下发 `web_search` 和 `fetch_url`。工具会自动在地址后追加 `/search`，也接受已经以 `/search` 结尾的地址。 |
+| `webSearchApiKey` | string | 空 | 可选的模型/搜索网关鉴权 Key，作为 `Authorization: Bearer ...` 发送。标准 SearXNG 通常不需要。 |
+| `webSearchTimeoutMs` | number | `15000` | 搜索和网页读取的超时，范围 1000–60000 毫秒。 |
+| `webSearchMaxResults` | number | `8` | 搜索默认返回条数，范围 1–20。 |
+
+使用 SearXNG 时，`settings.yml` 的 `search.formats` 必须包含 `json`。`web_search` 返回标题、链接和摘要；`fetch_url` 只读取公网 `http/https` 网页，会拒绝本机、局域网、私有网段以及重定向到这些地址的请求，正文默认截到 12000 字符，最大 30000 字符。两者都只在 `webSearchApiUrl` 非空时提供给模型；地址为空时工具不会出现在请求里。
 
 ### Python 工具
 
@@ -222,5 +233,6 @@ TTS 默认关闭；未安装 GPT-SoVITS 或没有授权参考音频时不要开�
 3. `config.json` 的 `comfyHost` / `comfyPort` / `comfyInputDir` 控制 ComfyUI 工具和输入目录。
 4. `config.json` 的 `pythonMode` / `pythonDockerBin` / `pythonImage` / `pythonTimeoutMs` 控制 Python 工具。
 5. `config.json` 的 `petReadScope` / `petReadBlacklist` 控制宠物读取权限。
-6. 修改配置后重启桌宠；运行中的进程不会自动重新读取所有配置。
-7. `config.json`、`llm.config.json`、`tts.config.json` 默认被 Git 忽略，避免把密钥、路径和音色配置提交到仓库。
+6. `config.json` 的 `webSearchApiUrl` / `webSearchApiKey` / `webSearchTimeoutMs` / `webSearchMaxResults` 控制联网搜索和网页读取工具。
+7. 修改配置后重启桌宠；运行中的进程不会自动重新读取所有配置。
+8. `config.json`、`llm.config.json`、`tts.config.json` 默认被 Git 忽略，避免把密钥、路径和音色配置提交到仓库。

@@ -2939,6 +2939,8 @@ ${note}` : note };
     { type: "function", function: { name: "take_screenshot", description: '\u622A\u53D6\u7528\u6237\u4E3B\u5C4F\u5E55\u7684\u5B8C\u6574\u753B\u9762\uFF08\u7528\u6237\u7684\u5DE5\u4F5C\u4E16\u754C\uFF09\uFF0C\u4F60\u4F1A\u76F4\u63A5"\u770B\u5230"\u8FD9\u5F20\u56FE\u3002\u5F53\u7528\u6237\u8BA9\u4F60\u770B\u5C4F\u5E55\u3001\u95EE\u4F60\u5728\u505A\u4EC0\u4E48\u3001\u5E2E\u5FD9\u770B\u5C4F\u5E55\u4E0A\u7684\u5185\u5BB9/\u62A5\u9519\u6216\u8005\u4F60\u60F3\u770B\u5C4F\u5E55\u65F6\u8C03\u7528\u5B83', parameters: { type: "object", properties: {}, required: [] } } },
     { type: "function", function: { name: "look_at_room", description: "\u770B\u4E00\u773C\u4F60\u81EA\u5DF1\u623F\u95F4\uFF08\u5367\u5BA4\u6240\u5728\u5C4F\uFF09\u7684\u5B9E\u9645\u72B6\u6001\uFF1A\u7167\u7247\u5899\u3001\u7A97\u5E18\u5F00\u5173\u3001\u706F\u3001\u4F60\u5728\u623F\u95F4\u91CC\u7684\u4F4D\u7F6E\u3002\u60F3\u56DE\u623F\u95F4\u770B\u770B\u3001\u786E\u8BA4\u88C5\u9970\u6548\u679C\u3001\u6216\u7761\u89C9\u524D\u68C0\u67E5\u623F\u95F4\u65F6\u8C03\u7528\uFF1B\u6CA1\u6709\u526F\u5C4F\u6216\u623F\u95F4\u672A\u5F00\u653E\u65F6\u4F1A\u62A5\u9519", parameters: { type: "object", properties: {}, required: [] } } },
     { type: "function", function: { name: "search_memory", description: "\u5728\u4F60\u4EEC\u8FC7\u5F80\u7684\u5BF9\u8BDD\u8BB0\u5FC6\u91CC\u505A\u8BED\u4E49\u641C\u7D22\u3002\u5F53\u7528\u6237\u63D0\u5230\u8FC7\u53BB\u7684\u4E8B\u3001\u95EE\u4F60\u8BB0\u4E0D\u8BB0\u5F97\u4EC0\u4E48\u3001\u6216\u4F60\u9700\u8981\u65E7\u4FE1\u606F\u65F6\u8C03\u7528", parameters: { type: "object", properties: { query: { type: "string", description: "\u8981\u641C\u7D22\u7684\u8BB0\u5FC6\u5173\u952E\u8BCD\u6216\u63CF\u8FF0" }, limit: { type: "number", description: "\u53EF\u9009\uFF0C\u8FD4\u56DE\u6761\u6570" } }, required: ["query"] } } },
+    { type: "function", function: { name: "web_search", description: "\u901A\u8FC7\u672C\u5730 SearXNG \u641C\u7D22\u4E92\u8054\u7F51\uFF0C\u8FD4\u56DE\u6807\u9898\u3001\u94FE\u63A5\u548C\u6458\u8981\u3002\u9002\u5408\u67E5\u65B0\u95FB\u3001\u8D44\u6599\u3001\u4EF7\u683C\u3001\u6559\u7A0B\u6216\u4F60\u4E0D\u786E\u5B9A\u7684\u4E8B\u5B9E\uFF1B\u62FF\u5230\u94FE\u63A5\u540E\u53EF\u7528 fetch_url \u8BFB\u6B63\u6587\u3002\u4EC5\u5728 config.json \u914D\u7F6E\u4E86 webSearchApiUrl \u65F6\u53EF\u7528\u3002", parameters: { type: "object", properties: { query: { type: "string", description: "\u641C\u7D22\u5173\u952E\u8BCD\uFF0C\u5C3D\u91CF\u5177\u4F53" }, max_results: { type: "number", description: "\u53EF\u9009\uFF0C\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4\u53D6 config.json \u7684 webSearchMaxResults" } }, required: ["query"] } } },
+    { type: "function", function: { name: "fetch_url", description: "\u8BFB\u53D6\u4E00\u4E2A\u516C\u7F51\u7F51\u9875\u7684\u6B63\u6587\uFF0C\u8FD4\u56DE\u6807\u9898\u3001\u94FE\u63A5\u548C\u7EAF\u6587\u672C\u3002\u53EA\u5141\u8BB8 http/https \u516C\u7F51\u5730\u5740\uFF0C\u4F1A\u62D2\u7EDD\u672C\u673A\u3001\u5C40\u57DF\u7F51\u548C\u79C1\u6709\u5730\u5740\uFF1B\u4E0D\u80FD\u7528\u6765\u8BFB\u672C\u5730\u6587\u4EF6\u3002\u4EC5\u5728 config.json \u914D\u7F6E\u4E86 webSearchApiUrl \u65F6\u53EF\u7528\u3002", parameters: { type: "object", properties: { url: { type: "string", description: "\u8981\u8BFB\u53D6\u7684\u7F51\u9875 URL" }, max_chars: { type: "number", description: "\u53EF\u9009\uFF0C\u6B63\u6587\u6700\u5927\u5B57\u7B26\u6570\uFF0C\u9ED8\u8BA4 12000\uFF0C\u6700\u5927 30000" } }, required: ["url"] } } },
     { type: "function", function: { name: "walk_to", description: '\u8BA9\u4F60\u81EA\u5DF1\u8D70\u8FC7\u53BB\uFF08\u5E73\u6ED1\u6ED1\u884C\uFF0C\u6CA1\u6709\u8FC8\u817F\u52A8\u753B\uFF09\u3002where="primary" \u53BB\u4E3B\u5C4F\u3001where="room" \u56DE\u5367\u5BA4\u526F\u5C4F\uFF08\u8FD9\u4E24\u4E2A\u53EF\u518D\u5E26 x,y \u6307\u5B9A\u5C4F\u5185\u4F4D\u7F6E\uFF0C0~1\uFF0Cx=0 \u6700\u5DE6\u3001y=1 \u6700\u4E0B\uFF1B\u4E0D\u5E26\u5C31\u7AD9\u5E95\u90E8\u4E2D\u95F4\uFF09\uFF1B\u4E5F\u53EF\u4EE5\u7528\u623F\u95F4\u5730\u6807\u540D\uFF08\u5982 window/desk/bed/door/center\uFF0C\u7531 pet_space/room/landmarks.json \u51B3\u5B9A\uFF09\uFF0C\u6216\u53EA\u7ED9 x,y\uFF080~1\uFF0C\u6309\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002', parameters: { type: "object", properties: { where: { type: "string", description: "primary=\u53BB\u4E3B\u5C4F\u3001room=\u56DE\u5367\u5BA4\uFF0C\u6216\u5730\u6807\u540D\u5982 window/desk/bed/door/center" }, x: { type: "number", description: "\u53EF\u9009\uFF1A\u6A2A\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 primary/room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E\uFF1B\u5355\u72EC\u7528\u65F6\u662F\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B" }, y: { type: "number", description: "\u53EF\u9009\uFF1A\u811A\u4E0B\u7EB5\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 primary/room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E" } }, required: [] } } },
     { type: "function", function: { name: "resize_image", description: "\u628A\u4E00\u5F20\u56FE\u7247\u7B49\u6BD4\u7F29\u5230\u6307\u5B9A\u6700\u5927\u8FB9\u5E76\u538B\u6210\u5C0F jpg\uFF08\u9ED8\u8BA4\u6700\u957F\u8FB9 512\u3001\u8D28\u91CF 82\uFF09\uFF0C\u5B58\u56DE pet_space \u5E76\u628A\u5C0F\u56FE\u56DE\u4F20\u7ED9\u4F60\u770B\u3002\u4E13\u95E8\u7528\u6765\u628A ComfyUI \u751F\u6210\u7684\u5927\u56FE\uFF081MB+\uFF09\u538B\u6210\u80FD\u585E\u8FDB\u5C0F\u76F8\u6846\u7684\u5C0F\u56FE\u3002\u56FE\u7247\u5FC5\u987B\u5DF2\u5728 pet_space \u5185\uFF1B\u8F93\u51FA\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg\uFF0C\u53EF\u7528 out_path \u6307\u5B9A\u3002", parameters: { type: "object", properties: { path: { type: "string", description: "pet_space \u5185\u7684\u56FE\u7247\u5B8C\u6574\u8DEF\u5F84" }, max_width: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u5BBD\uFF0C\u9ED8\u8BA4 512" }, max_height: { type: "number", description: "\u53EF\u9009\uFF1A\u6700\u5927\u9AD8\uFF0C\u9ED8\u8BA4 512" }, quality: { type: "number", description: "\u53EF\u9009\uFF1Ajpg \u8D28\u91CF 1-100\uFF0C\u9ED8\u8BA4 82" }, out_path: { type: "string", description: "\u53EF\u9009\uFF1A\u8F93\u51FA\u8DEF\u5F84\uFF08\u5FC5\u987B\u5728 pet_space \u5185\uFF09\uFF0C\u9ED8\u8BA4\u540C\u76EE\u5F55 <\u539F\u540D>_small.jpg" } }, required: ["path"] } } },
     { type: "function", function: { name: "python_run", description: "\u5728 Docker \u5BB9\u5668\u91CC\u8FD0\u884C Python \u4EE3\u7801\u3002\u5BB9\u5668\u53EA\u6302\u8F7D pet_space\uFF0C\u9ED8\u8BA4\u65AD\u7F51\u3001\u7981\u6B62\u63D0\u6743\u3001\u9650\u5236\u5185\u5B58/CPU/\u8FDB\u7A0B\u6570\u548C\u8FD0\u884C\u65F6\u95F4\uFF1B\u4EE3\u7801\u53EF\u4EE5\u81EA\u7531\u8BFB\u5199 pet_space \u91CC\u7684\u6587\u4EF6\uFF0C\u4F46\u770B\u4E0D\u5230\u4ED3\u5E93\u914D\u7F6E\u3001\u5BC6\u94A5\u548C .git\u3002\u9002\u5408\u6570\u636E\u5904\u7406\u3001\u753B\u56FE\u3001\u6279\u91CF\u6539\u6587\u4EF6\u7B49\u4EFB\u52A1\u3002\u9700\u8981\u989D\u5916\u5305\u65F6\u8BF7\u8BA9\u7528\u6237\u628A\u5B83\u9884\u88C5\u8FDB pythonImage \u6307\u5B9A\u7684\u955C\u50CF\uFF0C\u8FD0\u884C\u65F6\u4E0D\u80FD pip install\u3002", parameters: { type: "object", properties: { code: { type: "string", description: "\u5B8C\u6574 Python \u4EE3\u7801\uFF0C\u4F1A\u5199\u5165 pet_space/.python/ \u540E\u6267\u884C" }, args: { type: "array", items: { type: "string" }, description: "\u53EF\u9009\uFF1A\u4F5C\u4E3A sys.argv[1:] \u4F20\u7ED9\u811A\u672C\u7684\u53C2\u6570" } }, required: ["code"] } } },
@@ -4338,9 +4340,24 @@ ${note}` : note };
     }
     return pythonAvailable;
   }
+  var searchAvailable = false;
+  async function refreshSearchAvailability() {
+    try {
+      if (window.petWindow?.searchStatus) {
+        searchAvailable = Boolean(await window.petWindow.searchStatus());
+      } else {
+        const res = await fetch("/api/search-status");
+        searchAvailable = Boolean((await res.json()).ok);
+      }
+    } catch {
+      searchAvailable = false;
+    }
+    return searchAvailable;
+  }
   var initialConfigReady = refreshRuntimeConfig();
   refreshComfyAvailability();
   refreshPythonAvailability();
+  refreshSearchAvailability();
   function showBubble(text, isError = false) {
     bubble.textContent = text;
     bubble.style.display = "block";
@@ -4378,11 +4395,12 @@ ${note}` : note };
   var lastExchange = null;
   async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
     await refreshRuntimeConfig();
-    await Promise.all([refreshComfyAvailability(), refreshPythonAvailability()]);
+    await Promise.all([refreshComfyAvailability(), refreshPythonAvailability(), refreshSearchAvailability()]);
     const requestTools = TOOLS.filter((t5) => {
       const name = t5.function?.name;
       if (name === "comfy_run") return comfyAvailable;
       if (name === "python_run") return pythonAvailable;
+      if (name === "web_search" || name === "fetch_url") return searchAvailable;
       return true;
     });
     turnUsedTools = false;
@@ -4574,7 +4592,7 @@ ${note}` : note };
         if (emptyTextRetries < 2) {
           emptyTextRetries++;
           const fullContent = content.trim();
-          const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
+          const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|web_search|fetch_url|工具|编辑|写入|修改|读取|查看|复制|创建|追加|搜索|网页)/i;
           const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
           if (llmConfig.capabilities.prefixMode === "none") {
             if (fullContent) bodyMsgs.push({ role: "assistant", content: fullContent, ...reasoningExtra });
@@ -4850,7 +4868,7 @@ ${note}` : note };
       } else if (prevRes) {
         baseMsgs.push(prevRes);
       }
-      const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|调用.*工具)/i;
+      const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|web_search|fetch_url|调用.*工具)/i;
       const hadNoToolCalls = !prevRes.tool_calls?.length && !/<tool_call>/i.test(prevRes.content || "");
       const seemsToolIntent = toolKeywords.test(prevRes.content || "") && hadNoToolCalls;
       if (seemsToolIntent) {

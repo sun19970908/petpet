@@ -180,9 +180,24 @@ async function refreshPythonAvailability() {
   }
   return pythonAvailable;
 }
+let searchAvailable = false;
+async function refreshSearchAvailability() {
+  try {
+    if (window.petWindow?.searchStatus) {
+      searchAvailable = Boolean(await window.petWindow.searchStatus());
+    } else {
+      const res = await fetch('/api/search-status');
+      searchAvailable = Boolean((await res.json()).ok);
+    }
+  } catch {
+    searchAvailable = false;
+  }
+  return searchAvailable;
+}
 const initialConfigReady = refreshRuntimeConfig();
 refreshComfyAvailability();
 refreshPythonAvailability();
+refreshSearchAvailability();
 
 function showBubble(text, isError = false) {
   bubble.textContent = text;
@@ -228,11 +243,12 @@ let lastExchange = null; // 记录最近一次底层请求与响应（供“继�
 
 async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
   await refreshRuntimeConfig();
-  await Promise.all([refreshComfyAvailability(), refreshPythonAvailability()]);
+  await Promise.all([refreshComfyAvailability(), refreshPythonAvailability(), refreshSearchAvailability()]);
   const requestTools = TOOLS.filter((t) => {
     const name = t.function?.name;
     if (name === 'comfy_run') return comfyAvailable;
     if (name === 'python_run') return pythonAvailable;
+    if (name === 'web_search' || name === 'fetch_url') return searchAvailable;
     return true;
   });
   turnUsedTools = false;
@@ -431,7 +447,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       if (emptyTextRetries < 2) {
         emptyTextRetries++;
         const fullContent = content.trim();
-        const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|工具|编辑|写入|修改|读取|查看|复制|创建|追加)/i;
+        const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|web_search|fetch_url|工具|编辑|写入|修改|读取|查看|复制|创建|追加|搜索|网页)/i;
         // 思考块没收尾时别再补 <tool_call> 预填（会落进思考块里，把续写带偏）
         const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
         if (llmConfig.capabilities.prefixMode === 'none') {
@@ -699,7 +715,7 @@ async function continueRequest() {
     }
 
     // 检查是否属于“说了要调用工具/在思考里计划了工具，但实际未触发 tool_call”的情况
-    const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|调用.*工具)/i;
+    const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|web_search|fetch_url|调用.*工具)/i;
     const hadNoToolCalls = !prevRes.tool_calls?.length && !/<tool_call>/i.test(prevRes.content || '');
     const seemsToolIntent = toolKeywords.test(prevRes.content || '') && hadNoToolCalls;
 

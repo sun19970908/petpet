@@ -3,8 +3,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { createPythonTool } = require('./python-tool');
+const { createWebTools } = require('./web-tools');
 
-function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, petReadScope, petReadBlacklist, comfyHost, comfyPort, comfyInputDir, pythonMode, pythonDockerBin, pythonImage, pythonTimeoutMs }) {
+function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, petReadScope, petReadBlacklist, comfyHost, comfyPort, comfyInputDir, webSearchApiUrl, webSearchApiKey, webSearchTimeoutMs, webSearchMaxResults, pythonMode, pythonDockerBin, pythonImage, pythonTimeoutMs }) {
   function realPathOrNull(p) {
     try { return fs.realpathSync(p); } catch { return null; }
   }
@@ -95,6 +96,12 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
     timeoutMs: Number(pythonTimeoutMs) || 30000,
   });
   const PYTHON_ENABLED = String(pythonMode ?? 'docker').toLowerCase() !== 'off';
+  const webTools = createWebTools({
+    apiUrl: webSearchApiUrl,
+    apiKey: webSearchApiKey,
+    timeoutMs: webSearchTimeoutMs,
+    maxResults: webSearchMaxResults,
+  });
 
   const COMFY_HOST = comfyHost || '127.0.0.1', COMFY_PORT = Number(comfyPort) || 8188;
   const COMFY_INPUT = comfyInputDir || process.env.PET_COMFY_INPUT || '';
@@ -227,6 +234,8 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
       else if (name === 'copy_file') { name = 'file_tool'; args.action = 'copy'; }
       else if (name === 'delete_file') { name = 'file_tool'; args.action = 'delete'; }
       if (name === 'comfy_run') return comfyRunTool(args);
+      if (name === 'web_search') return webTools.webSearch(args);
+      if (name === 'fetch_url') return webTools.fetchUrl(args);
       if (name === 'python_run') {
         if (!PYTHON_ENABLED) return Promise.resolve({ ok: false, error: 'Python 工具已在 config.json 中关闭（pythonMode=off）' });
         return pythonTool.run(args);
@@ -462,7 +471,12 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
     }
   }
 
-  return { runFsTool, checkComfy, checkPython: () => (PYTHON_ENABLED ? pythonTool.check() : Promise.resolve(false)) };
+  return {
+    runFsTool,
+    checkComfy,
+    checkPython: () => (PYTHON_ENABLED ? pythonTool.check() : Promise.resolve(false)),
+    checkSearch: () => webTools.checkSearch(),
+  };
 }
 
 module.exports = { createFsTools };

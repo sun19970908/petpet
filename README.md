@@ -11,7 +11,7 @@ Windows、Linux 和 macOS 的本地 AI 桌宠。Electron + [livliv player](https
 - **对话**：兼容 OpenAI Chat Completions 的本地或云端端点；按 `llm.config.json` 档案切换模型、上下文和采样参数。
 - **记忆**：Orama 语义检索 + 可选 embedding；聊天记录保存为明文 JSON，可直接编辑或备份。
 - **语音**：GPT-SoVITS TTS 默认关闭；SenseVoice ASR 在 Electron 主进程内通过 `sherpa-onnx-node` 运行，不需要 Python/FastAPI，模型需单独下载。
-- **工具**：读取文件和目录、截屏、改房间、检索记忆；写入只允许 `pet_space/`。配置 Docker 后还可运行受限的 Python 代码。
+- **工具**：读取文件和目录、截屏、改房间、检索记忆；配置 SearXNG 地址后还可联网搜索和读取网页正文。写入只允许 `pet_space/`。配置 Docker 后还可运行受限的 Python 代码。
 - **唤醒**：手动铃铛、定时唤醒、无限唤醒；带 GPU 占用和上下文长度护栏。
 - **多模态**：输入框粘贴图片，或点击按钮截屏后发给模型。
 
@@ -78,7 +78,7 @@ bash start-pet.sh debug
 | `llm.config.json` | LLM 档案：`app` 放上下文/唤醒/提示策略，`llm` 放端点、鉴权和 `request` 原生参数 |
 | `tts.config.json` | 可选 GPT-SoVITS：`app` 是服务启动/切句，`request` 是原生请求 |
 
-默认值：`characterPath=/characters/p01/`、`hasBedroom=false`、`ttsMode=off`、`petReadScope=space`（仅 `pet_space/`）、`pythonMode=docker`、`llm.baseUrl` 为空。`petReadBlacklist` 默认屏蔽 `config.json`、`llm.config.json`、`tts.config.json` 和 `.git`。`config.example.json` 等示例文件均为纯 JSON；三个配置文件的完整字段说明见 [docs/config.md](docs/config.md)。
+默认值：`characterPath=/characters/p01/`、`hasBedroom=false`、`ttsMode=off`、`petReadScope=space`（仅 `pet_space/`）、`pythonMode=docker`、`webSearchApiUrl` 为空、`llm.baseUrl` 为空。`petReadBlacklist` 默认屏蔽 `config.json`、`llm.config.json`、`tts.config.json` 和 `.git`。`config.example.json` 等示例文件均为纯 JSON；三个配置文件的完整字段说明见 [docs/config.md](docs/config.md)。
 
 LLM 档案最小结构：
 
@@ -113,9 +113,11 @@ LLM 档案最小结构：
 }
 ```
 
-TTS 和 ComfyUI 是外部服务，地址在 `config.json` 中配置。ASR 不再依赖外部服务：`sherpa-onnx-node` 随 `npm install` 安装，只填写 `asrModelDir` 即可；模型目录需要包含 `model.int8.onnx` 和 `tokens.txt`。宠物会在每次请求前探测 ComfyUI，连不上时不会把 `comfy_run` 下发给模型。
+TTS、ComfyUI 和 SearXNG 是外部服务，地址在 `config.json` 中配置。ASR 不再依赖外部服务：`sherpa-onnx-node` 随 `npm install` 安装，只填写 `asrModelDir` 即可；模型目录需要包含 `model.int8.onnx` 和 `tokens.txt`。宠物会在每次请求前探测 ComfyUI，连不上时不会把 `comfy_run` 下发给模型。
 
 Python 工具（`python_run`）需要 Docker Desktop 或 Docker Engine 正在运行。它只在挂载的 `pet_space/` 里执行代码，默认断网并限制资源；Docker 不可用、`pythonMode=off` 或镜像拉取失败时不会把工具下发给模型。详见 [docs/config.md](docs/config.md#python-工具)。
+
+联网工具需要 SearXNG 或其他兼容搜索 API。把 `config.json` 的 `webSearchApiUrl` 填成基础地址（例如 `http://127.0.0.1:8888`），并确保 SearXNG 的 `settings.yml` 开启 `json` 格式；地址为空时 `web_search` 和 `fetch_url` 不会下发给模型。`fetch_url` 只允许公网 http/https，会拒绝本机、局域网和私有地址。
 
 ### SenseVoice ASR（可选）
 

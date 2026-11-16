@@ -154,10 +154,12 @@ function maybeRoomChanged(call) {
   } catch {}
 }
 
-const { runFsTool, checkComfy, checkPython } = createFsTools({
+const { runFsTool, checkComfy, checkPython, checkSearch } = createFsTools({
   APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged: maybeRoomChanged,
   petReadScope: BOOT_CONFIG.petReadScope, petReadBlacklist: BOOT_CONFIG.petReadBlacklist,
   comfyHost: BOOT_CONFIG.comfyHost, comfyPort: BOOT_CONFIG.comfyPort, comfyInputDir: BOOT_CONFIG.comfyInputDir,
+  webSearchApiUrl: BOOT_CONFIG.webSearchApiUrl, webSearchApiKey: BOOT_CONFIG.webSearchApiKey,
+  webSearchTimeoutMs: BOOT_CONFIG.webSearchTimeoutMs, webSearchMaxResults: BOOT_CONFIG.webSearchMaxResults,
   pythonMode: BOOT_CONFIG.pythonMode, pythonDockerBin: BOOT_CONFIG.pythonDockerBin,
   pythonImage: BOOT_CONFIG.pythonImage, pythonTimeoutMs: BOOT_CONFIG.pythonTimeoutMs,
 });
@@ -279,6 +281,7 @@ app.whenReady().then(() => {
   ipcMain.handle('pet-fs-tool', async (e, call) => runFsTool(call));
   ipcMain.handle('comfy-status', () => checkComfy());
   ipcMain.handle('python-status', () => checkPython());
+  ipcMain.handle('search-status', () => checkSearch());
   ipcMain.handle('history-load', (e, mode) => historyLoad(mode));
   ipcMain.handle('history-save', (e, arr, mode) => historySave(arr, mode));
 
@@ -318,6 +321,7 @@ app.whenReady().then(() => {
     runFsTool,
     checkComfy,
     checkPython,
+    checkSearch,
     onLlmActivity,
     llmProxy,
     handleApi,
