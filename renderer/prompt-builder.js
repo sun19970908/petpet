@@ -158,7 +158,15 @@ export function buildTailMessages({
   // 默认 prefill_assistant：尾部追加指令 + assistant 预填充
   const tailMessages = [];
   if (instruction) tailMessages.push({ role: 'user', content: instruction });
-  if (policy.tailPrefill) tailMessages.push({ role: 'assistant', content: policy.tailPrefill });
+  if (policy.tailPrefill) {
+    const text = String(policy.tailPrefill);
+    if (policy.tailPrefillField === 'content') {
+      tailMessages.push({ role: 'assistant', content: text });
+    } else if (text.trim()) {
+      // 放进 reasoning_content 时不要带 <think>/</think>；模板会补，带了会被当成普通文字。
+      tailMessages.push({ role: 'assistant', content: '', reasoning_content: text.trim() });
+    }
+  }
   return {
     tailMessages,
     inlineLastUserInstruction: '',
