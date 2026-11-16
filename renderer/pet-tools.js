@@ -1,7 +1,7 @@
 // askLLM 的两个桌宠专用工具（search_memory / walk_to）：与模型循环解耦，屏幕与坐标信息通过注入的取值器获取
 const WALK_SPECIAL = ['primary', '主屏', 'main', 'room', 'bedroom', '卧室'];
 
-export function createPetTools({ ROLE, getDisplayInfo, isBedroomMode, displayCssRect, walkToCss, walkToFraction, memoryRecall }) {
+export function createPetTools({ ROLE, getDisplayInfo, isBedroomMode, isOnlyBedroom = () => false, displayCssRect, walkToCss, walkToFraction, memoryRecall }) {
   async function searchMemory(parsed = {}) {
     const r = await memoryRecall(parsed.query || '', parsed.limit || 8);
     return r.length
@@ -10,6 +10,7 @@ export function createPetTools({ ROLE, getDisplayInfo, isBedroomMode, displayCss
   }
 
   async function walkTo(parsed = {}) {
+    const onlyBedroom = Boolean(isOnlyBedroom());
     let result;
     try {
       const where = String(parsed.where || '').toLowerCase();
@@ -20,14 +21,16 @@ export function createPetTools({ ROLE, getDisplayInfo, isBedroomMode, displayCss
         let lm = null;
         try { lm = await (await fetch('/pet_space/room/landmarks.json?t=' + Date.now(), { cache: 'no-store' })).json(); } catch {}
         if (!lm || !lm[where] || typeof lm[where].x !== 'number') {
-          result = '找不到地标 "' + (parsed.where || '') + '"：pet_space/room/landmarks.json 里没有它。现有地标：' + (lm ? Object.keys(lm).filter((k) => k[0] !== '_').join('、') : '(文件读不到)') + '。' + (ROLE === 'pet' ? '也可以用 where="primary" 去主屏、where="room" 回卧室。' : '换背景后请把坐标写进这份文件。');
+          result = '找不到地标 "' + (parsed.where || '') + '"：pet_space/room/landmarks.json 里没有它。现有地标：' + (lm ? Object.keys(lm).filter((k) => k[0] !== '_').join('、') : '(文件读不到)') + '。' + (ROLE === 'pet' ? (onlyBedroom ? '也可以用 where="room" 回卧室。' : '也可以用 where="primary" 去主屏、where="room" 回卧室。') : '换背景后请把坐标写进这份文件。');
         } else {
           fx = lm[where].x;
           fy = lm[where].y;
         }
       }
       if (result == null) {
-        if (ROLE === 'pet') {
+        if (onlyBedroom && (where === 'primary' || where === '主屏' || where === 'main')) {
+          result = '你现在只在卧室里，去不了主屏。';
+        } else if (ROLE === 'pet') {
           const displays = getDisplayInfo() || [];
           const pri = displays.find((d) => d.isPrimary);
           const bed = displays.find((d) => !d.isPrimary);

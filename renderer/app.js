@@ -76,6 +76,7 @@ async function refreshRuntimeConfig() {
     if (c?.tts) TTS_CONFIG = c.tts;
     CHARACTER_PATH = String(c?.characterPath || '').trim();
     bedroomAvailable = Boolean(c?.bedroom);
+    onlyBedroom = Boolean(c?.petOnlyBedroom) && Boolean(c?.bedroom) && c?.splitWindows !== false;
     const reflectEvery = parseInt(c?.infwakeReflectEvery, 10);
     if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
     room.applyBedroom(c?.bedroom);
@@ -196,6 +197,7 @@ async function refreshSearchAvailability() {
   return searchAvailable;
 }
 let bedroomAvailable = false;
+let onlyBedroom = false;
 const initialConfigReady = refreshRuntimeConfig();
 refreshComfyAvailability();
 refreshPythonAvailability();
@@ -234,6 +236,7 @@ const petTools = createPetTools({
   ROLE,
   getDisplayInfo: () => displayInfo,
   isBedroomMode: () => room.bedroomMode,
+  isOnlyBedroom: () => onlyBedroom,
   displayCssRect,
   walkToCss,
   walkToFraction,
@@ -253,6 +256,14 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     if (name === 'web_search' || name === 'fetch_url') return searchAvailable;
     if (name === 'look_at_room') return bedroomAvailable;
     return true;
+  }).map((tool) => {
+    if (!onlyBedroom || tool.function?.name !== 'walk_to') return tool;
+    const copy = JSON.parse(JSON.stringify(tool));
+    copy.function.description = '让你自己在卧室里走过去（平滑滑行，没有迈腿动画）。where="room" 回卧室默认位置（可再带 x,y 指定屏内位置，0~1，x=0 最左、y=1 最下；不带就站底部中间）；也可以用房间地标名（如 window/desk/bed/door/center，由 pet_space/room/landmarks.json 决定），或只给 x,y（0~1，按卧室画面比例，脚下位置）。';
+    copy.function.parameters.properties.where.description = 'room=回卧室，或地标名如 window/desk/bed/door/center';
+    copy.function.parameters.properties.x.description = '可选：横向比例 0~1。配合 room 时是屏内位置；单独用时是卧室画面比例';
+    copy.function.parameters.properties.y.description = '可选：脚下纵向比例 0~1。配合 room 时是屏内位置';
+    return copy;
   });
   turnUsedTools = false;
   let forceRequiredTool = false;

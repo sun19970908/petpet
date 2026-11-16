@@ -38,7 +38,7 @@
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `hasBedroom` | boolean | `false` | 是否启用卧室。`false` 时只使用主屏；`true` 时尝试把卧室放到副屏。 |
-| `petOnlyBedroom` | boolean | `false` | 桌宠是否只待在卧室屏。仅在卧室可用时生效。 |
+| `petOnlyBedroom` | boolean | `false` | 桌宠是否只待在卧室屏。仅在卧室可用时生效；启用后 `walk_to` 只描述卧室内移动，并拒绝 `primary` 主屏目标。 |
 | `splitWindows` | boolean | `true` | 是否拆分桌宠窗口和卧室窗口。关闭后使用单窗口模式。 |
 | `serverPort` | number | `12400` | Electron 本地 HTTP 服务端口，也是渲染层和本地 API 使用的端口。 |
 | `hwCompositing` | boolean | `true` | 是否使用硬件合成。设为 `false` 会关闭 GPU 合成，适合多显卡/截屏异常时排查。 |

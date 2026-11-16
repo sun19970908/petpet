@@ -3670,12 +3670,13 @@ ${note}` : note };
 
   // renderer/pet-tools.js
   var WALK_SPECIAL = ["primary", "\u4E3B\u5C4F", "main", "room", "bedroom", "\u5367\u5BA4"];
-  function createPetTools({ ROLE: ROLE2, getDisplayInfo, isBedroomMode, displayCssRect: displayCssRect2, walkToCss: walkToCss2, walkToFraction: walkToFraction2, memoryRecall }) {
+  function createPetTools({ ROLE: ROLE2, getDisplayInfo, isBedroomMode, isOnlyBedroom = () => false, displayCssRect: displayCssRect2, walkToCss: walkToCss2, walkToFraction: walkToFraction2, memoryRecall }) {
     async function searchMemory(parsed = {}) {
       const r3 = await memoryRecall(parsed.query || "", parsed.limit || 8);
       return r3.length ? r3.map((h3) => `[${new Date(h3.ts).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}] ${h3.text}`).join("\n---\n") : "\uFF08\u6CA1\u6709\u627E\u5230\u76F8\u5173\u8BB0\u5FC6\uFF09";
     }
     async function walkTo(parsed = {}) {
+      const onlyBedroom2 = Boolean(isOnlyBedroom());
       let result;
       try {
         const where = String(parsed.where || "").toLowerCase();
@@ -3689,14 +3690,16 @@ ${note}` : note };
           } catch {
           }
           if (!lm || !lm[where] || typeof lm[where].x !== "number") {
-            result = '\u627E\u4E0D\u5230\u5730\u6807 "' + (parsed.where || "") + '"\uFF1Apet_space/room/landmarks.json \u91CC\u6CA1\u6709\u5B83\u3002\u73B0\u6709\u5730\u6807\uFF1A' + (lm ? Object.keys(lm).filter((k3) => k3[0] !== "_").join("\u3001") : "(\u6587\u4EF6\u8BFB\u4E0D\u5230)") + "\u3002" + (ROLE2 === "pet" ? '\u4E5F\u53EF\u4EE5\u7528 where="primary" \u53BB\u4E3B\u5C4F\u3001where="room" \u56DE\u5367\u5BA4\u3002' : "\u6362\u80CC\u666F\u540E\u8BF7\u628A\u5750\u6807\u5199\u8FDB\u8FD9\u4EFD\u6587\u4EF6\u3002");
+            result = '\u627E\u4E0D\u5230\u5730\u6807 "' + (parsed.where || "") + '"\uFF1Apet_space/room/landmarks.json \u91CC\u6CA1\u6709\u5B83\u3002\u73B0\u6709\u5730\u6807\uFF1A' + (lm ? Object.keys(lm).filter((k3) => k3[0] !== "_").join("\u3001") : "(\u6587\u4EF6\u8BFB\u4E0D\u5230)") + "\u3002" + (ROLE2 === "pet" ? onlyBedroom2 ? '\u4E5F\u53EF\u4EE5\u7528 where="room" \u56DE\u5367\u5BA4\u3002' : '\u4E5F\u53EF\u4EE5\u7528 where="primary" \u53BB\u4E3B\u5C4F\u3001where="room" \u56DE\u5367\u5BA4\u3002' : "\u6362\u80CC\u666F\u540E\u8BF7\u628A\u5750\u6807\u5199\u8FDB\u8FD9\u4EFD\u6587\u4EF6\u3002");
           } else {
             fx = lm[where].x;
             fy = lm[where].y;
           }
         }
         if (result == null) {
-          if (ROLE2 === "pet") {
+          if (onlyBedroom2 && (where === "primary" || where === "\u4E3B\u5C4F" || where === "main")) {
+            result = "\u4F60\u73B0\u5728\u53EA\u5728\u5367\u5BA4\u91CC\uFF0C\u53BB\u4E0D\u4E86\u4E3B\u5C4F\u3002";
+          } else if (ROLE2 === "pet") {
             const displays = getDisplayInfo() || [];
             const pri = displays.find((d2) => d2.isPrimary);
             const bed = displays.find((d2) => !d2.isPrimary);
@@ -4238,6 +4241,7 @@ ${note}` : note };
       if (c3?.tts) TTS_CONFIG = c3.tts;
       CHARACTER_PATH = String(c3?.characterPath || "").trim();
       bedroomAvailable = Boolean(c3?.bedroom);
+      onlyBedroom = Boolean(c3?.petOnlyBedroom) && Boolean(c3?.bedroom) && c3?.splitWindows !== false;
       const reflectEvery = parseInt(c3?.infwakeReflectEvery, 10);
       if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
       room.applyBedroom(c3?.bedroom);
@@ -4356,6 +4360,7 @@ ${note}` : note };
     return searchAvailable;
   }
   var bedroomAvailable = false;
+  var onlyBedroom = false;
   var initialConfigReady = refreshRuntimeConfig();
   refreshComfyAvailability();
   refreshPythonAvailability();
@@ -4388,6 +4393,7 @@ ${note}` : note };
     ROLE,
     getDisplayInfo: () => displayInfo,
     isBedroomMode: () => room.bedroomMode,
+    isOnlyBedroom: () => onlyBedroom,
     displayCssRect,
     walkToCss,
     walkToFraction,
@@ -4405,6 +4411,14 @@ ${note}` : note };
       if (name === "web_search" || name === "fetch_url") return searchAvailable;
       if (name === "look_at_room") return bedroomAvailable;
       return true;
+    }).map((tool) => {
+      if (!onlyBedroom || tool.function?.name !== "walk_to") return tool;
+      const copy = JSON.parse(JSON.stringify(tool));
+      copy.function.description = '\u8BA9\u4F60\u81EA\u5DF1\u5728\u5367\u5BA4\u91CC\u8D70\u8FC7\u53BB\uFF08\u5E73\u6ED1\u6ED1\u884C\uFF0C\u6CA1\u6709\u8FC8\u817F\u52A8\u753B\uFF09\u3002where="room" \u56DE\u5367\u5BA4\u9ED8\u8BA4\u4F4D\u7F6E\uFF08\u53EF\u518D\u5E26 x,y \u6307\u5B9A\u5C4F\u5185\u4F4D\u7F6E\uFF0C0~1\uFF0Cx=0 \u6700\u5DE6\u3001y=1 \u6700\u4E0B\uFF1B\u4E0D\u5E26\u5C31\u7AD9\u5E95\u90E8\u4E2D\u95F4\uFF09\uFF1B\u4E5F\u53EF\u4EE5\u7528\u623F\u95F4\u5730\u6807\u540D\uFF08\u5982 window/desk/bed/door/center\uFF0C\u7531 pet_space/room/landmarks.json \u51B3\u5B9A\uFF09\uFF0C\u6216\u53EA\u7ED9 x,y\uFF080~1\uFF0C\u6309\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B\uFF0C\u811A\u4E0B\u4F4D\u7F6E\uFF09\u3002';
+      copy.function.parameters.properties.where.description = "room=\u56DE\u5367\u5BA4\uFF0C\u6216\u5730\u6807\u540D\u5982 window/desk/bed/door/center";
+      copy.function.parameters.properties.x.description = "\u53EF\u9009\uFF1A\u6A2A\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E\uFF1B\u5355\u72EC\u7528\u65F6\u662F\u5367\u5BA4\u753B\u9762\u6BD4\u4F8B";
+      copy.function.parameters.properties.y.description = "\u53EF\u9009\uFF1A\u811A\u4E0B\u7EB5\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E";
+      return copy;
     });
     turnUsedTools = false;
     let forceRequiredTool = false;

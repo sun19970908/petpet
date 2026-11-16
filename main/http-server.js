@@ -75,6 +75,8 @@ function createHttpServer(deps) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         bedroom: Boolean(bedroomDisplay()),
+        petOnlyBedroom: Boolean(cfg.petOnlyBedroom),
+        splitWindows: cfg.splitWindows !== false,
         infwakeCutoff: getInfwakeCutoff().str,
         infwakePhase: getInfwakePhaseId(),
         ttsMode: getGsvModeLabel(),
