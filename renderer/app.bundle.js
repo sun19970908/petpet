@@ -4237,6 +4237,7 @@ ${note}` : note };
       if (c3?.llm) llmConfig = normalizeLlmConfig(c3.llm);
       if (c3?.tts) TTS_CONFIG = c3.tts;
       CHARACTER_PATH = String(c3?.characterPath || "").trim();
+      bedroomAvailable = Boolean(c3?.bedroom);
       const reflectEvery = parseInt(c3?.infwakeReflectEvery, 10);
       if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
       room.applyBedroom(c3?.bedroom);
@@ -4354,6 +4355,7 @@ ${note}` : note };
     }
     return searchAvailable;
   }
+  var bedroomAvailable = false;
   var initialConfigReady = refreshRuntimeConfig();
   refreshComfyAvailability();
   refreshPythonAvailability();
@@ -4401,6 +4403,7 @@ ${note}` : note };
       if (name === "comfy_run") return comfyAvailable;
       if (name === "python_run") return pythonAvailable;
       if (name === "web_search" || name === "fetch_url") return searchAvailable;
+      if (name === "look_at_room") return bedroomAvailable;
       return true;
     });
     turnUsedTools = false;

@@ -75,6 +75,7 @@ async function refreshRuntimeConfig() {
     if (c?.llm) llmConfig = normalizeLlmConfig(c.llm);
     if (c?.tts) TTS_CONFIG = c.tts;
     CHARACTER_PATH = String(c?.characterPath || '').trim();
+    bedroomAvailable = Boolean(c?.bedroom);
     const reflectEvery = parseInt(c?.infwakeReflectEvery, 10);
     if (Number.isFinite(reflectEvery) && reflectEvery > 0) REFLECT_EVERY = reflectEvery;
     room.applyBedroom(c?.bedroom);
@@ -194,6 +195,7 @@ async function refreshSearchAvailability() {
   }
   return searchAvailable;
 }
+let bedroomAvailable = false;
 const initialConfigReady = refreshRuntimeConfig();
 refreshComfyAvailability();
 refreshPythonAvailability();
@@ -249,6 +251,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     if (name === 'comfy_run') return comfyAvailable;
     if (name === 'python_run') return pythonAvailable;
     if (name === 'web_search' || name === 'fetch_url') return searchAvailable;
+    if (name === 'look_at_room') return bedroomAvailable;
     return true;
   });
   turnUsedTools = false;
