@@ -166,8 +166,23 @@ async function refreshComfyAvailability() {
   }
   return comfyAvailable;
 }
+let pythonAvailable = false;
+async function refreshPythonAvailability() {
+  try {
+    if (window.petWindow?.pythonStatus) {
+      pythonAvailable = Boolean(await window.petWindow.pythonStatus());
+    } else {
+      const res = await fetch('/api/python-status');
+      pythonAvailable = Boolean((await res.json()).ok);
+    }
+  } catch {
+    pythonAvailable = false;
+  }
+  return pythonAvailable;
+}
 const initialConfigReady = refreshRuntimeConfig();
 refreshComfyAvailability();
+refreshPythonAvailability();
 
 function showBubble(text, isError = false) {
   bubble.textContent = text;
@@ -213,8 +228,13 @@ let lastExchange = null; // 记录最近一次底层请求与响应（供“继�
 
 async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
   await refreshRuntimeConfig();
-  await refreshComfyAvailability();
-  const requestTools = comfyAvailable ? TOOLS : TOOLS.filter((t) => t.function?.name !== 'comfy_run');
+  await Promise.all([refreshComfyAvailability(), refreshPythonAvailability()]);
+  const requestTools = TOOLS.filter((t) => {
+    const name = t.function?.name;
+    if (name === 'comfy_run') return comfyAvailable;
+    if (name === 'python_run') return pythonAvailable;
+    return true;
+  });
   turnUsedTools = false;
   let forceRequiredTool = false;
   let bodyMsgs;

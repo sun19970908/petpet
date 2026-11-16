@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('petWindow', {
   captureScreen: () => ipcRenderer.invoke('pet-capture'),
   fsTool: (call) => ipcRenderer.invoke('pet-fs-tool', call),
   comfyStatus: () => ipcRenderer.invoke('comfy-status'),
+  pythonStatus: () => ipcRenderer.invoke('python-status'),
   historyLoad: (mode) => ipcRenderer.invoke('history-load', mode),
   historySave: (arr, mode) => ipcRenderer.invoke('history-save', arr, mode),
   gpuUtil: () => ipcRenderer.invoke('gpu-util'),

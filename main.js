@@ -154,10 +154,12 @@ function maybeRoomChanged(call) {
   } catch {}
 }
 
-const { runFsTool, checkComfy } = createFsTools({
+const { runFsTool, checkComfy, checkPython } = createFsTools({
   APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged: maybeRoomChanged,
   petReadScope: BOOT_CONFIG.petReadScope, petReadBlacklist: BOOT_CONFIG.petReadBlacklist,
   comfyHost: BOOT_CONFIG.comfyHost, comfyPort: BOOT_CONFIG.comfyPort, comfyInputDir: BOOT_CONFIG.comfyInputDir,
+  pythonMode: BOOT_CONFIG.pythonMode, pythonDockerBin: BOOT_CONFIG.pythonDockerBin,
+  pythonImage: BOOT_CONFIG.pythonImage, pythonTimeoutMs: BOOT_CONFIG.pythonTimeoutMs,
 });
 
 // ===== 看门狗同步策略（根据 config.json 中的 watchdog 配置） =====
@@ -276,6 +278,7 @@ app.whenReady().then(() => {
   fs.mkdirSync(PET_SPACE_DIR, { recursive: true });
   ipcMain.handle('pet-fs-tool', async (e, call) => runFsTool(call));
   ipcMain.handle('comfy-status', () => checkComfy());
+  ipcMain.handle('python-status', () => checkPython());
   ipcMain.handle('history-load', (e, mode) => historyLoad(mode));
   ipcMain.handle('history-save', (e, arr, mode) => historySave(arr, mode));
 
@@ -314,6 +317,7 @@ app.whenReady().then(() => {
     historySave,
     runFsTool,
     checkComfy,
+    checkPython,
     onLlmActivity,
     llmProxy,
     handleApi,

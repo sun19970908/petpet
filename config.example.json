@@ -26,5 +26,9 @@
   "asrModelDir": "",
   "comfyHost": "127.0.0.1",
   "comfyPort": 8188,
-  "comfyInputDir": ""
+  "comfyInputDir": "",
+  "pythonMode": "docker",
+  "pythonDockerBin": "",
+  "pythonImage": "python:3.12-slim",
+  "pythonTimeoutMs": 30000
 }

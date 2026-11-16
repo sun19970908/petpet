@@ -1,9 +1,10 @@
-// 文件工具执行器（read/list 无限制，写/改/删仅限 pet_space 沙箱）+ ComfyUI 生图工具
+// 文件工具执行器（read/list 无限制，写/改/删仅限 pet_space 沙箱）+ ComfyUI 生图 + Docker Python
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { createPythonTool } = require('./python-tool');
 
-function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, petReadScope, petReadBlacklist, comfyHost, comfyPort, comfyInputDir }) {
+function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, petReadScope, petReadBlacklist, comfyHost, comfyPort, comfyInputDir, pythonMode, pythonDockerBin, pythonImage, pythonTimeoutMs }) {
   function realPathOrNull(p) {
     try { return fs.realpathSync(p); } catch { return null; }
   }
@@ -86,6 +87,14 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
     if (isBlacklistedPath(resolved)) return '拒绝：路径命中读取黑名单';
     return '';
   }
+
+  const pythonTool = createPythonTool({
+    PET_SPACE_DIR,
+    dockerBin: pythonDockerBin || '',
+    image: pythonImage || 'python:3.12-slim',
+    timeoutMs: Number(pythonTimeoutMs) || 30000,
+  });
+  const PYTHON_ENABLED = String(pythonMode ?? 'docker').toLowerCase() !== 'off';
 
   const COMFY_HOST = comfyHost || '127.0.0.1', COMFY_PORT = Number(comfyPort) || 8188;
   const COMFY_INPUT = comfyInputDir || process.env.PET_COMFY_INPUT || '';
@@ -218,6 +227,10 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
       else if (name === 'copy_file') { name = 'file_tool'; args.action = 'copy'; }
       else if (name === 'delete_file') { name = 'file_tool'; args.action = 'delete'; }
       if (name === 'comfy_run') return comfyRunTool(args);
+      if (name === 'python_run') {
+        if (!PYTHON_ENABLED) return Promise.resolve({ ok: false, error: 'Python 工具已在 config.json 中关闭（pythonMode=off）' });
+        return pythonTool.run(args);
+      }
       if (name === 'file_tool') {
         const action = args.action;
         if (action === 'write') {
@@ -449,7 +462,7 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
     }
   }
 
-  return { runFsTool, checkComfy };
+  return { runFsTool, checkComfy, checkPython: () => (PYTHON_ENABLED ? pythonTool.check() : Promise.resolve(false)) };
 }
 
 module.exports = { createFsTools };

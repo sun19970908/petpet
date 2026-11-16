@@ -42,6 +42,7 @@ function createHttpServer(deps) {
     historySave,
     runFsTool,
     checkComfy,
+    checkPython,
     onLlmActivity,
     llmProxy,
     handleApi,
@@ -96,6 +97,15 @@ function createHttpServer(deps) {
     }
     if (apiPath === '/api/comfy-status') {
       Promise.resolve(checkComfy ? checkComfy() : false)
+        .then((ok) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: Boolean(ok) }));
+        })
+        .catch((e) => { res.writeHead(500); res.end(String(e)); });
+      return;
+    }
+    if (apiPath === '/api/python-status') {
+      Promise.resolve(checkPython ? checkPython() : false)
         .then((ok) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: Boolean(ok) }));

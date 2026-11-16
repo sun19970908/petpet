@@ -6,7 +6,7 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `config.json` | 桌宠运行配置：界面、窗口、语音、ComfyUI、读取权限等 |
+| `config.json` | 桌宠运行配置：界面、窗口、语音、ComfyUI、Python、读取权限等 |
 | `llm.config.json` | LLM 档案：连接地址、模型、请求参数、提示策略 |
 | `tts.config.json` | GPT-SoVITS TTS 的启动参数和原生请求参数 |
 
@@ -65,6 +65,27 @@
 | `comfyInputDir` | string | 空 | ComfyUI 的 `input` 目录。工作流包含 `LoadImage` 且传入 `input_image` 时必须能访问该目录。 |
 
 桌宠会通过 `GET /system_stats` 探测 ComfyUI。连不上时不会把 `comfy_run` 工具下发给模型；ComfyUI 启动后，下一轮对话会重新探测。`comfyInputDir` 为空或不存在的配置不会影响不包含 `LoadImage` 的工作流。
+
+### Python 工具
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `pythonMode` | string | `docker` | `docker`：启用 Docker 容器执行；`off`：关闭并隐藏 `python_run`。 |
+| `pythonDockerBin` | string | 空 | Docker CLI 路径。为空时自动查找 `PATH`，Windows 还会尝试 Docker Desktop 的默认安装路径。 |
+| `pythonImage` | string | `python:3.12-slim` | Python 容器镜像。需要额外包时请预装到自定义镜像里；运行中不能联网，也不能 `pip install`。 |
+| `pythonTimeoutMs` | number | `30000` | 单次执行超时，范围 1000–120000 毫秒。超时会强制终止容器。 |
+
+`python_run` 使用一次性容器执行模型生成的代码：
+
+- 只挂载 `pet_space/` 到容器 `/workspace`，工作目录为 `/workspace`；
+- `--network none`，默认不能访问网络；
+- `--read-only`，容器根文件系统只读，`/tmp` 使用 64 MB 临时空间；
+- 限制 `512m` 内存、1 个 CPU、128 个进程；
+- 丢弃全部 capabilities，并启用 `no-new-privileges`；
+- 不挂载 Docker socket、仓库、配置、密钥和 `.git`；
+- 代码文件运行结束后从 `pet_space/.python/` 删除。
+
+首次使用某个镜像时，工具会自动执行 `docker pull`。Docker Desktop 没有启动、CLI 找不到或镜像拉取失败时，工具会返回错误；`python-status` 探测失败时不会把 `python_run` 下发给模型。
 
 ### 宠物读取权限
 
@@ -199,6 +220,7 @@ TTS 默认关闭；未安装 GPT-SoVITS 或没有授权参考音频时不要开�
 1. `config.json` 的 `llmProfile` 选择 `llm.config.json` 的档案。
 2. `config.json` 的 `ttsMode` 控制是否启动 GPT-SoVITS；启动参数在 `tts.config.json`。
 3. `config.json` 的 `comfyHost` / `comfyPort` / `comfyInputDir` 控制 ComfyUI 工具和输入目录。
-4. `config.json` 的 `petReadScope` / `petReadBlacklist` 控制宠物读取权限。
-5. 修改配置后重启桌宠；运行中的进程不会自动重新读取所有配置。
-6. `config.json`、`llm.config.json`、`tts.config.json` 默认被 Git 忽略，避免把密钥、路径和音色配置提交到仓库。
+4. `config.json` 的 `pythonMode` / `pythonDockerBin` / `pythonImage` / `pythonTimeoutMs` 控制 Python 工具。
+5. `config.json` 的 `petReadScope` / `petReadBlacklist` 控制宠物读取权限。
+6. 修改配置后重启桌宠；运行中的进程不会自动重新读取所有配置。
+7. `config.json`、`llm.config.json`、`tts.config.json` 默认被 Git 忽略，避免把密钥、路径和音色配置提交到仓库。
