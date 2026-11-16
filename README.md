@@ -78,7 +78,7 @@ bash start-pet.sh debug
 | `llm.config.json` | LLM 档案：`app` 放上下文/唤醒/提示策略，`llm` 放端点、鉴权和 `request` 原生参数 |
 | `tts.config.json` | 可选 GPT-SoVITS：`app` 是服务启动/切句，`request` 是原生请求 |
 
-默认值：`characterPath=/characters/p01/`、`hasBedroom=false`、`ttsMode=off`、`petReadScope=space`（仅 `pet_space/`）、`llm.baseUrl` 为空。`petReadBlacklist` 默认屏蔽 `config.json`、`llm.config.json`、`tts.config.json` 和 `.git`。`config.example.json` 用 `// 字段名` 键放说明；JSON 不支持真正的 `//` 注释，程序会忽略这些说明键。
+默认值：`characterPath=/characters/p01/`、`hasBedroom=false`、`ttsMode=off`、`petReadScope=space`（仅 `pet_space/`）、`llm.baseUrl` 为空。`petReadBlacklist` 默认屏蔽 `config.json`、`llm.config.json`、`tts.config.json` 和 `.git`。`config.example.json` 等示例文件均为纯 JSON；三个配置文件的完整字段说明见 [docs/config.md](docs/config.md)。
 
 LLM 档案最小结构：
 
@@ -159,6 +159,7 @@ rm models/sensevoice.tar.bz2
 | `main/` | 主进程模块：窗口、截图、HTTP API、LLM 代理、语音、文件工具 |
 | `renderer/` | 渲染层：角色、对话、表情、工具调用和提示词 |
 | `lib/` | 配置、存储和启动辅助 |
+| `docs/` | 配置参数说明（`docs/config.md`） |
 | `pet_space.example/` | 初始人设和房间模板 |
 | `init.ps1` / `init.sh` | Windows / Unix 初始化脚本 |
 | `start-pet.bat` / `start-pet.sh` | Windows / Unix 启动脚本 |
