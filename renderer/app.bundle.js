@@ -4637,7 +4637,6 @@ ${note}` : note };
       }
       const rest = slicer.flush();
       if (rest) dispatchTTS(rest);
-      await ttsChain;
       return text;
     }
   }

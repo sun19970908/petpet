@@ -489,10 +489,9 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       showBubble('提醒她先查证…');
       continue;
     }
-    // 冲刷切句器中剩余的尾句并送入 TTS，等待所有分派完成
+    // 冲刷切句器中剩余的尾句并送入 TTS。语音继续在后台跑，不阻塞发送/下一轮。
     const rest = slicer.flush();
     if (rest) dispatchTTS(rest);
-    await ttsChain;
     return text;
   }
 }
