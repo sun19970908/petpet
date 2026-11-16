@@ -4309,7 +4309,22 @@ ${note}` : note };
   }, get inRoom() {
     return room.inRoom;
   } } };
+  var comfyAvailable = false;
+  async function refreshComfyAvailability() {
+    try {
+      if (window.petWindow?.comfyStatus) {
+        comfyAvailable = Boolean(await window.petWindow.comfyStatus());
+      } else {
+        const res = await fetch("/api/comfy-status");
+        comfyAvailable = Boolean((await res.json()).ok);
+      }
+    } catch {
+      comfyAvailable = false;
+    }
+    return comfyAvailable;
+  }
   var initialConfigReady = refreshRuntimeConfig();
+  refreshComfyAvailability();
   function showBubble(text, isError = false) {
     bubble.textContent = text;
     bubble.style.display = "block";
@@ -4347,6 +4362,8 @@ ${note}` : note };
   var lastExchange = null;
   async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
     await refreshRuntimeConfig();
+    await refreshComfyAvailability();
+    const requestTools = comfyAvailable ? TOOLS : TOOLS.filter((t5) => t5.function?.name !== "comfy_run");
     turnUsedTools = false;
     let forceRequiredTool = false;
     let bodyMsgs;
@@ -4398,7 +4415,7 @@ ${note}` : note };
       const reqPayload = buildChatPayload({
         llmConfig,
         messages: sendMsgs,
-        tools: TOOLS,
+        tools: requestTools,
         forceRequiredTool
       });
       forceRequiredTool = false;

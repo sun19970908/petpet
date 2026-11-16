@@ -58,8 +58,9 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
 
   const COMFY_HOST = comfyHost || '127.0.0.1', COMFY_PORT = Number(comfyPort) || 8188;
   const COMFY_INPUT = comfyInputDir || process.env.PET_COMFY_INPUT || '';
+  let comfyCheck = { at: 0, ok: false };
 
-  function comfyReq(method, urlPath, bodyObj) {
+  function comfyReq(method, urlPath, bodyObj, timeoutMs = 15000) {
     return new Promise((resolve, reject) => {
       const data = bodyObj == null ? null : Buffer.from(JSON.stringify(bodyObj));
       const req = http.request({ host: COMFY_HOST, port: COMFY_PORT, method, path: urlPath,
@@ -69,7 +70,7 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
         res.on('end', () => resolve({ status: res.statusCode, buffer: Buffer.concat(chunks) }));
       });
       req.on('error', reject);
-      req.setTimeout(15000, () => req.destroy(new Error('timeout')));
+      req.setTimeout(timeoutMs, () => req.destroy(new Error('timeout')));
       if (data) req.write(data);
       req.end();
     });
@@ -78,6 +79,19 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
     const r = await comfyReq(method, urlPath, bodyObj);
     let json = null; try { json = JSON.parse(r.buffer.toString('utf8')); } catch {}
     return { status: r.status, json };
+  }
+
+  // 只判断 ComfyUI 是否在线；短超时 + 5 秒缓存，避免每次对话都被离线检查拖慢。
+  async function checkComfy() {
+    const now = Date.now();
+    if (now - comfyCheck.at < 5000) return comfyCheck.ok;
+    let ok = false;
+    try {
+      const r = await comfyReq('GET', '/system_stats', null, 800);
+      ok = r.status === 200;
+    } catch {}
+    comfyCheck = { at: now, ok };
+    return ok;
   }
 
   function comfyRunTool(args) {
@@ -390,7 +404,7 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
     }
   }
 
-  return { runFsTool };
+  return { runFsTool, checkComfy };
 }
 
 module.exports = { createFsTools };

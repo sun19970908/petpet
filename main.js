@@ -154,7 +154,7 @@ function maybeRoomChanged(call) {
   } catch {}
 }
 
-const { runFsTool } = createFsTools({
+const { runFsTool, checkComfy } = createFsTools({
   APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged: maybeRoomChanged,
   comfyHost: BOOT_CONFIG.comfyHost, comfyPort: BOOT_CONFIG.comfyPort, comfyInputDir: BOOT_CONFIG.comfyInputDir,
 });
@@ -274,6 +274,7 @@ app.whenReady().then(() => {
 
   fs.mkdirSync(PET_SPACE_DIR, { recursive: true });
   ipcMain.handle('pet-fs-tool', async (e, call) => runFsTool(call));
+  ipcMain.handle('comfy-status', () => checkComfy());
   ipcMain.handle('history-load', (e, mode) => historyLoad(mode));
   ipcMain.handle('history-save', (e, arr, mode) => historySave(arr, mode));
 
@@ -311,6 +312,7 @@ app.whenReady().then(() => {
     historyLoad,
     historySave,
     runFsTool,
+    checkComfy,
     onLlmActivity,
     llmProxy,
     handleApi,

@@ -152,7 +152,22 @@ const room = createRoomController({
   layoutChat,
 });
 window.__pet = { player, speech, showBubble, get clickThrough() { return clickThrough; }, interrupt, room: { applyBedroom: room.applyBedroom, set: room.setRoomState, update: room.updateInRoom, get state() { return room.state; }, get inRoom() { return room.inRoom; } } }; // 调试句柄
+let comfyAvailable = false;
+async function refreshComfyAvailability() {
+  try {
+    if (window.petWindow?.comfyStatus) {
+      comfyAvailable = Boolean(await window.petWindow.comfyStatus());
+    } else {
+      const res = await fetch('/api/comfy-status');
+      comfyAvailable = Boolean((await res.json()).ok);
+    }
+  } catch {
+    comfyAvailable = false;
+  }
+  return comfyAvailable;
+}
 const initialConfigReady = refreshRuntimeConfig();
+refreshComfyAvailability();
 
 function showBubble(text, isError = false) {
   bubble.textContent = text;
@@ -198,6 +213,8 @@ let lastExchange = null; // 记录最近一次底层请求与响应（供“继�
 
 async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
   await refreshRuntimeConfig();
+  await refreshComfyAvailability();
+  const requestTools = comfyAvailable ? TOOLS : TOOLS.filter((t) => t.function?.name !== 'comfy_run');
   turnUsedTools = false;
   let forceRequiredTool = false;
   let bodyMsgs;
@@ -254,7 +271,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     const reqPayload = buildChatPayload({
       llmConfig,
       messages: sendMsgs,
-      tools: TOOLS,
+      tools: requestTools,
       forceRequiredTool,
     });
     forceRequiredTool = false;

@@ -113,7 +113,7 @@ LLM 档案最小结构：
 }
 ```
 
-TTS 和 ComfyUI 是外部服务，地址在 `config.json` 中配置。ASR 不再依赖外部服务：`sherpa-onnx-node` 随 `npm install` 安装，只填写 `asrModelDir` 即可；模型目录需要包含 `model.int8.onnx` 和 `tokens.txt`。
+TTS 和 ComfyUI 是外部服务，地址在 `config.json` 中配置。ASR 不再依赖外部服务：`sherpa-onnx-node` 随 `npm install` 安装，只填写 `asrModelDir` 即可；模型目录需要包含 `model.int8.onnx` 和 `tokens.txt`。宠物会在每次请求前探测 ComfyUI，连不上时不会把 `comfy_run` 下发给模型。
 
 ### SenseVoice ASR（可选）
 
