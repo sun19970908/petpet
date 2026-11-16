@@ -124,8 +124,33 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
   }
   async function comfyJson(method, urlPath, bodyObj) {
     const r = await comfyReq(method, urlPath, bodyObj);
-    let json = null; try { json = JSON.parse(r.buffer.toString('utf8')); } catch {}
-    return { status: r.status, json };
+    const text = r.buffer.toString('utf8');
+    let json = null; try { json = JSON.parse(text); } catch {}
+    return { status: r.status, json, text };
+  }
+
+  // 把 ComfyUI 的 HTTP/节点错误压成一段能直接回给模型的文本，避免只返回 null/超时。
+  function comfyErrorText(value, max = 800) {
+    if (value == null) return '';
+    const text = typeof value === 'string' ? value : (() => {
+      try { return JSON.stringify(value); } catch { return String(value); }
+    })();
+    return text.length > max ? text.slice(0, max) + '…' : text;
+  }
+
+  function comfyStatusError(status) {
+    const messages = Array.isArray(status && status.messages) ? status.messages : [];
+    for (const item of messages) {
+      if (!Array.isArray(item) || item[0] !== 'execution_error') continue;
+      const d = item[1] || {};
+      const parts = [];
+      if (d.node_id) parts.push('节点 ' + d.node_id + (d.node_type ? ' (' + d.node_type + ')' : ''));
+      if (d.exception_type) parts.push(d.exception_type);
+      if (d.exception_message) parts.push(d.exception_message);
+      if (d.traceback) parts.push(Array.isArray(d.traceback) ? d.traceback.slice(-2).join(' | ') : String(d.traceback));
+      return comfyErrorText(parts.join('：'), 800);
+    }
+    return comfyErrorText(status, 800);
   }
 
   // 只判断 ComfyUI 是否在线；短超时 + 5 秒缓存，避免每次对话都被离线检查拖慢。
@@ -168,24 +193,42 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
         if (!nLoad) return { ok: false, error: '工作流里没有 LoadImage 节点，但给了 input_image' };
       }
       let pid;
+      let promptResp = null;
       try {
         const r = await comfyJson('POST', '/prompt', { prompt: wf, client_id: 'livliv-pet' });
-        if (r.status !== 200) return { ok: false, error: 'ComfyUI /prompt HTTP ' + r.status + ': ' + JSON.stringify(r.json).slice(0, 300) };
-        if (r.json && r.json.error) return { ok: false, error: 'ComfyUI 拒绝工作流: ' + JSON.stringify(r.json.error).slice(0, 250) + ' ' + JSON.stringify(r.json.node_errors || {}).slice(0, 300) };
+        promptResp = r;
+        if (r.status !== 200) {
+          const detail = r.json ? comfyErrorText(r.json, 600) : comfyErrorText(r.text, 600);
+          return { ok: false, error: 'ComfyUI /prompt HTTP ' + r.status + ': ' + (detail || '(空响应)') };
+        }
+        if (r.json && (r.json.error || r.json.node_errors)) {
+          return { ok: false, error: 'ComfyUI 拒绝工作流: ' + comfyErrorText({ error: r.json.error, node_errors: r.json.node_errors }, 800) };
+        }
         pid = r.json && r.json.prompt_id;
       } catch (e) { return { ok: false, error: '连不上 ComfyUI(' + COMFY_HOST + ':' + COMFY_PORT + '): ' + String(e.message || e) }; }
-      if (!pid) return { ok: false, error: 'ComfyUI 没返回 prompt_id' };
+      if (!pid) return { ok: false, error: 'ComfyUI 没返回 prompt_id: ' + (comfyErrorText(promptResp && promptResp.json, 400) || '(空响应)') };
       const t0 = Date.now();
       let outs = null;
+      let lastHistError = '';
+      let histErrorCount = 0;
       while (Date.now() - t0 < 300000) {
         await new Promise((res) => setTimeout(res, 800));
         let h;
         try { h = await comfyJson('GET', '/history/' + pid); } catch (e) { return { ok: false, error: 'ComfyUI /history 读失败: ' + String(e.message || e) }; }
+        if (h.status !== 200) {
+          lastHistError = 'ComfyUI /history HTTP ' + h.status + ': ' + (h.json ? comfyErrorText(h.json, 500) : (comfyErrorText(h.text, 500) || '(空响应)'));
+          if (++histErrorCount >= 5) return { ok: false, error: lastHistError };
+          continue;
+        }
+        histErrorCount = 0;
         const rec = h.json && h.json[pid];
         if (rec && rec.outputs && Object.keys(rec.outputs).length) { outs = rec.outputs; break; }
-        if (rec && rec.status && rec.status.status_str === 'error') return { ok: false, error: 'ComfyUI 执行出错: ' + JSON.stringify(rec.status).slice(0, 400) };
+        if (rec && rec.status && (rec.status.status_str === 'error' || (Array.isArray(rec.status.messages) && rec.status.messages.some((m) => Array.isArray(m) && m[0] === 'execution_error')))) {
+          const detail = comfyStatusError(rec.status);
+          return { ok: false, error: 'ComfyUI 执行出错' + (detail ? ': ' + detail : '') };
+        }
       }
-      if (!outs) return { ok: false, error: 'ComfyUI 超时（300s）没产出图片' };
+      if (!outs) return { ok: false, error: lastHistError || 'ComfyUI 超时（300s）没产出图片' };
       const imgs = [];
       for (const k of Object.keys(outs)) for (const im of (outs[k].images || [])) imgs.push(im);
       if (!imgs.length) return { ok: false, error: '工作流跑完但没有图片输出（要一个 SaveImage 或 PreviewImage 节点）' };
