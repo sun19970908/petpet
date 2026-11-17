@@ -32,6 +32,7 @@ function createHttpServer(deps) {
     getPetWin,
     roomStateLoad,
     roomStateSave,
+    scenesList,
     gpuUtil,
     memoryAdd,
     memorySearch,
@@ -154,6 +155,11 @@ function createHttpServer(deps) {
         });
         return;
       }
+    }
+    if (apiPath === '/api/scenes' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(scenesList()));
+      return;
     }
     if (apiPath === '/api/gpuutil') {
       gpuUtil().then((v) => {

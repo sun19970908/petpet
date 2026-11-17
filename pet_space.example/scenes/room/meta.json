@@ -1,0 +1,6 @@
+{
+  "title": "卧室",
+  "desc": "默认卧室：窗帘、床头灯、书桌、照片墙、鲸鱼抱枕。",
+  "links": [],
+  "state": { "curtain": "open", "lamp": "off" }
+}

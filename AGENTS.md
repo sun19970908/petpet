@@ -22,6 +22,7 @@
 - `main.js`：主进程入口；启动早期读 `BOOT_CONFIG`、单实例锁、本地 HTTP 服务、子模块装配。
 - `main/windows.js`：桌宠窗/卧室窗创建、显示屏变化处理。不要给桌宠窗在创建后再调 `setAlwaysOnTop` / `moveTop`；混合 DPI 的透明窗会因此丢掉 `WS_EX_TOPMOST`。置顶由 `topmost-guard.ps1` 兜底。卧室窗必须可激活且不置顶，否则真实鼠标点不到房间。
 - `main/http-server.js`、`main/static-assets.js`：本地服务与静态资源路由。
+- `main/scenes.js`：场景注册表——扫 `pet_space/scenes/`（一场景一文件夹，扫到即存在；`meta.json` 可选，缺失走默认值；`.`/`_` 前缀目录不算场景），供 `GET /api/scenes`。
 - `main/llm-config.js`、`main/llm-proxy.js`：LLM 档案、请求转发。
 - `main/voice.js`：GPT-SoVITS、SenseVoice 生命周期和 `/api/tts`。
 - `main/fs-tools.js`：宠物工具、文件沙箱、截屏、ComfyUI、Python、联网搜索。

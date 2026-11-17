@@ -12,6 +12,7 @@ const { createScreenTools } = require('./main/screen');
 const { createStorage } = require('./main/storage');
 const { createFsTools } = require('./main/fs-tools');
 const { createHttpServer } = require('./main/http-server');
+const { listScenes } = require('./main/scenes');
 const { createWindowManager } = require('./main/windows');
 const watchdogCtl = require('./lib/watchdog-ctl');
 const { loadConfig, loadTtsConfig } = require('./lib/config-store');
@@ -315,6 +316,7 @@ app.whenReady().then(() => {
     getPetWin: () => windows.petWin,
     roomStateLoad,
     roomStateSave,
+    scenesList: () => listScenes(path.join(PET_SPACE_DIR, 'scenes')),
     gpuUtil,
     memoryAdd,
     memorySearch,
