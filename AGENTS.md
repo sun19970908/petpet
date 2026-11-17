@@ -48,6 +48,7 @@
 - 在桌宠页执行 `window.__pet.snapshot()`，读取 `busy`、`turnSeq`、`wake`、`room`、`historyLen`、气泡/输入框、视口 DPI 等实时状态。
 - `window.__pet` 还暴露 `player`、`speech`、`interrupt`、`room` 控制句柄；房间 iframe 里可直接读 `state`。
 - CDP 还支持 console、网络和 `Page.captureScreenshot`。调试口无认证，只在本机使用；提交的默认配置里不要打开它。
+- 本仓库自带现成脚本，优先用，不要现写 websocket：`node skills/cdp-debug/snapshot.js` 取实时状态；`node skills/cdp-debug/shot.js pet|room|iframe|all` 截真实窗口 PNG（截完用读图工具看，临时 PNG 验证完清理）。详见 `skills/cdp-debug/SKILL.md`。
 
 ## 硬性规则
 
