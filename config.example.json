@@ -10,6 +10,7 @@
   "petOnlyBedroom": false,
   "splitWindows": true,
   "serverPort": 12400,
+  "debugPort": 0,
   "hwCompositing": true,
   "capMain": "main",
   "capRoom": "room",

@@ -59,6 +59,11 @@ if (BOOT_CONFIG.hwCompositing === false) {
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('enable-features', 'WebRtcAllowWgcScreenCapturer');
 }
+// 调试接口：config.json 的 debugPort>0 时开本地 CDP（仅 127.0.0.1），可直接接入真实窗口看状态
+if (BOOT_CONFIG.debugPort > 0) {
+  app.commandLine.appendSwitch('remote-debugging-port', String(BOOT_CONFIG.debugPort));
+  app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
+}
 // ===== 启动参数解析（只保留 debug；--no-infwake 由看门狗内部重启时使用） =====
 let cliNoInfwake = false;
 for (const arg of process.argv.slice(1)) {

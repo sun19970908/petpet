@@ -4358,13 +4358,41 @@ ${note}`;
     refreshDisplays,
     layoutChat
   });
-  window.__pet = { player, speech, showBubble, get clickThrough() {
-    return clickThrough;
-  }, interrupt, room: { applyBedroom: room.applyBedroom, set: room.setRoomState, update: room.updateInRoom, get state() {
-    return room.state;
-  }, get inRoom() {
-    return room.inRoom;
-  } } };
+  window.__pet = {
+    player,
+    speech,
+    showBubble,
+    interrupt,
+    get clickThrough() {
+      return clickThrough;
+    },
+    get busy() {
+      return busy;
+    },
+    snapshot: () => ({
+      role: ROLE,
+      debug: DEBUG_MODE,
+      busy,
+      turnSeq,
+      lastTurnActivityTs,
+      turnAbortReason,
+      thinkMode: llmConfig?.promptPolicy?.thinkMode ?? null,
+      historyLen: history.length,
+      infHistoryLen: infHistory.length,
+      wake: { on: wake.on, ctx: wake.lastCtxTokens, forceToolPrefill: wake.forceToolPrefill },
+      bubble: ($3("bubble")?.textContent || "").trim(),
+      input: input?.value || "",
+      clickThrough,
+      room: { inRoom: room.inRoom, state: { ...room.state } },
+      view: { w: innerWidth, h: innerHeight, dpr: WINDOW_DPR, factor: dprFactor },
+      recent: history.slice(-2).map((m3) => ({ role: m3.role, content: String(m3.content ?? "").slice(0, 200) }))
+    }),
+    room: { applyBedroom: room.applyBedroom, set: room.setRoomState, update: room.updateInRoom, get state() {
+      return room.state;
+    }, get inRoom() {
+      return room.inRoom;
+    } }
+  };
   var comfyAvailable = false;
   async function refreshComfyAvailability() {
     try {

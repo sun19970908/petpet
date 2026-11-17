@@ -41,6 +41,7 @@
 | `petOnlyBedroom` | boolean | `false` | 桌宠是否只待在卧室屏。仅在卧室可用时生效；启用后 `walk_to` 只描述卧室内移动，并拒绝 `primary` 主屏目标。 |
 | `splitWindows` | boolean | `true` | 是否拆分桌宠窗口和卧室窗口。关闭后使用单窗口模式。 |
 | `serverPort` | number | `12400` | Electron 本地 HTTP 服务端口，也是渲染层和本地 API 使用的端口。 |
+| `debugPort` | number | `0` | 本地 CDP 调试端口。大于 0 时 Electron 仅在 `127.0.0.1` 上开远程调试，可接入真实窗口读取 `window.__pet.snapshot()`；不用时设回 `0`。 |
 | `hwCompositing` | boolean | `true` | 是否使用硬件合成。设为 `false` 会关闭 GPU 合成，适合多显卡/截屏异常时排查。 |
 | `capMain` | string | `main` | 主屏截屏目标。可填 ScreenCap 的数字下标（`0`、`1`）或屏幕名称模糊匹配；默认 `main`。 |
 | `capRoom` | string | `room` | 卧室屏截屏目标，规则同 `capMain`。 |
