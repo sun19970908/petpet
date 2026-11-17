@@ -2588,9 +2588,7 @@ void main(){ o=texture(uTex,vUv); }`;
     tailPrefill: "\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6",
     tailPrefillField: "reasoning_content",
     toolResultNote: "",
-    parseTextToolCalls: true,
-    forceToolMode: "prefill_tag",
-    forceToolPrefillText: "<tool_call>\n"
+    parseTextToolCalls: true
   };
   var DEFAULT_CAPABILITIES = {
     vision: true,
@@ -2834,23 +2832,11 @@ ${note}` : note };
     isInfiniteWake = false
   } = {}) {
     if (forceToolPrefill && isInfiniteWake) {
-      if (policy.forceToolMode === "tool_choice_required") {
-        return {
-          tailMessages: [],
-          inlineLastUserInstruction: "",
-          consumedForceToolPrefill: true,
-          forceRequiredTool: true
-        };
-      }
-      const tailMessages2 = [];
-      if (policy.forceToolPrefillText) {
-        tailMessages2.push({ role: "assistant", content: policy.forceToolPrefillText });
-      }
       return {
-        tailMessages: tailMessages2,
+        tailMessages: [],
         inlineLastUserInstruction: "",
         consumedForceToolPrefill: true,
-        forceRequiredTool: false
+        forceRequiredTool: true
       };
     }
     if (policy.tailMode === "none") {
@@ -3835,7 +3821,7 @@ ${note}` : note };
     for (const n4 of B3.values()) tot += n4;
     return tot ? 2 * inter / tot : 0;
   }
-  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, storage = window.localStorage }) {
+  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, getTailInstruction = () => "", storage = window.localStorage }) {
     let on = false;
     let timer = null;
     let lastCtxTokens = 0;
@@ -3845,6 +3831,7 @@ ${note}` : note };
     let forceToolPrefill = false;
     let reflectSeq = 0;
     let reflectPending = false;
+    let reflectDeferred = false;
     function persist(v3) {
       try {
         storage.setItem("infwake", v3 ? "1" : "0");
@@ -3859,6 +3846,7 @@ ${note}` : note };
     function stop(reason = "") {
       on = false;
       reflectPending = false;
+      reflectDeferred = false;
       persist(false);
       if (button) {
         button.classList.remove("on");
@@ -3882,6 +3870,7 @@ ${note}` : note };
       persist(on);
       syncButton();
       reflectPending = false;
+      reflectDeferred = false;
       if (on) {
         reflectSeq = 0;
         queue(500);
@@ -3931,15 +3920,32 @@ ${note}` : note };
     function clearForceToolPrefill() {
       forceToolPrefill = false;
     }
+    function lastUserIsTailInstruction(msgs) {
+      const instruction = String(getTailInstruction() || "").trim();
+      if (!instruction) return false;
+      for (let i3 = msgs.length - 1; i3 >= 0; i3--) {
+        if (msgs[i3]?.role !== "user") continue;
+        const content = msgs[i3].content;
+        return typeof content === "string" && content.trim() === instruction;
+      }
+      return false;
+    }
     function reflect(msgs) {
       if (!on) {
         reflectPending = false;
-        return;
+        reflectDeferred = false;
+        return false;
       }
       reflectPending = false;
       reflectSeq += 1;
       const every = Number(getReflectEvery()) || DEFAULT_REFLECT_EVERY;
-      if (reflectSeq % every !== 0) return;
+      if (reflectSeq % every !== 0) return false;
+      if (!reflectDeferred && lastUserIsTailInstruction(msgs)) {
+        reflectDeferred = true;
+        reflectSeq = Math.max(0, reflectSeq - 1);
+        return false;
+      }
+      reflectDeferred = false;
       const at2 = msgs[msgs.length - 1]?.role === "assistant" ? msgs.length - 1 : msgs.length;
       msgs.splice(at2, 0, { role: "user", content: REFLECT_TEXT });
       if (REFLECT_PREFILL) {
@@ -3951,6 +3957,7 @@ ${note}` : note };
         }
       }
       reflectPending = true;
+      return true;
     }
     function noteReflectResult(content) {
       if (!reflectPending) return;
@@ -4442,7 +4449,7 @@ ${note}`;
   });
   var toolRunner = createToolRunner({ petTools, showBubble, touchTurnActivity, getToolResultNote: () => llmConfig.promptPolicy.toolResultNote });
   var lastExchange = null;
-  async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
+  async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false, forceToolOnFirst = false) {
     await refreshRuntimeConfig();
     await Promise.all([refreshComfyAvailability(), refreshPythonAvailability(), refreshSearchAvailability()]);
     const requestTools = TOOLS.filter((t5) => {
@@ -4462,7 +4469,8 @@ ${note}`;
       return copy;
     });
     turnUsedTools = false;
-    let forceRequiredTool = false;
+    let forceRequiredTool = Boolean(forceToolOnFirst);
+    let forceToolRetryLimited = false;
     let bodyMsgs;
     if (continueBaseMsgs) {
       bodyMsgs = continueBaseMsgs.slice();
@@ -4505,7 +4513,8 @@ ${note}`;
     };
     for (let round = 0; ; round++) {
       touchTurnActivity();
-      if (isInf) wake.reflect(bodyMsgs);
+      const reflected = isInf && wake.reflect(bodyMsgs);
+      if (reflected) forceRequiredTool = false;
       const slicer = makeSentenceSlicer();
       const sendMsgs = bodyMsgs.slice();
       const { startInThink, startInTool } = getPrefillState(sendMsgs);
@@ -4632,13 +4641,11 @@ ${note}`;
         continue;
       }
       if (!content && !toolCalls?.length) {
-        if (isContinuation && llmConfig.promptPolicy.forceToolMode === "prefill_tag" && llmConfig.capabilities.prefixMode !== "none") {
-          const lastMsg = bodyMsgs[bodyMsgs.length - 1];
-          if (lastMsg && lastMsg.role === "assistant" && !lastMsg.content.includes("<tool_call>")) {
-            lastMsg.content = lastMsg.content.trimEnd() + "\n" + (llmConfig.promptPolicy.forceToolPrefillText || "<tool_call>\n").trimEnd();
-            round--;
-            continue;
-          }
+        if (isContinuation && requestTools?.length && !forceToolRetryLimited) {
+          forceToolRetryLimited = true;
+          forceRequiredTool = true;
+          showBubble("\u5F3A\u5236\u8C03\u7528\u5DE5\u5177\u4E2D\u2026");
+          continue;
         }
         if (isContinuation) throw new Error("\u4E0A\u4E00\u8F6E\u56DE\u590D\u5DF2\u5B8C\u7ED3\uFF0C\u65E0\u9700\u7EE7\u7EED");
         throw new Error("LLM \u8FD4\u56DE\u7A7A\u56DE\u590D: " + JSON.stringify(data).slice(0, 200));
@@ -4653,20 +4660,26 @@ ${note}`;
           const fullContent = content.trim();
           const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|web_search|fetch_url|工具|编辑|写入|修改|读取|查看|复制|创建|追加|搜索|网页)/i;
           const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
+          if (hasToolIntent && requestTools?.length && !forceToolRetryLimited) {
+            forceToolRetryLimited = true;
+            forceRequiredTool = true;
+            showBubble("\u51C6\u5907\u6267\u884C\u5DE5\u5177\u2026");
+            continue;
+          }
           if (llmConfig.capabilities.prefixMode === "none") {
             if (fullContent) bodyMsgs.push({ role: "assistant", content: fullContent, ...reasoningExtra });
             bodyMsgs.push({ role: "user", content: "\u8BF7\u7EE7\u7EED\u8865\u5145\u4F60\u7684\u56DE\u7B54\u3002" });
             showBubble("\u7EE7\u7EED\u7EC4\u7EC7\u8BED\u8A00\u4E2D\u2026");
             continue;
           }
-          const tail = hasToolIntent ? "\n" + (llmConfig.promptPolicy.forceToolPrefillText || "<tool_call>\n").trimEnd() : "\n";
+          const tail = "\n";
           const lastMsg = bodyMsgs[bodyMsgs.length - 1];
           if (lastMsg && lastMsg.role === "assistant") {
             lastMsg.content = (lastMsg.content || "").trimEnd() + "\n" + fullContent + tail;
           } else {
             bodyMsgs.push({ role: "assistant", content: fullContent + tail });
           }
-          showBubble(hasToolIntent ? "\u51C6\u5907\u6267\u884C\u5DE5\u5177\u2026" : "\u7EE7\u7EED\u7EC4\u7EC7\u8BED\u8A00\u4E2D\u2026");
+          showBubble("\u7EE7\u7EED\u7EC4\u7EC7\u8BED\u8A00\u4E2D\u2026");
           continue;
         }
         throw new Error("LLM \u8FD4\u56DE\u7A7A\u56DE\u590D\uFF08\u601D\u8003\u540E\u65E0\u6B63\u6587\uFF09");
@@ -4823,7 +4836,8 @@ ${note}`;
     isBusy: () => busy,
     wakeText: INF_WAKE_TEXT,
     getCtxLimit: () => llmConfig?.contextLength,
-    getReflectEvery: () => REFLECT_EVERY
+    getReflectEvery: () => REFLECT_EVERY,
+    getTailInstruction: () => llmConfig?.promptPolicy?.tailInstruction || ""
   });
   wake.startKeepalive(6e4);
   $3("infwake").addEventListener("click", () => wake.toggle());
@@ -4929,19 +4943,12 @@ ${note}`;
       const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|web_search|fetch_url|调用.*工具)/i;
       const hadNoToolCalls = !prevRes.tool_calls?.length && !/<tool_call>/i.test(prevRes.content || "");
       const seemsToolIntent = toolKeywords.test(prevRes.content || "") && hadNoToolCalls;
-      if (seemsToolIntent) {
-        const canPrefillTag = llmConfig.promptPolicy.forceToolMode === "prefill_tag" && llmConfig.capabilities.prefixMode !== "none";
-        const targetMsg = baseMsgs[baseMsgs.length - 1];
-        if (canPrefillTag && targetMsg && targetMsg.role === "assistant") {
-          targetMsg.content = targetMsg.content.trimEnd() + "\n" + (llmConfig.promptPolicy.forceToolPrefillText || "<tool_call>\n").trimEnd();
-        }
-      }
       const isInf = Boolean(lastExchange.isInf);
       const targetHist = isInf ? infHistory : history;
       const hadSaved = lastExchange.hadSavedHistory;
       const oldReply = hadSaved && targetHist.length ? targetHist[targetHist.length - 1].content || "" : "";
       const userContent = lastExchange.userContent || "\uFF08\u7EE7\u7EED\uFF09";
-      const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs, isInf);
+      const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs, isInf, seemsToolIntent);
       const fullReply = oldReply ? oldReply + "\n" + newReply : newReply;
       const replaceLast = hadSaved && targetHist.length && targetHist[targetHist.length - 1].role === "assistant";
       const hasReply = Boolean(fullReply && String(fullReply).trim());

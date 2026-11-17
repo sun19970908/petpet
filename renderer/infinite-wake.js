@@ -33,7 +33,7 @@ function replySim(a, b) {
   return tot ? (2 * inter) / tot : 0;
 }
 
-export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, storage = window.localStorage }) {
+export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, getTailInstruction = () => '', storage = window.localStorage }) {
   let on = false;
   let timer = null;
   let lastCtxTokens = 0;
@@ -43,6 +43,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
   let forceToolPrefill = false;
   let reflectSeq = 0;
   let reflectPending = false;
+  let reflectDeferred = false;
 
   function persist(v) {
     try { storage.setItem('infwake', v ? '1' : '0'); } catch {}
@@ -57,6 +58,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
   function stop(reason = '') {
     on = false;
     reflectPending = false;
+    reflectDeferred = false;
     persist(false);
     if (button) {
       button.classList.remove('on');
@@ -79,6 +81,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
     persist(on);
     syncButton();
     reflectPending = false;
+    reflectDeferred = false;
     if (on) { reflectSeq = 0; queue(500); }
     else if (timer) { clearTimeout(timer); timer = null; }
   }
@@ -122,14 +125,35 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
 
   function clearForceToolPrefill() { forceToolPrefill = false; }
 
+  // 本次请求最后一条 user 是否就是开场注入的 tailInstruction
+  function lastUserIsTailInstruction(msgs) {
+    const instruction = String(getTailInstruction() || '').trim();
+    if (!instruction) return false;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i]?.role !== 'user') continue;
+      const content = msgs[i].content;
+      return typeof content === 'string' && content.trim() === instruction;
+    }
+    return false;
+  }
+
   // 反思提醒：每 N 次无限唤醒插入一条 user 反思提示；同时追加 assistant 预填充。
   function reflect(msgs) {
-    if (!on) { reflectPending = false; return; }
+    if (!on) { reflectPending = false; reflectDeferred = false; return false; }
     // 上一轮如果异常中断没来得及回填，不能把旧标记算到这一轮
     reflectPending = false;
     reflectSeq += 1;
     const every = Number(getReflectEvery()) || DEFAULT_REFLECT_EVERY;
-    if (reflectSeq % every !== 0) return;
+    if (reflectSeq % every !== 0) return false;
+
+    // 反思刚好撞上 tailInstruction：只推迟一轮，避免工具轮里最后一个 user
+    // 一直是 tailInstruction 导致反思永远不触发
+    if (!reflectDeferred && lastUserIsTailInstruction(msgs)) {
+      reflectDeferred = true;
+      reflectSeq = Math.max(0, reflectSeq - 1);
+      return false;
+    }
+    reflectDeferred = false;
 
     // 原有行为：user 反思提示插在最后一条 assistant 之前，保持续写状态
     const at = msgs[msgs.length - 1]?.role === 'assistant' ? msgs.length - 1 : msgs.length;
@@ -145,6 +169,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
       }
     }
     reflectPending = true;
+    return true;
   }
 
   // 反思请求返回后调用：本次反思没有产生正文就退回计数器，下一轮同一位置重试

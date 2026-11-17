@@ -9,8 +9,6 @@ export const DEFAULT_PROMPT_POLICY = {
   tailPrefillField: 'reasoning_content',
   toolResultNote: '',
   parseTextToolCalls: true,
-  forceToolMode: 'prefill_tag',
-  forceToolPrefillText: '<tool_call>\n',
 };
 
 export const DEFAULT_CAPABILITIES = {

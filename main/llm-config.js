@@ -29,8 +29,6 @@ const DEFAULT_PROFILE = {
     tailPrefillField: 'reasoning_content',
     toolResultNote: '',
     parseTextToolCalls: true,
-    forceToolMode: 'prefill_tag',
-    forceToolPrefillText: '<tool_call>\n',
   },
 };
 

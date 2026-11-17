@@ -246,7 +246,7 @@ const toolRunner = createToolRunner({ petTools, showBubble, touchTurnActivity, g
 
 let lastExchange = null; // 记录最近一次底层请求与响应（供“继续”按钮使用）
 
-async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false) {
+async function askLLM(userContent, signal, memories, continueBaseMsgs = null, isInf = false, forceToolOnFirst = false) {
   await refreshRuntimeConfig();
   await Promise.all([refreshComfyAvailability(), refreshPythonAvailability(), refreshSearchAvailability()]);
   const requestTools = TOOLS.filter((t) => {
@@ -266,7 +266,8 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     return copy;
   });
   turnUsedTools = false;
-  let forceRequiredTool = false;
+  let forceRequiredTool = Boolean(forceToolOnFirst);
+  let forceToolRetryLimited = false;
   let bodyMsgs;
   if (continueBaseMsgs) {
     bodyMsgs = continueBaseMsgs.slice();
@@ -314,7 +315,9 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   };
   for (let round = 0; ; round++) {
     touchTurnActivity();
-    if (isInf) wake.reflect(bodyMsgs);
+    const reflected = isInf && wake.reflect(bodyMsgs);
+    // 反思轮不强制工具：让模型先完成 pet_think 反思，工具改为 auto
+    if (reflected) forceRequiredTool = false;
     const slicer = makeSentenceSlicer();
     const sendMsgs = bodyMsgs.slice();
     const { startInThink, startInTool } = getPrefillState(sendMsgs);
@@ -440,13 +443,11 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       continue;
     }
     if (!content && !toolCalls?.length) {
-      if (isContinuation && llmConfig.promptPolicy.forceToolMode === 'prefill_tag' && llmConfig.capabilities.prefixMode !== 'none') {
-        const lastMsg = bodyMsgs[bodyMsgs.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content.includes('<tool_call>')) {
-          lastMsg.content = lastMsg.content.trimEnd() + '\n' + (llmConfig.promptPolicy.forceToolPrefillText || '<tool_call>\n').trimEnd();
-          round--;
-          continue;
-        }
+      if (isContinuation && requestTools?.length && !forceToolRetryLimited) {
+        forceToolRetryLimited = true;
+        forceRequiredTool = true;
+        showBubble('强制调用工具中…');
+        continue;
       }
       if (isContinuation) throw new Error('上一轮回复已完结，无需继续');
       throw new Error('LLM 返回空回复: ' + JSON.stringify(data).slice(0, 200));
@@ -463,22 +464,28 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         emptyTextRetries++;
         const fullContent = content.trim();
         const toolKeywords = /(?:file_tool|copy_file|write_file|append_file|read_file|list_dir|delete_file|take_screenshot|search_memory|web_search|fetch_url|工具|编辑|写入|修改|读取|查看|复制|创建|追加|搜索|网页)/i;
-        // 思考块没收尾时别再补 <tool_call> 预填（会落进思考块里，把续写带偏）
+        // 思考块没收尾时别再补工具预填（会落进思考块里，把续写带偏）
         const hasToolIntent = !danglingThink && toolKeywords.test(fullContent);
+        if (hasToolIntent && requestTools?.length && !forceToolRetryLimited) {
+          forceToolRetryLimited = true;
+          forceRequiredTool = true;
+          showBubble('准备执行工具…');
+          continue;
+        }
         if (llmConfig.capabilities.prefixMode === 'none') {
           if (fullContent) bodyMsgs.push({ role: 'assistant', content: fullContent, ...reasoningExtra });
           bodyMsgs.push({ role: 'user', content: '请继续补充你的回答。' });
           showBubble('继续组织语言中…');
           continue;
         }
-        const tail = hasToolIntent ? '\n' + (llmConfig.promptPolicy.forceToolPrefillText || '<tool_call>\n').trimEnd() : '\n';
+        const tail = '\n';
         const lastMsg = bodyMsgs[bodyMsgs.length - 1];
         if (lastMsg && lastMsg.role === 'assistant') {
           lastMsg.content = (lastMsg.content || '').trimEnd() + '\n' + fullContent + tail;
         } else {
           bodyMsgs.push({ role: 'assistant', content: fullContent + tail });
         }
-        showBubble(hasToolIntent ? '准备执行工具…' : '继续组织语言中…');
+        showBubble('继续组织语言中…');
         continue;
       }
       throw new Error('LLM 返回空回复（思考后无正文）');
@@ -638,6 +645,7 @@ const wake = createInfiniteWake({
   wakeText: INF_WAKE_TEXT,
   getCtxLimit: () => llmConfig?.contextLength,
   getReflectEvery: () => REFLECT_EVERY,
+  getTailInstruction: () => llmConfig?.promptPolicy?.tailInstruction || '',
 });
 wake.startKeepalive(60000);
 $('infwake').addEventListener('click', () => wake.toggle());
@@ -733,14 +741,6 @@ async function continueRequest() {
     const hadNoToolCalls = !prevRes.tool_calls?.length && !/<tool_call>/i.test(prevRes.content || '');
     const seemsToolIntent = toolKeywords.test(prevRes.content || '') && hadNoToolCalls;
 
-    if (seemsToolIntent) {
-      const canPrefillTag = llmConfig.promptPolicy.forceToolMode === 'prefill_tag' && llmConfig.capabilities.prefixMode !== 'none';
-      const targetMsg = baseMsgs[baseMsgs.length - 1];
-      if (canPrefillTag && targetMsg && targetMsg.role === 'assistant') {
-        targetMsg.content = targetMsg.content.trimEnd() + '\n' + (llmConfig.promptPolicy.forceToolPrefillText || '<tool_call>\n').trimEnd();
-      }
-    }
-
     const isInf = Boolean(lastExchange.isInf);
     const targetHist = isInf ? infHistory : history;
     const hadSaved = lastExchange.hadSavedHistory;
@@ -748,7 +748,7 @@ async function continueRequest() {
     const userContent = lastExchange.userContent || '（继续）';
 
     // 以拼接后的 baseMsgs 作为初始消息执行 askLLM 并进入工具循环
-    const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs, isInf);
+    const newReply = await askLLM(userContent, turnAbort.signal, [], baseMsgs, isInf, seemsToolIntent);
     const fullReply = oldReply ? (oldReply + '\n' + newReply) : newReply;
 
     const replaceLast = hadSaved && targetHist.length && targetHist[targetHist.length - 1].role === 'assistant';

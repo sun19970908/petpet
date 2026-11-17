@@ -116,23 +116,11 @@ export function buildTailMessages({
   isInfiniteWake = false,
 } = {}) {
   if (forceToolPrefill && isInfiniteWake) {
-    if (policy.forceToolMode === 'tool_choice_required') {
-      return {
-        tailMessages: [],
-        inlineLastUserInstruction: '',
-        consumedForceToolPrefill: true,
-        forceRequiredTool: true,
-      };
-    }
-    const tailMessages = [];
-    if (policy.forceToolPrefillText) {
-      tailMessages.push({ role: 'assistant', content: policy.forceToolPrefillText });
-    }
     return {
-      tailMessages,
+      tailMessages: [],
       inlineLastUserInstruction: '',
       consumedForceToolPrefill: true,
-      forceRequiredTool: false,
+      forceRequiredTool: true,
     };
   }
 
