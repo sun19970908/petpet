@@ -6,7 +6,7 @@ const DEFAULT_CTX_LIMIT = 64000;
 const DEFAULT_REFLECT_EVERY = 8;
 const TITLE_ON = '连续唤醒开：她一停下来就再唤醒（点击关闭）';
 const TITLE_OFF = '连续唤醒：她一停下来就再唤醒（无限模式）';
-export const REFLECT_TEXT = `【系统提醒】以下为定期注入内容：立刻暂停工具进入临时任务！思考一下最近几轮有没有陷入死循环，有没有计划使用工具但是忘记的情况，有没有太老实什么也没做的情况，有没有忘记主人的要求。思考之后，如果你有错误马上改正。如果没有错误，继续做之前的事情（如调用工具），或做点新的事情。
+export const REFLECT_TEXT = `【系统提醒】以下为定期注入内容：立刻暂停工具进入临时任务！在pet_think标签内思考一下最近几轮有没有陷入死循环，有没有计划使用工具但是忘记的情况，有没有太老实什么也没做的情况，有没有忘记主人的要求。思考之后，如果你有错误马上改正。如果没有错误，继续做之前的事情（如调用工具），或做点新的事情。
 `;
 
 // 反思时追加到 assistant 预填充的内容
@@ -42,6 +42,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
   let noToolTurns = 0;
   let forceToolPrefill = false;
   let reflectSeq = 0;
+  let reflectPending = false;
 
   function persist(v) {
     try { storage.setItem('infwake', v ? '1' : '0'); } catch {}
@@ -55,6 +56,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
 
   function stop(reason = '') {
     on = false;
+    reflectPending = false;
     persist(false);
     if (button) {
       button.classList.remove('on');
@@ -76,6 +78,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
     on = !on;
     persist(on);
     syncButton();
+    reflectPending = false;
     if (on) { reflectSeq = 0; queue(500); }
     else if (timer) { clearTimeout(timer); timer = null; }
   }
@@ -121,7 +124,9 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
 
   // 反思提醒：每 N 次无限唤醒插入一条 user 反思提示；同时追加 assistant 预填充。
   function reflect(msgs) {
-    if (!on) return;
+    if (!on) { reflectPending = false; return; }
+    // 上一轮如果异常中断没来得及回填，不能把旧标记算到这一轮
+    reflectPending = false;
     reflectSeq += 1;
     const every = Number(getReflectEvery()) || DEFAULT_REFLECT_EVERY;
     if (reflectSeq % every !== 0) return;
@@ -138,6 +143,16 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
       } else {
         msgs.push({ role: 'assistant', content: REFLECT_PREFILL });
       }
+    }
+    reflectPending = true;
+  }
+
+  // 反思请求返回后调用：本次反思没有产生正文就退回计数器，下一轮同一位置重试
+  function noteReflectResult(content) {
+    if (!reflectPending) return;
+    reflectPending = false;
+    if (!String(content || '').trim()) {
+      reflectSeq = Math.max(0, reflectSeq - 1);
     }
   }
 
@@ -158,6 +173,7 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
     noteContext,
     noteLoop,
     reflect,
+    noteReflectResult,
     startKeepalive,
   };
 }

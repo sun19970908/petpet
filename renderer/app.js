@@ -395,6 +395,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     }
     // ===== 组装等价非流形状 → 完全复用现有护栏与工具执行 =====
     const content = filter.content;
+    if (isInf) wake.noteReflectResult(content);
     let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v) : null;
     if (!toolCalls && content && llmConfig.promptPolicy.parseTextToolCalls !== false) {
       const parsed = parseTextToolCalls(content, round);

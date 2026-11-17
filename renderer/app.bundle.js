@@ -3810,7 +3810,7 @@ ${note}` : note };
   var DEFAULT_REFLECT_EVERY = 8;
   var TITLE_ON = "\u8FDE\u7EED\u5524\u9192\u5F00\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u70B9\u51FB\u5173\u95ED\uFF09";
   var TITLE_OFF = "\u8FDE\u7EED\u5524\u9192\uFF1A\u5979\u4E00\u505C\u4E0B\u6765\u5C31\u518D\u5524\u9192\uFF08\u65E0\u9650\u6A21\u5F0F\uFF09";
-  var REFLECT_TEXT = `\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u4EE5\u4E0B\u4E3A\u5B9A\u671F\u6CE8\u5165\u5185\u5BB9\uFF1A\u7ACB\u523B\u6682\u505C\u5DE5\u5177\u8FDB\u5165\u4E34\u65F6\u4EFB\u52A1\uFF01\u601D\u8003\u4E00\u4E0B\u6700\u8FD1\u51E0\u8F6E\u6709\u6CA1\u6709\u9677\u5165\u6B7B\u5FAA\u73AF\uFF0C\u6709\u6CA1\u6709\u8BA1\u5212\u4F7F\u7528\u5DE5\u5177\u4F46\u662F\u5FD8\u8BB0\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u592A\u8001\u5B9E\u4EC0\u4E48\u4E5F\u6CA1\u505A\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u5FD8\u8BB0\u4E3B\u4EBA\u7684\u8981\u6C42\u3002\u601D\u8003\u4E4B\u540E\uFF0C\u5982\u679C\u4F60\u6709\u9519\u8BEF\u9A6C\u4E0A\u6539\u6B63\u3002\u5982\u679C\u6CA1\u6709\u9519\u8BEF\uFF0C\u7EE7\u7EED\u505A\u4E4B\u524D\u7684\u4E8B\u60C5\uFF08\u5982\u8C03\u7528\u5DE5\u5177\uFF09\uFF0C\u6216\u505A\u70B9\u65B0\u7684\u4E8B\u60C5\u3002
+  var REFLECT_TEXT = `\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u4EE5\u4E0B\u4E3A\u5B9A\u671F\u6CE8\u5165\u5185\u5BB9\uFF1A\u7ACB\u523B\u6682\u505C\u5DE5\u5177\u8FDB\u5165\u4E34\u65F6\u4EFB\u52A1\uFF01\u5728pet_think\u6807\u7B7E\u5185\u601D\u8003\u4E00\u4E0B\u6700\u8FD1\u51E0\u8F6E\u6709\u6CA1\u6709\u9677\u5165\u6B7B\u5FAA\u73AF\uFF0C\u6709\u6CA1\u6709\u8BA1\u5212\u4F7F\u7528\u5DE5\u5177\u4F46\u662F\u5FD8\u8BB0\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u592A\u8001\u5B9E\u4EC0\u4E48\u4E5F\u6CA1\u505A\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u5FD8\u8BB0\u4E3B\u4EBA\u7684\u8981\u6C42\u3002\u601D\u8003\u4E4B\u540E\uFF0C\u5982\u679C\u4F60\u6709\u9519\u8BEF\u9A6C\u4E0A\u6539\u6B63\u3002\u5982\u679C\u6CA1\u6709\u9519\u8BEF\uFF0C\u7EE7\u7EED\u505A\u4E4B\u524D\u7684\u4E8B\u60C5\uFF08\u5982\u8C03\u7528\u5DE5\u5177\uFF09\uFF0C\u6216\u505A\u70B9\u65B0\u7684\u4E8B\u60C5\u3002
 `;
   var REFLECT_PREFILL = "<pet_think> \n \u4E3B\u4EBA\u6211\u73B0\u5728\u5C31\u53CD\u601D\uFF1A";
   function normReply(s3) {
@@ -3844,6 +3844,7 @@ ${note}` : note };
     let noToolTurns = 0;
     let forceToolPrefill = false;
     let reflectSeq = 0;
+    let reflectPending = false;
     function persist(v3) {
       try {
         storage.setItem("infwake", v3 ? "1" : "0");
@@ -3857,6 +3858,7 @@ ${note}` : note };
     }
     function stop(reason = "") {
       on = false;
+      reflectPending = false;
       persist(false);
       if (button) {
         button.classList.remove("on");
@@ -3879,6 +3881,7 @@ ${note}` : note };
       on = !on;
       persist(on);
       syncButton();
+      reflectPending = false;
       if (on) {
         reflectSeq = 0;
         queue(500);
@@ -3929,7 +3932,11 @@ ${note}` : note };
       forceToolPrefill = false;
     }
     function reflect(msgs) {
-      if (!on) return;
+      if (!on) {
+        reflectPending = false;
+        return;
+      }
+      reflectPending = false;
       reflectSeq += 1;
       const every = Number(getReflectEvery()) || DEFAULT_REFLECT_EVERY;
       if (reflectSeq % every !== 0) return;
@@ -3942,6 +3949,14 @@ ${note}` : note };
         } else {
           msgs.push({ role: "assistant", content: REFLECT_PREFILL });
         }
+      }
+      reflectPending = true;
+    }
+    function noteReflectResult(content) {
+      if (!reflectPending) return;
+      reflectPending = false;
+      if (!String(content || "").trim()) {
+        reflectSeq = Math.max(0, reflectSeq - 1);
       }
     }
     function startKeepalive(ms = 6e4) {
@@ -3967,6 +3982,7 @@ ${note}` : note };
       noteContext,
       noteLoop,
       reflect,
+      noteReflectResult,
       startKeepalive
     };
   }
@@ -4577,6 +4593,7 @@ ${note}`;
         if (tail) dispatchTTS(tail);
       }
       const content = filter.content;
+      if (isInf) wake.noteReflectResult(content);
       let toolCalls = nativeCalls.size ? [...nativeCalls.entries()].sort((a4, b3) => a4[0] - b3[0]).map(([, v3]) => v3) : null;
       if (!toolCalls && content && llmConfig.promptPolicy.parseTextToolCalls !== false) {
         const parsed = parseTextToolCalls(content, round);
