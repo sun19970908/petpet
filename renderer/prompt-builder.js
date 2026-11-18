@@ -124,37 +124,19 @@ export function buildTailMessages({
     };
   }
 
-  if (policy.tailMode === 'none') {
-    return {
-      tailMessages: [],
-      inlineLastUserInstruction: '',
-      consumedForceToolPrefill: false,
-      forceRequiredTool: false,
-    };
-  }
-
-  const instruction = policy.tailInstruction || '';
-  if (policy.tailMode === 'user_instruction') {
-    return {
-      tailMessages: [],
-      inlineLastUserInstruction: instruction,
-      consumedForceToolPrefill: false,
-      forceRequiredTool: false,
-    };
-  }
-
-  // 默认 prefill_assistant：尾部追加指令 + assistant 预填充
   const tailMessages = [];
-  if (instruction) tailMessages.push({ role: 'user', content: instruction });
-  if (policy.tailPrefill) {
-    const text = String(policy.tailPrefill);
-    if (policy.tailPrefillField === 'content') {
-      tailMessages.push({ role: 'assistant', content: text });
-    } else if (text.trim()) {
-      // 放进 reasoning_content 时不要带 <think>/</think>；模板会补，带了会被当成普通文字。
-      tailMessages.push({ role: 'assistant', content: '', reasoning_content: text.trim() });
-    }
+  const tailUser = typeof policy.tailUser === 'string' ? policy.tailUser : '';
+  if (tailUser.trim()) tailMessages.push({ role: 'user', content: tailUser });
+
+  const tailAssistant = policy.tailAssistant && typeof policy.tailAssistant === 'object' ? policy.tailAssistant : {};
+  const reasoning = String(tailAssistant.reasoning_content ?? tailAssistant.reasoning ?? '');
+  const content = String(tailAssistant.content ?? '');
+  if (reasoning.trim() || content.trim()) {
+    const assistant = { role: 'assistant', content };
+    if (reasoning.trim()) assistant.reasoning_content = reasoning.trim();
+    tailMessages.push(assistant);
   }
+
   return {
     tailMessages,
     inlineLastUserInstruction: '',

@@ -1,12 +1,12 @@
 // 通用 LLM 协议与桌宠适配层：只处理标准 OpenAI 请求格式、模型能力与尾缀续写策略，不耦合具体厂商
 
 export const DEFAULT_PROMPT_POLICY = {
-  tailMode: 'prefill_assistant',
-  tailInstruction:
+  tailUser:
     '思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以"人设档案"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止思考自身身份或思考语气（如傲娇嘴硬）等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n 不要用文字罗列“我用了哪些工具”来冒充调用记录，要用工具就必须真的输出<tool_call>！\n ',
-  tailPrefill:
-    '跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度',
-  tailPrefillField: 'reasoning_content',
+  tailAssistant: {
+    reasoning_content: '跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度',
+    content: '',
+  },
   toolResultNote: '',
   parseTextToolCalls: true,
 };
@@ -40,6 +40,10 @@ export function normalizeLlmConfig(raw) {
   const reqSrc = src.requestDefaults && typeof src.requestDefaults === 'object' ? src.requestDefaults : {};
   const capSrc = src.capabilities && typeof src.capabilities === 'object' ? src.capabilities : {};
   const policySrc = src.promptPolicy && typeof src.promptPolicy === 'object' ? src.promptPolicy : {};
+  const promptPolicy = {
+    ...DEFAULT_PROMPT_POLICY,
+    ...policySrc,
+  };
   const parseGpuLimit = (val) => {
     if (val === null || val === undefined || val === '') return null;
     const n = Number(val);
@@ -71,10 +75,7 @@ export function normalizeLlmConfig(raw) {
       ...DEFAULT_CAPABILITIES,
       ...capSrc,
     },
-    promptPolicy: {
-      ...DEFAULT_PROMPT_POLICY,
-      ...policySrc,
-    },
+    promptPolicy,
   };
 }
 
@@ -150,13 +151,13 @@ export function buildChatPayload({
   const policy = cfg.promptPolicy;
   const visionClean = sanitizeMessagesForVision(messages, caps.vision);
   const last = visionClean[visionClean.length - 1];
-  const tailText = String(policy.tailPrefill || '').trim();
-  // The default tail is a reasoning prefill: it replaces the template's empty thinking block.
-  // Ask for an explicit content continuation so the model closes that block and starts the answer.
-  const reasoningTail = policy.tailMode === 'prefill_assistant' &&
-    policy.tailPrefillField === 'reasoning_content' && tailText &&
-    last?.role === 'assistant' && !last.content &&
-    String(last.reasoning_content || '') === tailText;
+  const tailAssistant = policy.tailAssistant && typeof policy.tailAssistant === 'object' ? policy.tailAssistant : {};
+  const tailReasoning = String(tailAssistant.reasoning_content ?? tailAssistant.reasoning ?? '').trim();
+  // tailAssistant 只有 reasoning、没有 content 时，要求模型闭合思考块后进入正文。
+  const reasoningTail = Boolean(tailReasoning) &&
+    last?.role === 'assistant' &&
+    !last.content &&
+    String(last.reasoning_content || '') === tailReasoning;
   const continuationMode = reasoningTail ? 'content' : true;
   const { messages: adaptedMsgs, extraPayload } = applyContinuationToMessages(
     visionClean,

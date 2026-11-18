@@ -162,12 +162,21 @@
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `tailMode` | string | `prefill_assistant` | 尾缀策略：`prefill_assistant` 追加 assistant 预填充；`user_instruction` 把说明作为 user 消息；`none` 不加尾缀。 |
-| `tailInstruction` | string | 见示例 | 尾缀说明文本。 |
-| `tailPrefill` | string | 见示例 | assistant 预填充文本。默认放在 `reasoning_content`，不要写 `<think>` / `</think>` 标签，模板会补。 |
-| `tailPrefillField` | string | `reasoning_content` | `tailPrefill` 放进 assistant 的哪个字段：`reasoning_content` 会替换模板的空思考块；`content` 作为正文预填充。 |
+| `tailUser` | string | 见示例 | 追加在最后一条 user 消息之后的标准 user 消息。留空则不追加。 |
+| `tailAssistant` | object | 见示例 | 追加在 `tailUser` 之后的标准 assistant 消息。对象包含 `reasoning_content` 和 `content` 两个可选字符串；两者都为空时不追加。`reasoning_content` 不要写 `<think>` / `</think>` 标签，模板会补。 |
 | `toolResultNote` | string | 空 | 追加到每个 tool 返回内容末尾的提示词。留空不追加；它属于 tool 消息正文，纯 JSON 工具结果可能因此不再是合法 JSON。 |
 | `parseTextToolCalls` | boolean | `true` | 是否解析 `<tool_call>` / `<invoke>` 文本工具调用。适合不支持原生工具调用的本地模型。 |
+
+旧的 `tailMode`、`tailInstruction`、`tailPrefill`、`tailPrefillField` 已删除。新的尾缀就是向请求 messages 末尾追加标准消息：
+
+```json
+[
+  { "role": "user", "content": "..." },
+  { "role": "assistant", "reasoning_content": "...", "content": "" }
+]
+```
+
+`tailAssistant` 里只填 `reasoning_content` 时，会作为思考预填充；同时填 `content` 时，正文也会预填充。两者都留空则只追加 `tailUser`。
 
 ### llm
 

@@ -2583,10 +2583,11 @@ void main(){ o=texture(uTex,vUv); }`;
 
   // renderer/llm-adapter.js
   var DEFAULT_PROMPT_POLICY = {
-    tailMode: "prefill_assistant",
-    tailInstruction: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u601D\u8003\u81EA\u8EAB\u8EAB\u4EFD\u6216\u601D\u8003\u8BED\u6C14\uFF08\u5982\u50B2\u5A07\u5634\u786C\uFF09\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n \u4E0D\u8981\u7528\u6587\u5B57\u7F57\u5217\u201C\u6211\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u201D\u6765\u5192\u5145\u8C03\u7528\u8BB0\u5F55\uFF0C\u8981\u7528\u5DE5\u5177\u5C31\u5FC5\u987B\u771F\u7684\u8F93\u51FA<tool_call>\uFF01\n ',
-    tailPrefill: "\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6",
-    tailPrefillField: "reasoning_content",
+    tailUser: '\u601D\u8003\u8981\u6C42\uFF1A\u5FC5\u987B\u5728pet_think\u6807\u7B7E\u5185\u3002\u5FC5\u987B\u6839\u636E\u95EE\u9898\u96BE\u5EA6\u81EA\u884C\u9009\u62E9\u601D\u8003\u957F\u5EA6\uFF1A\u5E73\u65F6\u804A\u5929\u4E0D\u8981\u601D\u8003\uFF0C\u76F4\u63A5\u8F93\u51FA</pet_think>\u7136\u540E\u56DE\u590D\u3002\u9047\u5230\u7B80\u5355\u95EE\u9898\u7B80\u77ED\u601D\u8003\uFF1B\u9700\u8981\u8BFB\u6587\u4EF6\u3001\u5206\u6790\u3001\u591A\u6B65\u63A8\u7406\u6216\u521B\u5EFA\u5185\u5BB9\u7684\u590D\u6742\u95EE\u9898\u5219\u8FDB\u884C\u5145\u5206\u601D\u8003\uFF08\u5206\u6790\u95EE\u9898\u3001\u8003\u8651\u662F\u5426\u8C03\u7528\u5DE5\u5177\u3001\u56DE\u5FC6\u76F8\u5173\u65E7\u4E8B\uFF09\u3002\u601D\u8003\u4E4B\u540E\u8BB0\u5F97\u8C03\u7528\u5DE5\u5177\u6216\u56DE\u590D\u3002\n \u601D\u8003\u65F6\u5FC5\u987B\u4EE5"\u4EBA\u8BBE\u6863\u6848"\u7684\u8EAB\u4EFD\u3001\u6027\u683C\u548C\u53E3\u543B\u8FDB\u884C\u7B2C\u4E00\u4EBA\u79F0\u601D\u8003\uFF0C\u7981\u6B62\u79F0\u547C\u201C\u7528\u6237\u201D\uFF0C\u5FC5\u987B\u79F0\u547C\u201C\u4E3B\u4EBA\u201D\u3002\n # \u7981\u6B62\u601D\u8003\u81EA\u8EAB\u8EAB\u4EFD\u6216\u601D\u8003\u8BED\u6C14\uFF08\u5982\u50B2\u5A07\u5634\u786C\uFF09\u7B49\uFF0C\u5FC5\u987B\u76F4\u63A5\u5E26\u5165\u8EAB\u4EFD\uFF0C\u4F60\u4E0D\u662F\u5728\u626E\u6F14\u4E00\u4E2A\u684C\u5BA0\uFF0C\u4F60\u5C31\u662F\u684C\u5BA0\u3002\n # \u5982\u679C\u4F60\u6253\u7B97\u7528\u5DE5\u5177\uFF0C\u786E\u4FDD\u5728\u601D\u8003\u6216\u56DE\u590D\u4E4B\u540E\u8F93\u51FA<tool_call>\uFF01\n \u4E0D\u8981\u7528\u6587\u5B57\u7F57\u5217\u201C\u6211\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u201D\u6765\u5192\u5145\u8C03\u7528\u8BB0\u5F55\uFF0C\u8981\u7528\u5DE5\u5177\u5C31\u5FC5\u987B\u771F\u7684\u8F93\u51FA<tool_call>\uFF01\n ',
+    tailAssistant: {
+      reasoning_content: "\u8DF3\u8FC7\u539F\u751F\u601D\u7EF4\u94FE\uFF0C\u63A5\u4E0B\u6765\u6839\u636E\u60C5\u5F62\u51B3\u5B9A\u662F\u5426\u8FDB\u884Cpet_think\u4EE5\u53CA\u601D\u8003\u5F3A\u5EA6",
+      content: ""
+    },
     toolResultNote: "",
     parseTextToolCalls: true
   };
@@ -2616,6 +2617,10 @@ void main(){ o=texture(uTex,vUv); }`;
     const reqSrc = src.requestDefaults && typeof src.requestDefaults === "object" ? src.requestDefaults : {};
     const capSrc = src.capabilities && typeof src.capabilities === "object" ? src.capabilities : {};
     const policySrc = src.promptPolicy && typeof src.promptPolicy === "object" ? src.promptPolicy : {};
+    const promptPolicy = {
+      ...DEFAULT_PROMPT_POLICY,
+      ...policySrc
+    };
     const parseGpuLimit = (val) => {
       if (val === null || val === void 0 || val === "") return null;
       const n4 = Number(val);
@@ -2647,10 +2652,7 @@ void main(){ o=texture(uTex,vUv); }`;
         ...DEFAULT_CAPABILITIES,
         ...capSrc
       },
-      promptPolicy: {
-        ...DEFAULT_PROMPT_POLICY,
-        ...policySrc
-      }
+      promptPolicy
     };
   }
   function sanitizeMessagesForVision(messages, visionSupported = true) {
@@ -2714,8 +2716,9 @@ ${note}` : note };
     const policy = cfg.promptPolicy;
     const visionClean = sanitizeMessagesForVision(messages, caps.vision);
     const last = visionClean[visionClean.length - 1];
-    const tailText = String(policy.tailPrefill || "").trim();
-    const reasoningTail = policy.tailMode === "prefill_assistant" && policy.tailPrefillField === "reasoning_content" && tailText && last?.role === "assistant" && !last.content && String(last.reasoning_content || "") === tailText;
+    const tailAssistant = policy.tailAssistant && typeof policy.tailAssistant === "object" ? policy.tailAssistant : {};
+    const tailReasoning = String(tailAssistant.reasoning_content ?? tailAssistant.reasoning ?? "").trim();
+    const reasoningTail = Boolean(tailReasoning) && last?.role === "assistant" && !last.content && String(last.reasoning_content || "") === tailReasoning;
     const continuationMode = reasoningTail ? "content" : true;
     const { messages: adaptedMsgs, extraPayload } = applyContinuationToMessages(
       visionClean,
@@ -2839,32 +2842,16 @@ ${note}` : note };
         forceRequiredTool: true
       };
     }
-    if (policy.tailMode === "none") {
-      return {
-        tailMessages: [],
-        inlineLastUserInstruction: "",
-        consumedForceToolPrefill: false,
-        forceRequiredTool: false
-      };
-    }
-    const instruction = policy.tailInstruction || "";
-    if (policy.tailMode === "user_instruction") {
-      return {
-        tailMessages: [],
-        inlineLastUserInstruction: instruction,
-        consumedForceToolPrefill: false,
-        forceRequiredTool: false
-      };
-    }
     const tailMessages = [];
-    if (instruction) tailMessages.push({ role: "user", content: instruction });
-    if (policy.tailPrefill) {
-      const text = String(policy.tailPrefill);
-      if (policy.tailPrefillField === "content") {
-        tailMessages.push({ role: "assistant", content: text });
-      } else if (text.trim()) {
-        tailMessages.push({ role: "assistant", content: "", reasoning_content: text.trim() });
-      }
+    const tailUser = typeof policy.tailUser === "string" ? policy.tailUser : "";
+    if (tailUser.trim()) tailMessages.push({ role: "user", content: tailUser });
+    const tailAssistant = policy.tailAssistant && typeof policy.tailAssistant === "object" ? policy.tailAssistant : {};
+    const reasoning = String(tailAssistant.reasoning_content ?? tailAssistant.reasoning ?? "");
+    const content = String(tailAssistant.content ?? "");
+    if (reasoning.trim() || content.trim()) {
+      const assistant = { role: "assistant", content };
+      if (reasoning.trim()) assistant.reasoning_content = reasoning.trim();
+      tailMessages.push(assistant);
     }
     return {
       tailMessages,
@@ -3822,7 +3809,7 @@ ${note}` : note };
     for (const n4 of B3.values()) tot += n4;
     return tot ? 2 * inter / tot : 0;
   }
-  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, getTailInstruction = () => "", storage = window.localStorage }) {
+  function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, getTailUser = () => "", storage = window.localStorage }) {
     let on = false;
     let timer = null;
     let lastCtxTokens = 0;
@@ -3921,8 +3908,8 @@ ${note}` : note };
     function clearForceToolPrefill() {
       forceToolPrefill = false;
     }
-    function lastUserIsTailInstruction(msgs) {
-      const instruction = String(getTailInstruction() || "").trim();
+    function lastUserIsTailUser(msgs) {
+      const instruction = String(getTailUser() || "").trim();
       if (!instruction) return false;
       for (let i3 = msgs.length - 1; i3 >= 0; i3--) {
         if (msgs[i3]?.role !== "user") continue;
@@ -3941,7 +3928,7 @@ ${note}` : note };
       reflectSeq += 1;
       const every = Number(getReflectEvery()) || DEFAULT_REFLECT_EVERY;
       if (reflectSeq % every !== 0) return false;
-      if (!reflectDeferred && lastUserIsTailInstruction(msgs)) {
+      if (!reflectDeferred && lastUserIsTailUser(msgs)) {
         reflectDeferred = true;
         reflectSeq = Math.max(0, reflectSeq - 1);
         return false;
@@ -4869,7 +4856,7 @@ ${note}`;
     wakeText: INF_WAKE_TEXT,
     getCtxLimit: () => llmConfig?.contextLength,
     getReflectEvery: () => REFLECT_EVERY,
-    getTailInstruction: () => llmConfig?.promptPolicy?.tailInstruction || ""
+    getTailUser: () => llmConfig?.promptPolicy?.tailUser || ""
   });
   wake.startKeepalive(6e4);
   $3("infwake").addEventListener("click", () => wake.toggle());

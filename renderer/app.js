@@ -671,7 +671,7 @@ const wake = createInfiniteWake({
   wakeText: INF_WAKE_TEXT,
   getCtxLimit: () => llmConfig?.contextLength,
   getReflectEvery: () => REFLECT_EVERY,
-  getTailInstruction: () => llmConfig?.promptPolicy?.tailInstruction || '',
+  getTailUser: () => llmConfig?.promptPolicy?.tailUser || '',
 });
 wake.startKeepalive(60000);
 $('infwake').addEventListener('click', () => wake.toggle());

@@ -33,7 +33,7 @@ function replySim(a, b) {
   return tot ? (2 * inter) / tot : 0;
 }
 
-export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, getTailInstruction = () => '', storage = window.localStorage }) {
+export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, getTailUser = () => '', storage = window.localStorage }) {
   let on = false;
   let timer = null;
   let lastCtxTokens = 0;
@@ -125,9 +125,9 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
 
   function clearForceToolPrefill() { forceToolPrefill = false; }
 
-  // 本次请求最后一条 user 是否就是开场注入的 tailInstruction
-  function lastUserIsTailInstruction(msgs) {
-    const instruction = String(getTailInstruction() || '').trim();
+  // 本次请求最后一条 user 是否就是开场注入的 tailUser
+  function lastUserIsTailUser(msgs) {
+    const instruction = String(getTailUser() || '').trim();
     if (!instruction) return false;
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i]?.role !== 'user') continue;
@@ -146,9 +146,9 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
     const every = Number(getReflectEvery()) || DEFAULT_REFLECT_EVERY;
     if (reflectSeq % every !== 0) return false;
 
-    // 反思刚好撞上 tailInstruction：只推迟一轮，避免工具轮里最后一个 user
-    // 一直是 tailInstruction 导致反思永远不触发
-    if (!reflectDeferred && lastUserIsTailInstruction(msgs)) {
+    // 反思刚好撞上 tailUser：只推迟一轮，避免工具轮里最后一个 user
+    // 一直是 tailUser 导致反思永远不触发
+    if (!reflectDeferred && lastUserIsTailUser(msgs)) {
       reflectDeferred = true;
       reflectSeq = Math.max(0, reflectSeq - 1);
       return false;

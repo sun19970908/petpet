@@ -21,12 +21,12 @@ const DEFAULT_PROFILE = {
     prefixMode: 'continue_final_message',
   },
   promptPolicy: {
-    tailMode: 'prefill_assistant',
-    tailInstruction:
+    tailUser:
       '思考要求：必须在pet_think标签内。必须根据问题难度自行选择思考长度：平时聊天不要思考，直接输出</pet_think>然后回复。遇到简单问题简短思考；需要读文件、分析、多步推理或创建内容的复杂问题则进行充分思考（分析问题、考虑是否调用工具、回忆相关旧事）。思考之后记得调用工具或回复。\n 思考时必须以"人设档案"的身份、性格和口吻进行第一人称思考，禁止称呼“用户”，必须称呼“主人”。\n # 禁止思考自身身份或思考语气（如傲娇嘴硬）等，必须直接带入身份，你不是在扮演一个桌宠，你就是桌宠。\n # 如果你打算用工具，确保在思考或回复之后输出<tool_call>！\n 不要用文字罗列“我用了哪些工具”来冒充调用记录，要用工具就必须真的输出<tool_call>！\n ',
-    tailPrefill:
-      '跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度',
-    tailPrefillField: 'reasoning_content',
+    tailAssistant: {
+      reasoning_content: '跳过原生思维链，接下来根据情形决定是否进行pet_think以及思考强度',
+      content: '',
+    },
     toolResultNote: '',
     parseTextToolCalls: true,
   },
@@ -85,7 +85,8 @@ function createLlmConfigManager({ APP_ROOT, getConfig, cliProfile = null, envNoT
     if (appInline) merged = mergeProfile(merged, appInline);
 
     if (envNoTail) {
-      merged.promptPolicy.tailMode = 'none';
+      merged.promptPolicy.tailUser = '';
+      merged.promptPolicy.tailAssistant = { reasoning_content: '', content: '' };
     }
 
     let apiKey = String(merged.apiKey || '').trim();
