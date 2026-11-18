@@ -170,7 +170,7 @@ window.__pet = {
     thinkMode: llmConfig?.promptPolicy?.thinkMode ?? null,
     historyLen: history.length,
     infHistoryLen: infHistory.length,
-    wake: { on: wake.on, ctx: wake.lastCtxTokens, forceToolPrefill: wake.forceToolPrefill },
+    wake: { on: wake.on, ctx: wake.lastCtxTokens },
     bubble: ($('bubble')?.textContent || '').trim(),
     input: input?.value || '',
     clickThrough,
@@ -291,8 +291,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
     copy.function.parameters.properties.y.description = '可选：脚下纵向比例 0~1。配合 room 时是屏内位置';
     return copy;
   });
-  turnUsedTools = false;
-  let forceRequiredTool = Boolean(forceToolOnFirst);
+  let forceRequiredTool = Boolean(forceToolOnFirst) || isInf;
   let forceToolRetryLimited = false;
   let bodyMsgs;
   if (continueBaseMsgs) {
@@ -311,11 +310,8 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       userContent,
       toolLedger: ledger,
       llmConfig,
-      forceToolPrefill: wake.forceToolPrefill,
     });
     bodyMsgs = assembled.messages;
-    if (assembled.consumedForceToolPrefill) wake.clearForceToolPrefill();
-    forceRequiredTool = Boolean(assembled.forceRequiredTool);
   }
   // ===== 流式主循环：SSE 解析 + 思维链静默状态机 + 成句即说 =====
   // 标签剥离与增量状态机已抽至 stream-filter.js；这里只负责请求、工具轮与历史落盘
@@ -341,9 +337,7 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
   };
   for (let round = 0; ; round++) {
     touchTurnActivity();
-    const reflected = isInf && wake.reflect(bodyMsgs);
-    // 反思轮不强制工具：让模型先完成 pet_think 反思，工具改为 auto
-    if (reflected) forceRequiredTool = false;
+    if (isInf) wake.reflect(bodyMsgs);
     const slicer = makeSentenceSlicer();
     const sendMsgs = bodyMsgs.slice();
     const { startInThink, startInTool } = getPrefillState(sendMsgs);
@@ -353,7 +347,8 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
       tools: requestTools,
       forceRequiredTool,
     });
-    forceRequiredTool = false;
+    // 无限唤醒每一轮都强制工具；普通对话只在续写/疑似工具意图时强一次
+    forceRequiredTool = Boolean(isInf);
     const res = await fetch(LLM_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -464,7 +459,6 @@ async function askLLM(userContent, signal, memories, continueBaseMsgs = null, is
         const visible = (msgContentBeforeTools || '').trim();
         if (visible) saveMessages(isInf, [{ role: 'assistant', content: visible }]);
       }
-      turnUsedTools = true;
       toolCallTotal += toolCalls.length;
       continue;
     }
@@ -564,7 +558,6 @@ async function submitRequest(text, image, { isInfiniteWake: isInf = false } = {}
     const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
     const hasReply = Boolean(reply && String(reply).trim());
     if (!isInf || hasReply) await saveMessages(isInf, [{ role: 'assistant', content: reply }]);
-    wake.noteLoop(reply, turnUsedTools);
     if (lastExchange) lastExchange.hadSavedHistory = true;
     showBubble(reply);
     replied = true;
@@ -683,7 +676,6 @@ window.petWindow?.onStopInfwake?.(() => {
   console.log('[infwake] 收到看门狗截止指令，已关闭无限唤醒');
 });
 wake.restore({ disabled: NO_INFWAKE });
-let turnUsedTools = false; // 本轮是否真的调用过工具（文字死循环护栏用）
 // busy 卡死兜底：某个 await（工具/请求）真的无进展卡住超过 5 分钟才强制中断并续上；
 // 以 lastTurnActivityTs 为准（流式吐字/调工具/TTS 均会刷新），避免连续多轮健康无限唤醒被误判为卡死！
 setInterval(() => {

@@ -1,4 +1,4 @@
-// 连续唤醒（∞）状态机：开关持久化、自动排队续唤醒、上下文与文字死循环护栏
+// 连续唤醒（∞）状态机：开关持久化、自动排队续唤醒、上下文护栏
 // 只依赖注入进来的 wakeText / wakeNow / showBubble / isBusy，不直接碰全局状态
 
 const CTX_ABORT_COUNT = 3;
@@ -12,35 +12,11 @@ export const REFLECT_TEXT = `【系统提醒】以下为定期注入内容：立
 // 反思时追加到 assistant 预填充的内容
 const REFLECT_PREFILL = '<pet_think> \n 主人我现在就反思：';
 
-function normReply(s) {
-  return String(s || '').replace(/<[^>]+>/g, '').replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 500);
-}
-
-function replySim(a, b) {
-  if (!a || !b) return 0;
-  const bg = (x) => {
-    const m = new Map();
-    for (let i = 0; i < x.length - 1; i++) {
-      const g = x.slice(i, i + 2);
-      m.set(g, (m.get(g) || 0) + 1);
-    }
-    return m;
-  };
-  const A = bg(a), B = bg(b);
-  let inter = 0, tot = 0;
-  for (const [g, n] of A) { tot += n; if (B.has(g)) inter += Math.min(n, B.get(g)); }
-  for (const n of B.values()) tot += n;
-  return tot ? (2 * inter) / tot : 0;
-}
-
 export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, getTailUser = () => '', storage = window.localStorage }) {
   let on = false;
   let timer = null;
   let lastCtxTokens = 0;
   let ctxOverCount = 0;
-  let prevReplyNorm = '';
-  let noToolTurns = 0;
-  let forceToolPrefill = false;
   let reflectSeq = 0;
   let reflectPending = false;
   let reflectDeferred = false;
@@ -111,20 +87,6 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
     }
   }
 
-  // 文字死循环护栏：连续"无工具 + 回复高度相似"且无限唤醒开着 → 下一轮补 <tool_call> 预填充，逼她动手
-  function noteLoop(reply, usedTools) {
-    const cur = normReply(reply);
-    if (!usedTools) noToolTurns += 1;
-    else { noToolTurns = 0; forceToolPrefill = false; }
-    if (on && noToolTurns >= 2 && replySim(prevReplyNorm, cur) >= 0.6) {
-      forceToolPrefill = true;
-      console.warn('[infwake] 检测到文字死循环（连续无工具 + 回复高度相似），下一轮补 <tool_call> 预填充');
-    }
-    prevReplyNorm = cur;
-  }
-
-  function clearForceToolPrefill() { forceToolPrefill = false; }
-
   // 本次请求最后一条 user 是否就是开场注入的 tailUser
   function lastUserIsTailUser(msgs) {
     const instruction = String(getTailUser() || '').trim();
@@ -189,14 +151,11 @@ export function createInfiniteWake({ button, wakeNow, showBubble, isBusy, wakeTe
   return {
     get on() { return on; },
     get lastCtxTokens() { return lastCtxTokens; },
-    get forceToolPrefill() { return forceToolPrefill; },
-    clearForceToolPrefill,
     stop,
     queue,
     toggle,
     restore,
     noteContext,
-    noteLoop,
     reflect,
     noteReflectResult,
     startKeepalive,

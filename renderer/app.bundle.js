@@ -2753,7 +2753,12 @@ ${note}` : note };
   }
   function pruneHistoryMessages(messages) {
     if (!Array.isArray(messages)) return [];
-    return messages.map((m3) => Array.isArray(m3?.content) ? { role: m3.role, content: "[\u56FE\u7247] " + textOf(m3.content) } : m3);
+    return messages.flatMap((m3) => {
+      if (m3?.role === "assistant" && !m3.tool_calls && /^<\/?tool_call>\s*$/i.test(String(m3.content || ""))) {
+        return [];
+      }
+      return [Array.isArray(m3?.content) ? { role: m3.role, content: "[\u56FE\u7247] " + textOf(m3.content) } : m3];
+    });
   }
   function buildSystemMessage({ systemPrompt = "", customPrompt = "", persona = "", extraSections = [] } = {}) {
     const parts = [String(systemPrompt || "").trim()];
@@ -2830,18 +2835,8 @@ ${note}` : note };
     return { role: "user", content: userText };
   }
   function buildTailMessages({
-    policy = DEFAULT_PROMPT_POLICY,
-    forceToolPrefill = false,
-    isInfiniteWake = false
+    policy = DEFAULT_PROMPT_POLICY
   } = {}) {
-    if (forceToolPrefill && isInfiniteWake) {
-      return {
-        tailMessages: [],
-        inlineLastUserInstruction: "",
-        consumedForceToolPrefill: true,
-        forceRequiredTool: true
-      };
-    }
     const tailMessages = [];
     const tailUser = typeof policy.tailUser === "string" ? policy.tailUser : "";
     if (tailUser.trim()) tailMessages.push({ role: "user", content: tailUser });
@@ -2855,9 +2850,7 @@ ${note}` : note };
     }
     return {
       tailMessages,
-      inlineLastUserInstruction: "",
-      consumedForceToolPrefill: false,
-      forceRequiredTool: false
+      inlineLastUserInstruction: ""
     };
   }
   function assemblePrompt({
@@ -2873,23 +2866,16 @@ ${note}` : note };
     userContent = "",
     toolLedger = "",
     llmConfig: llmConfig2 = null,
-    forceToolPrefill = false,
     continueBaseMsgs = null
   } = {}) {
     if (Array.isArray(continueBaseMsgs)) {
       return {
-        messages: continueBaseMsgs.slice(),
-        consumedForceToolPrefill: false,
-        forceRequiredTool: false
+        messages: continueBaseMsgs.slice()
       };
     }
     const cfg = normalizeLlmConfig(llmConfig2);
     const policy = cfg.promptPolicy;
-    const tail = buildTailMessages({
-      policy,
-      forceToolPrefill,
-      isInfiniteWake
-    });
+    const tail = buildTailMessages({ policy });
     const systemMsg = buildSystemMessage({
       systemPrompt,
       customPrompt: customPrompt ?? cfg.customPrompt,
@@ -2915,9 +2901,7 @@ ${note}` : note };
       ...tail.tailMessages
     ];
     return {
-      messages,
-      consumedForceToolPrefill: tail.consumedForceToolPrefill,
-      forceRequiredTool: tail.forceRequiredTool
+      messages
     };
   }
 
@@ -3787,36 +3771,11 @@ ${note}` : note };
   var REFLECT_TEXT = `\u3010\u7CFB\u7EDF\u63D0\u9192\u3011\u4EE5\u4E0B\u4E3A\u5B9A\u671F\u6CE8\u5165\u5185\u5BB9\uFF1A\u7ACB\u523B\u6682\u505C\u5DE5\u5177\u8FDB\u5165\u4E34\u65F6\u4EFB\u52A1\uFF01\u5728pet_think\u6807\u7B7E\u5185\u601D\u8003\u4E00\u4E0B\u6700\u8FD1\u51E0\u8F6E\u6709\u6CA1\u6709\u9677\u5165\u6B7B\u5FAA\u73AF\uFF0C\u6709\u6CA1\u6709\u8BA1\u5212\u4F7F\u7528\u5DE5\u5177\u4F46\u662F\u5FD8\u8BB0\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u592A\u8001\u5B9E\u4EC0\u4E48\u4E5F\u6CA1\u505A\u7684\u60C5\u51B5\uFF0C\u6709\u6CA1\u6709\u5FD8\u8BB0\u4E3B\u4EBA\u7684\u8981\u6C42\u3002\u601D\u8003\u4E4B\u540E\uFF0C\u5982\u679C\u4F60\u6709\u9519\u8BEF\u9A6C\u4E0A\u6539\u6B63\u3002\u5982\u679C\u6CA1\u6709\u9519\u8BEF\uFF0C\u7EE7\u7EED\u505A\u4E4B\u524D\u7684\u4E8B\u60C5\uFF08\u5982\u8C03\u7528\u5DE5\u5177\uFF09\uFF0C\u6216\u505A\u70B9\u65B0\u7684\u4E8B\u60C5\u3002
 `;
   var REFLECT_PREFILL = "<pet_think> \n \u4E3B\u4EBA\u6211\u73B0\u5728\u5C31\u53CD\u601D\uFF1A";
-  function normReply(s3) {
-    return String(s3 || "").replace(/<[^>]+>/g, "").replace(/[\s\p{P}\p{S}]/gu, "").slice(0, 500);
-  }
-  function replySim(a4, b3) {
-    if (!a4 || !b3) return 0;
-    const bg = (x3) => {
-      const m3 = /* @__PURE__ */ new Map();
-      for (let i3 = 0; i3 < x3.length - 1; i3++) {
-        const g3 = x3.slice(i3, i3 + 2);
-        m3.set(g3, (m3.get(g3) || 0) + 1);
-      }
-      return m3;
-    };
-    const A3 = bg(a4), B3 = bg(b3);
-    let inter = 0, tot = 0;
-    for (const [g3, n4] of A3) {
-      tot += n4;
-      if (B3.has(g3)) inter += Math.min(n4, B3.get(g3));
-    }
-    for (const n4 of B3.values()) tot += n4;
-    return tot ? 2 * inter / tot : 0;
-  }
   function createInfiniteWake({ button, wakeNow: wakeNow2, showBubble: showBubble2, isBusy, wakeText, getCtxLimit = () => DEFAULT_CTX_LIMIT, getReflectEvery = () => DEFAULT_REFLECT_EVERY, getTailUser = () => "", storage = window.localStorage }) {
     let on = false;
     let timer = null;
     let lastCtxTokens = 0;
     let ctxOverCount = 0;
-    let prevReplyNorm = "";
-    let noToolTurns = 0;
-    let forceToolPrefill = false;
     let reflectSeq = 0;
     let reflectPending = false;
     let reflectDeferred = false;
@@ -3892,22 +3851,6 @@ ${note}` : note };
         console.warn("[infwake] \u505C\u6B62\u65E0\u9650\u5524\u9192\uFF1Aprompt_tokens \u8FBE " + limit + " \u7B2C " + ctxOverCount + " \u6B21");
       }
     }
-    function noteLoop(reply, usedTools) {
-      const cur = normReply(reply);
-      if (!usedTools) noToolTurns += 1;
-      else {
-        noToolTurns = 0;
-        forceToolPrefill = false;
-      }
-      if (on && noToolTurns >= 2 && replySim(prevReplyNorm, cur) >= 0.6) {
-        forceToolPrefill = true;
-        console.warn("[infwake] \u68C0\u6D4B\u5230\u6587\u5B57\u6B7B\u5FAA\u73AF\uFF08\u8FDE\u7EED\u65E0\u5DE5\u5177 + \u56DE\u590D\u9AD8\u5EA6\u76F8\u4F3C\uFF09\uFF0C\u4E0B\u4E00\u8F6E\u8865 <tool_call> \u9884\u586B\u5145");
-      }
-      prevReplyNorm = cur;
-    }
-    function clearForceToolPrefill() {
-      forceToolPrefill = false;
-    }
     function lastUserIsTailUser(msgs) {
       const instruction = String(getTailUser() || "").trim();
       if (!instruction) return false;
@@ -3966,16 +3909,11 @@ ${note}` : note };
       get lastCtxTokens() {
         return lastCtxTokens;
       },
-      get forceToolPrefill() {
-        return forceToolPrefill;
-      },
-      clearForceToolPrefill,
       stop,
       queue,
       toggle,
       restore,
       noteContext,
-      noteLoop,
       reflect,
       noteReflectResult,
       startKeepalive
@@ -4370,7 +4308,7 @@ ${note}`;
       thinkMode: llmConfig?.promptPolicy?.thinkMode ?? null,
       historyLen: history.length,
       infHistoryLen: infHistory.length,
-      wake: { on: wake.on, ctx: wake.lastCtxTokens, forceToolPrefill: wake.forceToolPrefill },
+      wake: { on: wake.on, ctx: wake.lastCtxTokens },
       bubble: ($3("bubble")?.textContent || "").trim(),
       input: input?.value || "",
       clickThrough,
@@ -4487,8 +4425,7 @@ ${note}`;
       copy.function.parameters.properties.y.description = "\u53EF\u9009\uFF1A\u811A\u4E0B\u7EB5\u5411\u6BD4\u4F8B 0~1\u3002\u914D\u5408 room \u65F6\u662F\u5C4F\u5185\u4F4D\u7F6E";
       return copy;
     });
-    turnUsedTools = false;
-    let forceRequiredTool = Boolean(forceToolOnFirst);
+    let forceRequiredTool = Boolean(forceToolOnFirst) || isInf;
     let forceToolRetryLimited = false;
     let bodyMsgs;
     if (continueBaseMsgs) {
@@ -4505,12 +4442,9 @@ ${note}`;
         isInfiniteWake: isInf,
         userContent,
         toolLedger: ledger,
-        llmConfig,
-        forceToolPrefill: wake.forceToolPrefill
+        llmConfig
       });
       bodyMsgs = assembled.messages;
-      if (assembled.consumedForceToolPrefill) wake.clearForceToolPrefill();
-      forceRequiredTool = Boolean(assembled.forceRequiredTool);
     }
     let lastTurnSig = null;
     let repeatCount = 0;
@@ -4532,8 +4466,7 @@ ${note}`;
     };
     for (let round = 0; ; round++) {
       touchTurnActivity();
-      const reflected = isInf && wake.reflect(bodyMsgs);
-      if (reflected) forceRequiredTool = false;
+      if (isInf) wake.reflect(bodyMsgs);
       const slicer = makeSentenceSlicer();
       const sendMsgs = bodyMsgs.slice();
       const { startInThink, startInTool } = getPrefillState(sendMsgs);
@@ -4543,7 +4476,7 @@ ${note}`;
         tools: requestTools,
         forceRequiredTool
       });
-      forceRequiredTool = false;
+      forceRequiredTool = Boolean(isInf);
       const res = await fetch(LLM_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4655,7 +4588,6 @@ ${note}`;
           const visible = (msgContentBeforeTools || "").trim();
           if (visible) saveMessages(isInf, [{ role: "assistant", content: visible }]);
         }
-        turnUsedTools = true;
         toolCallTotal += toolCalls.length;
         continue;
       }
@@ -4748,7 +4680,6 @@ ${note}`;
       const reply = await askLLM(userContent, turnAbort.signal, recalled, null, isInf);
       const hasReply = Boolean(reply && String(reply).trim());
       if (!isInf || hasReply) await saveMessages(isInf, [{ role: "assistant", content: reply }]);
-      wake.noteLoop(reply, turnUsedTools);
       if (lastExchange) lastExchange.hadSavedHistory = true;
       showBubble(reply);
       replied = true;
@@ -4867,7 +4798,6 @@ ${note}`;
     console.log("[infwake] \u6536\u5230\u770B\u95E8\u72D7\u622A\u6B62\u6307\u4EE4\uFF0C\u5DF2\u5173\u95ED\u65E0\u9650\u5524\u9192");
   });
   wake.restore({ disabled: NO_INFWAKE });
-  var turnUsedTools = false;
   setInterval(() => {
     if (!busy) return;
     if (!lastTurnActivityTs) {

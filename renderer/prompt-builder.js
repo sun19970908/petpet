@@ -21,9 +21,15 @@ export function formatMemories(hits) {
 // 历史里的图片一律折叠成文字占位：多模态历史会成倍撑大 prefill，只有最新一条保留图
 export function pruneHistoryMessages(messages) {
   if (!Array.isArray(messages)) return [];
-  return messages.map((m) => Array.isArray(m?.content)
-    ? { role: m.role, content: '[图片] ' + textOf(m.content) }
-    : m);
+  return messages.flatMap((m) => {
+    // 模型偶尔只吐一个空 <tool_call> 标签；这不是工具调用，不能留在历史里反复污染后续轮次
+    if (m?.role === 'assistant' && !m.tool_calls && /^<\/?tool_call>\s*$/i.test(String(m.content || ''))) {
+      return [];
+    }
+    return [Array.isArray(m?.content)
+      ? { role: m.role, content: '[图片] ' + textOf(m.content) }
+      : m];
+  });
 }
 
 export function buildSystemMessage({ systemPrompt = '', customPrompt = '', persona = '', extraSections = [] } = {}) {
@@ -112,18 +118,7 @@ export function buildUserTurn(userContent, toolLedger = '', { vision = true, ext
 
 export function buildTailMessages({
   policy = DEFAULT_PROMPT_POLICY,
-  forceToolPrefill = false,
-  isInfiniteWake = false,
 } = {}) {
-  if (forceToolPrefill && isInfiniteWake) {
-    return {
-      tailMessages: [],
-      inlineLastUserInstruction: '',
-      consumedForceToolPrefill: true,
-      forceRequiredTool: true,
-    };
-  }
-
   const tailMessages = [];
   const tailUser = typeof policy.tailUser === 'string' ? policy.tailUser : '';
   if (tailUser.trim()) tailMessages.push({ role: 'user', content: tailUser });
@@ -140,8 +135,6 @@ export function buildTailMessages({
   return {
     tailMessages,
     inlineLastUserInstruction: '',
-    consumedForceToolPrefill: false,
-    forceRequiredTool: false,
   };
 }
 
@@ -158,24 +151,17 @@ export function assemblePrompt({
   userContent = '',
   toolLedger = '',
   llmConfig = null,
-  forceToolPrefill = false,
   continueBaseMsgs = null,
 } = {}) {
   if (Array.isArray(continueBaseMsgs)) {
     return {
       messages: continueBaseMsgs.slice(),
-      consumedForceToolPrefill: false,
-      forceRequiredTool: false,
     };
   }
 
   const cfg = normalizeLlmConfig(llmConfig);
   const policy = cfg.promptPolicy;
-  const tail = buildTailMessages({
-    policy,
-    forceToolPrefill,
-    isInfiniteWake,
-  });
+  const tail = buildTailMessages({ policy });
 
   // system 保持纯静态（不含动态召回记忆），customPrompt 紧贴系统提示词下边、人设档案前边
   const systemMsg = buildSystemMessage({
@@ -208,7 +194,5 @@ export function assemblePrompt({
 
   return {
     messages,
-    consumedForceToolPrefill: tail.consumedForceToolPrefill,
-    forceRequiredTool: tail.forceRequiredTool,
   };
 }
