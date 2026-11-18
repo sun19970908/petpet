@@ -4,8 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const { createPythonTool } = require('./python-tool');
 const { createWebTools } = require('./web-tools');
+const { shrinkNativeImage } = require('./image-utils');
 
-function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, petReadScope, petReadBlacklist, comfyHost, comfyPort, comfyInputDir, webSearchApiUrl, webSearchApiKey, webSearchTimeoutMs, webSearchMaxResults, pythonMode, pythonDockerBin, pythonImage, pythonTimeoutMs }) {
+function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged, petReadScope, petReadBlacklist, comfyHost, comfyPort, comfyInputDir, webSearchApiUrl, webSearchApiKey, webSearchTimeoutMs, webSearchMaxResults, pythonMode, pythonDockerBin, pythonImage, pythonTimeoutMs, imageMaxEdge }) {
+  const IMAGE_MAX_EDGE = Math.max(256, Math.min(4096, Number(imageMaxEdge) || 1920));
   function realPathOrNull(p) {
     try { return fs.realpathSync(p); } catch { return null; }
   }
@@ -250,7 +252,13 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
         if (!first) {
           const ext = path.extname(name).slice(1).toLowerCase();
           const mime = (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
-          first = 'data:' + mime + ';base64,' + v.buffer.toString('base64');
+          const img = nativeImage.createFromBuffer(v.buffer);
+          const imgOut = img && !img.isEmpty()
+            ? shrinkNativeImage(img, { maxWidth: IMAGE_MAX_EDGE, maxHeight: IMAGE_MAX_EDGE, png: ext === 'png' })
+            : null;
+          first = imgOut
+            ? 'data:' + imgOut.mime + ';base64,' + imgOut.buf.toString('base64')
+            : 'data:' + mime + ';base64,' + v.buffer.toString('base64');
         }
       }
       if (!saved.length) return { ok: false, error: '产出图片拉取失败' };
@@ -452,19 +460,39 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
           };
         })();
       }
+      if (name === 'view_image') {
+        const resolved = path.resolve(String(args.path || ''));
+        const readErr = readPathError(resolved);
+        if (readErr) return Promise.resolve({ ok: false, error: readErr });
+        let stat;
+        try { stat = fs.statSync(resolved); } catch { return Promise.resolve({ ok: false, error: '文件不存在: ' + resolved }); }
+        if (!stat.isFile()) return Promise.resolve({ ok: false, error: '不是文件: ' + resolved });
+        if (stat.size > 32 * 1024 * 1024) return Promise.resolve({ ok: false, error: '图片超过 32MB，先用 resize_image 缩小后再看' });
+        const img = nativeImage.createFromPath(resolved);
+        if (!img || img.isEmpty()) return Promise.resolve({ ok: false, error: '读不出图片（格式不支持？）: ' + resolved });
+        const ext = path.extname(resolved).toLowerCase();
+        const imgOut = shrinkNativeImage(img, {
+          maxWidth: args.max_width,
+          maxHeight: args.max_height,
+          quality: args.quality,
+          defaultWidth: IMAGE_MAX_EDGE,
+          defaultHeight: IMAGE_MAX_EDGE,
+          limitWidth: IMAGE_MAX_EDGE,
+          limitHeight: IMAGE_MAX_EDGE,
+          png: ext === '.png',
+        });
+        return Promise.resolve({
+          ok: true,
+          result: '已读取图片 ' + imgOut.width + 'x' + imgOut.height + ' → ' + imgOut.outWidth + 'x' + imgOut.outHeight + '（' + imgOut.kb + ' KB）: ' + resolved.replace(/\\/g, '/'),
+          image: 'data:' + imgOut.mime + ';base64,' + imgOut.buf.toString('base64'),
+        });
+      }
       if (name === 'resize_image') {
         const resolved = path.resolve(args.path || '');
         if (!isPathInPetSpace(resolved)) return Promise.resolve({ ok: false, error: '拒绝：图片必须在 ' + PET_SPACE_DIR + ' 内' });
         if (!fs.existsSync(resolved)) return Promise.resolve({ ok: false, error: '文件不存在: ' + resolved });
         const img = nativeImage.createFromPath(resolved);
         if (!img || img.isEmpty()) return Promise.resolve({ ok: false, error: '读不出图片（格式不支持？）: ' + resolved });
-        const sz = img.getSize();
-        const mw = Math.max(16, Math.min(4096, Number(args.max_width) || 512));
-        const mh = Math.max(16, Math.min(4096, Number(args.max_height) || 512));
-        const sc = Math.min(mw / sz.width, mh / sz.height, 1);
-        const w = Math.max(1, Math.round(sz.width * sc)), h = Math.max(1, Math.round(sz.height * sc));
-        const q = Math.max(1, Math.min(100, Number(args.quality) || 82));
-        const resized = img.resize({ width: w, height: h, quality: 'good' });
         let outPath;
         if (args.out_path) {
           outPath = path.resolve(String(args.out_path));
@@ -475,15 +503,22 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
           outPath = path.join(dir, base + '_small.jpg');
         }
         const ext = path.extname(outPath).toLowerCase();
-        const buf = ext === '.png' ? resized.toPNG() : resized.toJPEG(q);
+        const imgOut = shrinkNativeImage(img, {
+          maxWidth: args.max_width || 512,
+          maxHeight: args.max_height || 512,
+          quality: args.quality ?? 82,
+          defaultWidth: 512,
+          defaultHeight: 512,
+          limitWidth: IMAGE_MAX_EDGE,
+          limitHeight: IMAGE_MAX_EDGE,
+          png: ext === '.png',
+        });
         fs.mkdirSync(path.dirname(outPath), { recursive: true });
-        fs.writeFileSync(outPath, buf);
-        const kb = Math.round(buf.length / 1024);
-        const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
+        fs.writeFileSync(outPath, imgOut.buf);
         return Promise.resolve({
           ok: true,
-          result: '已缩放 ' + sz.width + 'x' + sz.height + ' → ' + w + 'x' + h + '（' + kb + ' KB）: ' + outPath.replace(/\\/g, '/'),
-          image: 'data:' + mime + ';base64,' + buf.toString('base64'),
+          result: '已缩放 ' + imgOut.width + 'x' + imgOut.height + ' → ' + imgOut.outWidth + 'x' + imgOut.outHeight + '（' + imgOut.kb + ' KB）: ' + outPath.replace(/\\/g, '/'),
+          image: 'data:' + imgOut.mime + ';base64,' + imgOut.buf.toString('base64'),
         });
       }
       if (name === 'edit_file') {

@@ -15,6 +15,7 @@
   "capMain": "main",
   "capRoom": "room",
   "characterPath": "/characters/p01/",
+  "imageMaxEdge": 1920,
   "petReadScope": "space",
   "petReadBlacklist": [
     "config.json",

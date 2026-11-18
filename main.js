@@ -11,6 +11,7 @@ const { createLlmProxy } = require('./main/llm-proxy');
 const { createScreenTools } = require('./main/screen');
 const { createStorage } = require('./main/storage');
 const { createFsTools } = require('./main/fs-tools');
+const { shrinkBase64 } = require('./main/image-utils');
 const { createHttpServer } = require('./main/http-server');
 const { listScenes } = require('./main/scenes');
 const { createWindowManager } = require('./main/windows');
@@ -49,6 +50,7 @@ if (!app.requestSingleInstanceLock()) {
 // config.json 的 hwCompositing=false 可退回软件合成（占用 CPU、GPU 基本为 0）。
 const BOOT_CONFIG = loadConfig(APP_ROOT);
 const PORT = Number(BOOT_CONFIG.serverPort) || 12400;
+const IMAGE_MAX_EDGE = Number(BOOT_CONFIG.imageMaxEdge) || 1920;
 const SPLIT_WINDOWS = BOOT_CONFIG.splitWindows !== false;
 const BOOT_TTS_CONFIG = loadTtsConfig(APP_ROOT);
 if (BOOT_CONFIG.hwCompositing === false) {
@@ -141,6 +143,23 @@ const { captureScreenBy, captureNow, gpuUtil, getScreensInfo } = createScreenToo
   APP_ROOT, capMainCfg: CAP_MAIN_CFG, capRoomCfg: CAP_ROOM_CFG, getBedroomWin: () => windows.bedroomWin, screen, desktopCapturer, winLog,
 });
 
+// 模型只看 1080p：4K 截图先缩再送，避免把整张 4K 图塞进上下文。
+function shrinkCaptureForModel(b64) {
+  if (!b64 || b64 === 'null') return b64;
+  try {
+    const out = shrinkBase64(nativeImage, b64, { maxWidth: IMAGE_MAX_EDGE, maxHeight: IMAGE_MAX_EDGE, quality: 85 });
+    return out ? out.base64 : b64;
+  } catch {
+    return b64;
+  }
+}
+async function captureNowForModel() {
+  return shrinkCaptureForModel(await captureNow());
+}
+async function captureScreenByForModel(which) {
+  return shrinkCaptureForModel(await captureScreenBy(which));
+}
+
 function maybeRoomChanged(call) {
   const name = (call && call.name) || '';
   if (!/^(file_tool|write_file|append_file|edit_file|copy_file|delete_file|resize_image)$/.test(name)) return;
@@ -161,7 +180,8 @@ function maybeRoomChanged(call) {
 }
 
 const { runFsTool, checkComfy, checkPython, checkSearch } = createFsTools({
-  APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captureScreenBy, appendLine, onRoomChanged: maybeRoomChanged,
+  APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow: captureNowForModel, captureScreenBy: captureScreenByForModel, appendLine, onRoomChanged: maybeRoomChanged,
+  imageMaxEdge: IMAGE_MAX_EDGE,
   petReadScope: BOOT_CONFIG.petReadScope, petReadBlacklist: BOOT_CONFIG.petReadBlacklist,
   comfyHost: BOOT_CONFIG.comfyHost, comfyPort: BOOT_CONFIG.comfyPort, comfyInputDir: BOOT_CONFIG.comfyInputDir,
   webSearchApiUrl: BOOT_CONFIG.webSearchApiUrl, webSearchApiKey: BOOT_CONFIG.webSearchApiKey,
@@ -260,7 +280,7 @@ app.whenReady().then(() => {
   });
   ipcMain.on('pet-quit', () => app.quit());
 
-  ipcMain.handle('pet-capture', async () => captureNow());
+  ipcMain.handle('pet-capture', async () => captureNowForModel());
   ipcMain.handle('gpu-util', () => gpuUtil());
 
   ipcMain.handle('memory-add', (e, items, mode) => memoryAdd(items, mode));
@@ -322,7 +342,7 @@ app.whenReady().then(() => {
     memorySearch,
     fstoolTail,
     getScreensInfo,
-    captureScreenBy,
+    captureScreenBy: captureScreenByForModel,
     historyLoad,
     historySave,
     runFsTool,

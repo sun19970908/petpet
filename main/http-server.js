@@ -87,6 +87,7 @@ function createHttpServer(deps) {
         watchdog: cfg.watchdog ?? false,
         infwakeReflectEvery: cfg.infwakeReflectEvery,
         characterPath: cfg.characterPath,
+        imageMaxEdge: cfg.imageMaxEdge,
         llmProfile: publicLlm.activeProfile,
         tts: {
           url: ttsCfg.app.url,

@@ -46,6 +46,7 @@
 | `capMain` | string | `main` | 主屏截屏目标。可填 ScreenCap 的数字下标（`0`、`1`）或屏幕名称模糊匹配；默认 `main`。 |
 | `capRoom` | string | `room` | 卧室屏截屏目标，规则同 `capMain`。 |
 | `characterPath` | string | `/characters/p01/` | 角色资源 URL 路径，指向 `characters/` 下的角色目录。 |
+| `imageMaxEdge` | number | `1920` | 所有送进模型的图片的最长边上限，单位像素，范围 256–4096。截图、唤醒截图、粘贴图片、`view_image`、`resize_image` 和 `comfy_run` 返回图都按这个值等比缩放；竖图不会被额外压矮。 |
 | `llmProfile` | string | `default` | 当前使用的 `llm.config.json` 档案名。修改后需要保证该档案存在。 |
 
 ### 语音

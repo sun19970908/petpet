@@ -101,7 +101,7 @@ export function filterToolsForConfig(tools, llmConfig) {
   if (caps.vision || caps.keepVisionToolsWhenTextOnly) return tools;
   return tools.filter((t) => {
     const name = t?.function?.name;
-    return name !== 'take_screenshot' && name !== 'look_at_room';
+    return name !== 'take_screenshot' && name !== 'look_at_room' && name !== 'view_image';
   });
 }
 

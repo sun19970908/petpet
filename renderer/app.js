@@ -67,6 +67,7 @@ const NO_INFWAKE = new URLSearchParams(location.search).has('noinfwake');
 const { history, infHistory, saveMessages, syncHistoryFromDisk } = createHistoryStore({ debugMode: DEBUG_MODE });
 // 运行时配置（主进程 llm.config + config.json + tts.config.json → /api/config）：每轮前自动刷新
 let llmConfig = normalizeLlmConfig();
+let IMAGE_MAX_EDGE = 1920;
 let TTS_CONFIG = { url: '/api/tts', request: {}, shortTextLimit: 60, splitShort: 'cut0', splitLong: 'cut5' };
 let CHARACTER_PATH = '';
 async function refreshRuntimeConfig() {
@@ -75,6 +76,8 @@ async function refreshRuntimeConfig() {
     if (c?.llm) llmConfig = normalizeLlmConfig(c.llm);
     if (c?.tts) TTS_CONFIG = c.tts;
     CHARACTER_PATH = String(c?.characterPath || '').trim();
+    const imageEdge = parseInt(c?.imageMaxEdge, 10);
+    if (Number.isFinite(imageEdge) && imageEdge >= 256 && imageEdge <= 4096) IMAGE_MAX_EDGE = imageEdge;
     bedroomAvailable = Boolean(c?.bedroom);
     onlyBedroom = Boolean(c?.petOnlyBedroom) && Boolean(c?.bedroom) && c?.splitWindows !== false;
     const reflectEvery = parseInt(c?.infwakeReflectEvery, 10);
@@ -872,8 +875,8 @@ input.addEventListener('paste', (e) => {
   const img = new Image();
   img.onload = () => {
     URL.revokeObjectURL(url);
-    // 长边压到 1280，jpeg 0.85：省 base64 体积和 prefill
-    const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+    // 统一最长边，值来自 config.json 的 imageMaxEdge，jpeg 0.85
+    const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(img.width, img.height));
     const c = document.createElement('canvas');
     c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
