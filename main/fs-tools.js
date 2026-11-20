@@ -203,8 +203,12 @@ function createFsTools({ APP_ROOT, PET_SPACE_DIR, nativeImage, captureNow, captu
           const detail = r.json ? comfyErrorText(r.json, 600) : comfyErrorText(r.text, 600);
           return { ok: false, error: 'ComfyUI /prompt HTTP ' + r.status + ': ' + (detail || '(空响应)') };
         }
-        if (r.json && (r.json.error || r.json.node_errors)) {
-          return { ok: false, error: 'ComfyUI 拒绝工作流: ' + comfyErrorText({ error: r.json.error, node_errors: r.json.node_errors }, 800) };
+        const nodeErrors = r.json && r.json.node_errors;
+        const hasNodeErrors = Array.isArray(nodeErrors)
+          ? nodeErrors.length > 0
+          : Boolean(nodeErrors && (typeof nodeErrors !== 'object' || Object.keys(nodeErrors).length > 0));
+        if (r.json && (r.json.error || hasNodeErrors)) {
+          return { ok: false, error: 'ComfyUI 拒绝工作流: ' + comfyErrorText({ error: r.json.error, node_errors: nodeErrors }, 800) };
         }
         pid = r.json && r.json.prompt_id;
       } catch (e) { return { ok: false, error: '连不上 ComfyUI(' + COMFY_HOST + ':' + COMFY_PORT + '): ' + String(e.message || e) }; }
